@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run black (format check)
+      run: black --check .
+
+    - name: Run ruff (lint)
+      run: ruff check .
+
+    - name: Run mypy (type check)
+      run: mypy ha_boss
+      continue-on-error: true
+
+    - name: Run pytest
+      run: |
+        pytest --cov=ha_boss --cov-report=xml --cov-report=term
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      if: matrix.python-version == '3.11'
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  create-issue-on-failure:
+    runs-on: ubuntu-latest
+    needs: test
+    if: failure() && github.ref == 'refs/heads/main'
+    permissions:
+      issues: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Create issue for CI failure
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = `CI Failed: ${context.workflow} - ${context.sha.substring(0, 7)}`;
+          const body = `## CI Failure Alert
+
+          The CI workflow has failed on the main branch.
+
+          **Workflow:** ${context.workflow}
+          **Run:** ${context.runNumber}
+          **Commit:** ${context.sha}
+          **Actor:** @${context.actor}
+
+          **Run URL:** ${context.payload.repository.html_url}/actions/runs/${context.runId}
+
+          ---
+
+          @claude please investigate this CI failure and create a PR to fix it. Check the workflow logs above and identify the root cause.
+
+          ## Steps to investigate:
+          1. Review the failing test logs
+          2. Identify the specific test(s) or linting issues
+          3. Determine the root cause
+          4. Implement a fix
+          5. Ensure all tests pass
+
+          /cc @${context.actor}`;
+
+          // Check if similar issue already exists
+          const issues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            labels: 'ci-failure,claude-task'
+          });
+
+          const similarIssue = issues.data.find(issue =>
+            issue.title.includes(context.sha.substring(0, 7))
+          );
+
+          if (!similarIssue) {
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['ci-failure', 'claude-task', 'automated']
+            });
+          }

@@ -1,0 +1,15 @@
+# Code Owners
+# These owners will be requested for review when someone opens a PR
+
+# Global owners
+* @yourusername
+
+# CI/CD workflows
+/.github/workflows/ @yourusername
+
+# Claude Code configuration
+/.claude/ @yourusername
+/CLAUDE.md @yourusername
+
+# Core code
+/ha_boss/ @yourusername

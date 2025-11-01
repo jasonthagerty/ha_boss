@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "description": "Claude Code settings for HA Boss project",
+
+  "preferences": {
+    "model": "sonnet",
+    "autoApprove": {
+      "bash": false,
+      "edit": false,
+      "write": false
+    }
+  },
+
+  "hooks": {
+    "pre-commit": {
+      "enabled": false,
+      "command": "pytest --maxfail=1 -x"
+    }
+  },
+
+  "context": {
+    "includePatterns": [
+      "**/*.py",
+      "**/*.md",
+      "**/*.yml",
+      "**/*.yaml",
+      "**/*.json",
+      "**/*.toml"
+    ],
+    "excludePatterns": [
+      "**/__pycache__/**",
+      "**/*.pyc",
+      "**/venv/**",
+      "**/env/**",
+      "**/.pytest_cache/**",
+      "**/htmlcov/**"
+    ]
+  }
+}

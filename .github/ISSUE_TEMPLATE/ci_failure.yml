@@ -1,0 +1,30 @@
+name: CI Failure
+description: Automated CI failure report
+title: "CI Failed: "
+labels: ["ci-failure", "claude-task", "automated"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue was automatically created due to a CI failure.
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Failure Details
+      description: Details about the CI failure
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: CI logs and error messages
+      render: shell
+
+  - type: input
+    id: run-url
+    attributes:
+      label: CI Run URL
+      description: Link to the failed CI run
