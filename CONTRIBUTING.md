@@ -5,7 +5,7 @@ Thank you for your interest in contributing to HA Boss! This guide will help you
 ## Quick Start
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/yourusername/ha_boss.git`
+2. Clone your fork: `git clone https://github.com/jasonthagerty/ha_boss.git`
 3. Set up development environment: `make install` or `pip install -e ".[dev]"`
 4. Create a branch: `git checkout -b feature/your-feature-name`
 5. Make your changes

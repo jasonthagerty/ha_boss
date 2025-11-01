@@ -2,14 +2,14 @@
 # These owners will be requested for review when someone opens a PR
 
 # Global owners
-* @yourusername
+* @jasonthagerty
 
 # CI/CD workflows
-/.github/workflows/ @yourusername
+/.github/workflows/ @jasonthagerty
 
 # Claude Code configuration
-/.claude/ @yourusername
-/CLAUDE.md @yourusername
+/.claude/ @jasonthagerty
+/CLAUDE.md @jasonthagerty
 
 # Core code
-/ha_boss/ @yourusername
+/ha_boss/ @jasonthagerty

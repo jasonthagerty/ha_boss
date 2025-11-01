@@ -40,9 +40,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/ha_boss"
-Documentation = "https://github.com/yourusername/ha_boss#readme"
-Repository = "https://github.com/yourusername/ha_boss"
+Homepage = "https://github.com/jasonthagerty/ha_boss"
+Documentation = "https://github.com/jasonthagerty/ha_boss#readme"
+Repository = "https://github.com/jasonthagerty/ha_boss"
 
 [tool.setuptools]
 packages = ["ha_boss"]

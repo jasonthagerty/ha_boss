@@ -8,7 +8,7 @@ Complete guide to setting up the HA Boss development infrastructure and integrat
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ha_boss.git
+git clone https://github.com/jasonthagerty/ha_boss.git
 cd ha_boss
 
 # Create virtual environment
@@ -54,7 +54,7 @@ git add .
 git commit -m "Initial commit: development infrastructure"
 
 # Add remote and push
-git remote add origin https://github.com/yourusername/ha_boss.git
+git remote add origin https://github.com/jasonthagerty/ha_boss.git
 git branch -M main
 git push -u origin main
 ```
@@ -302,5 +302,5 @@ make test
 ## Support
 
 - **Documentation**: See CLAUDE.md and README.md
-- **Issues**: https://github.com/yourusername/ha_boss/issues
+- **Issues**: https://github.com/jasonthagerty/ha_boss/issues
 - **Claude Code Docs**: https://docs.claude.com/claude-code
