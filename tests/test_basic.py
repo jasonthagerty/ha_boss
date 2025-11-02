@@ -1,6 +1,7 @@
 """Basic tests to verify the test infrastructure is working."""
 
 import pytest
+
 from ha_boss import __version__
 
 
@@ -17,6 +18,7 @@ def test_basic_math() -> None:
 @pytest.mark.asyncio
 async def test_async_support() -> None:
     """Test that async tests work."""
+
     async def async_func() -> str:
         return "async works"
 

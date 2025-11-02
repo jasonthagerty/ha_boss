@@ -267,12 +267,12 @@ def load_config(config_path: Path | str | None = None) -> Config:
 
     # Load YAML
     try:
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             yaml_data = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise ConfigurationError(f"Invalid YAML in {config_path}: {e}")
+        raise ConfigurationError(f"Invalid YAML in {config_path}: {e}") from e
     except Exception as e:
-        raise ConfigurationError(f"Failed to read {config_path}: {e}")
+        raise ConfigurationError(f"Failed to read {config_path}: {e}") from e
 
     if not isinstance(yaml_data, dict):
         raise ConfigurationError(f"Config file must contain a YAML object: {config_path}")
@@ -284,7 +284,7 @@ def load_config(config_path: Path | str | None = None) -> Config:
     try:
         config = Config(**yaml_data)
     except Exception as e:
-        raise ConfigurationError(f"Invalid configuration: {e}")
+        raise ConfigurationError(f"Invalid configuration: {e}") from e
 
     return config
 

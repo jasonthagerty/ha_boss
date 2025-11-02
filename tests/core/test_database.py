@@ -1,17 +1,14 @@
 """Tests for database management."""
 
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
 from ha_boss.core.database import (
-    Database,
     Entity,
-    HealthEvent,
     HealingAction,
+    HealthEvent,
     Integration,
-    StateHistory,
     init_database,
 )
 

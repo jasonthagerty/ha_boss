@@ -150,7 +150,7 @@ class Database:
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
         except Exception as e:
-            raise DatabaseError(f"Failed to initialize database: {e}")
+            raise DatabaseError(f"Failed to initialize database: {e}") from e
 
     async def close(self) -> None:
         """Close database connections."""
