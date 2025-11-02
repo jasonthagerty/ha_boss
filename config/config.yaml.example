@@ -1,0 +1,122 @@
+# HA Boss Configuration
+# Copy to config.yaml and customize for your setup
+
+home_assistant:
+  # Home Assistant instance URL
+  url: "http://homeassistant.local:8123"
+
+  # Long-lived access token (can also use HA_TOKEN env var)
+  # Create at: http://your-ha/profile -> Long-Lived Access Tokens
+  token: "${HA_TOKEN}"
+
+monitoring:
+  # Entities to monitor (glob patterns, empty list = all entities)
+  include: []
+
+  # Entities to exclude from monitoring
+  exclude:
+    - "sensor.time*"
+    - "sensor.date*"
+    - "sensor.uptime*"
+    - "sun.sun"
+
+  # Grace period before considering entity truly unavailable (seconds)
+  grace_period_seconds: 300  # 5 minutes
+
+  # Threshold for stale entities (no update in X seconds)
+  stale_threshold_seconds: 3600  # 1 hour
+
+  # Periodic REST API snapshot interval (seconds)
+  # Used to validate WebSocket cache
+  snapshot_interval_seconds: 300  # 5 minutes
+
+healing:
+  # Enable auto-healing
+  enabled: true
+
+  # Maximum healing attempts per integration
+  max_attempts: 3
+
+  # Cooldown between healing attempts (seconds)
+  cooldown_seconds: 300  # 5 minutes
+
+  # Circuit breaker threshold (stop trying after N total failures)
+  circuit_breaker_threshold: 10
+
+  # Circuit breaker reset time (seconds)
+  # After this time with no failures, reset counter
+  circuit_breaker_reset_seconds: 3600  # 1 hour
+
+notifications:
+  # Send notifications when auto-healing fails
+  on_healing_failure: true
+
+  # Send weekly summary reports
+  weekly_summary: true
+
+  # Home Assistant notification service
+  ha_service: "persistent_notification.create"
+
+  # Optional: Email notifications
+  # email:
+  #   enabled: false
+  #   smtp_server: "smtp.gmail.com"
+  #   smtp_port: 587
+  #   username: "your-email@gmail.com"
+  #   password: "${EMAIL_PASSWORD}"
+  #   from: "haboss@example.com"
+  #   to: "your-email@gmail.com"
+
+# Operational mode
+# - production: Full auto-healing enabled
+# - dry_run: Log actions but don't execute
+# - testing: Use test HA instance
+mode: "production"
+
+# Dry run configuration
+dry_run:
+  # Where to log actions that would be taken
+  log_file: "/data/dry_run.log"
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "json"  # json or text
+  file: "/data/ha_boss.log"
+  max_size_mb: 10
+  backup_count: 5
+
+# Database configuration
+database:
+  # SQLite database path
+  path: "/data/ha_boss.db"
+
+  # Enable SQL query logging (debug only)
+  echo: false
+
+  # History retention (days)
+  # Older records are automatically purged
+  retention_days: 30
+
+# WebSocket configuration
+websocket:
+  # Reconnect delay (seconds)
+  reconnect_delay_seconds: 5
+
+  # Heartbeat interval (seconds)
+  # Send ping every N seconds to keep connection alive
+  heartbeat_interval_seconds: 30
+
+  # Connection timeout (seconds)
+  timeout_seconds: 10
+
+# REST API configuration
+rest:
+  # Request timeout (seconds)
+  timeout_seconds: 10
+
+  # Retry attempts for failed requests
+  retry_attempts: 3
+
+  # Base delay for exponential backoff (seconds)
+  retry_base_delay_seconds: 1.0
