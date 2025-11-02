@@ -184,9 +184,7 @@ class TestHealthMonitorGracePeriod:
             assert "sensor.test" in health_monitor._reported_issues
 
     @pytest.mark.asyncio
-    async def test_grace_period_reset_on_type_change(
-        self, health_monitor: HealthMonitor
-    ) -> None:
+    async def test_grace_period_reset_on_type_change(self, health_monitor: HealthMonitor) -> None:
         """Test grace period resets when issue type changes."""
         entity_state = EntityState(
             entity_id="sensor.test",
@@ -216,9 +214,7 @@ class TestHealthMonitorRecovery:
     """Tests for entity recovery handling."""
 
     @pytest.mark.asyncio
-    async def test_recovery_during_grace_period(
-        self, health_monitor: HealthMonitor
-    ) -> None:
+    async def test_recovery_during_grace_period(self, health_monitor: HealthMonitor) -> None:
         """Test recovery during grace period (no report)."""
         entity_state = EntityState(
             entity_id="sensor.test",
@@ -229,7 +225,9 @@ class TestHealthMonitorRecovery:
         # Track issue that hasn't been reported yet
         health_monitor._issue_tracker["sensor.test"] = ("unavailable", datetime.utcnow())
 
-        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock) as mock_persist:
+        with patch.object(
+            health_monitor, "_persist_health_event", new_callable=AsyncMock
+        ) as mock_persist:
             await health_monitor._handle_recovery(entity_state)
 
             # Should remove from tracking
@@ -252,7 +250,9 @@ class TestHealthMonitorRecovery:
         health_monitor._issue_tracker["sensor.test"] = ("unavailable", past_time)
         health_monitor._reported_issues.add("sensor.test")
 
-        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock) as mock_persist:
+        with patch.object(
+            health_monitor, "_persist_health_event", new_callable=AsyncMock
+        ) as mock_persist:
             await health_monitor._handle_recovery(entity_state)
 
             # Should remove from both trackers
@@ -295,9 +295,7 @@ class TestHealthMonitorFiltering:
         assert health_monitor._should_monitor_entity("binary_sensor.door") is True
         assert health_monitor._should_monitor_entity("light.bedroom") is False
 
-    def test_should_monitor_include_and_exclude(
-        self, health_monitor: HealthMonitor
-    ) -> None:
+    def test_should_monitor_include_and_exclude(self, health_monitor: HealthMonitor) -> None:
         """Test include and exclude patterns together."""
         health_monitor.config.monitoring.include = ["sensor.*"]
         health_monitor.config.monitoring.exclude = ["sensor.time*"]
@@ -436,9 +434,7 @@ class TestCreateHealthMonitor:
     ) -> None:
         """Test creating and starting health monitor."""
         with patch.object(HealthMonitor, "_monitor_loop", new_callable=AsyncMock):
-            monitor = await create_health_monitor(
-                mock_config, mock_database, mock_state_tracker
-            )
+            monitor = await create_health_monitor(mock_config, mock_database, mock_state_tracker)
 
             assert isinstance(monitor, HealthMonitor)
             assert monitor._running is True

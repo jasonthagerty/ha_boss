@@ -52,8 +52,9 @@ class StateTracker:
     def __init__(
         self,
         database: Database,
-        on_state_updated: Callable[[EntityState, EntityState | None], Coroutine[Any, Any, None]]
-        | None = None,
+        on_state_updated: (
+            Callable[[EntityState, EntityState | None], Coroutine[Any, Any, None]] | None
+        ) = None,
     ) -> None:
         """Initialize state tracker.
 
@@ -279,9 +280,7 @@ class StateTracker:
                 await session.commit()
 
         except Exception as e:
-            logger.error(
-                f"Failed to record state history for {entity_id}: {e}", exc_info=True
-            )
+            logger.error(f"Failed to record state history for {entity_id}: {e}", exc_info=True)
             # Don't raise - history is non-critical
 
     async def _remove_entity(self, entity_id: str) -> None:
@@ -299,8 +298,9 @@ class StateTracker:
 async def create_state_tracker(
     database: Database,
     initial_states: list[dict[str, Any]],
-    on_state_updated: Callable[[EntityState, EntityState | None], Coroutine[Any, Any, None]]
-    | None = None,
+    on_state_updated: (
+        Callable[[EntityState, EntityState | None], Coroutine[Any, Any, None]] | None
+    ) = None,
 ) -> StateTracker:
     """Create and initialize a state tracker.
 

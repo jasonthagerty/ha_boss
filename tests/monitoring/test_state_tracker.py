@@ -113,9 +113,7 @@ class TestStateTrackerInitialization:
             assert temp_state.attributes["friendly_name"] == "Living Room Temperature"
 
     @pytest.mark.asyncio
-    async def test_initialize_invalid_timestamp(
-        self, state_tracker: StateTracker
-    ) -> None:
+    async def test_initialize_invalid_timestamp(self, state_tracker: StateTracker) -> None:
         """Test initialization handles invalid timestamps gracefully."""
         states = [
             {
@@ -179,7 +177,9 @@ class TestStateTrackerUpdates:
         }
 
         with patch.object(state_tracker, "_persist_entity", new_callable=AsyncMock):
-            with patch.object(state_tracker, "_record_state_history", new_callable=AsyncMock) as mock_history:
+            with patch.object(
+                state_tracker, "_record_state_history", new_callable=AsyncMock
+            ) as mock_history:
                 await state_tracker.update_state(update_data)
 
                 # Should record history since state changed
@@ -208,7 +208,9 @@ class TestStateTrackerUpdates:
         }
 
         with patch.object(state_tracker, "_persist_entity", new_callable=AsyncMock):
-            with patch.object(state_tracker, "_record_state_history", new_callable=AsyncMock) as mock_history:
+            with patch.object(
+                state_tracker, "_record_state_history", new_callable=AsyncMock
+            ) as mock_history:
                 await state_tracker.update_state(update_data)
 
                 # Should NOT record history since state didn't change
@@ -242,14 +244,16 @@ class TestStateTrackerUpdates:
         """Test updating state when entity is removed."""
         # Initialize with entity
         with patch.object(state_tracker, "_persist_entity", new_callable=AsyncMock):
-            await state_tracker.initialize([
-                {
-                    "entity_id": "sensor.removed",
-                    "state": "active",
-                    "last_updated": "2024-01-01T12:00:00Z",
-                    "attributes": {},
-                }
-            ])
+            await state_tracker.initialize(
+                [
+                    {
+                        "entity_id": "sensor.removed",
+                        "state": "active",
+                        "last_updated": "2024-01-01T12:00:00Z",
+                        "attributes": {},
+                    }
+                ]
+            )
 
         # Send removal event (no new_state)
         removal_data = {
@@ -264,9 +268,7 @@ class TestStateTrackerUpdates:
         assert removed_state is None
 
     @pytest.mark.asyncio
-    async def test_update_state_missing_entity_id(
-        self, state_tracker: StateTracker
-    ) -> None:
+    async def test_update_state_missing_entity_id(self, state_tracker: StateTracker) -> None:
         """Test update_state handles missing entity_id."""
         state_data = {
             "new_state": {
@@ -413,15 +415,11 @@ class TestCreateStateTracker:
             assert len(states) == 3
 
     @pytest.mark.asyncio
-    async def test_create_state_tracker_with_callback(
-        self, mock_database: Database
-    ) -> None:
+    async def test_create_state_tracker_with_callback(self, mock_database: Database) -> None:
         """Test creating state tracker with callback."""
         callback = AsyncMock()
 
         with patch.object(StateTracker, "_persist_entity", new_callable=AsyncMock):
-            tracker = await create_state_tracker(
-                mock_database, [], on_state_updated=callback
-            )
+            tracker = await create_state_tracker(mock_database, [], on_state_updated=callback)
 
             assert tracker.on_state_updated == callback
