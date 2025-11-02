@@ -35,20 +35,41 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 
 ## Development Commands
 
+### Prerequisites
+
+- **Python 3.12** (required for consistency with CI)
+- **uv** (fast Python package installer - https://github.com/astral-sh/uv)
+
 ### Initial Setup
 
 ```bash
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create virtual environment with Python 3.12
+uv venv --python 3.12
+
+# Activate virtual environment
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 # Install with development dependencies
+uv pip install -e ".[dev]"
+```
+
+**Alternative (without uv):**
+```bash
+# Traditional venv approach (slower)
+python3.12 -m venv venv
+source venv/bin/activate
 pip install -e ".[dev]"
 ```
 
 ### Testing
 
 ```bash
+# Ensure virtual environment is activated
+source .venv/bin/activate
+
 # Run all tests with coverage
 pytest --cov=ha_boss --cov-report=html --cov-report=term
 
@@ -65,6 +86,9 @@ pytest -m "not slow" -v
 ### Code Quality
 
 ```bash
+# Ensure virtual environment is activated
+source .venv/bin/activate
+
 # Auto-format code (do this before committing)
 black .
 

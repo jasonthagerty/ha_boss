@@ -4,12 +4,27 @@ Thank you for your interest in contributing to HA Boss! This guide will help you
 
 ## Quick Start
 
+### Prerequisites
+- **Python 3.12** (required for CI compatibility)
+- **uv** (recommended) - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+### Steps
+
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/jasonthagerty/ha_boss.git`
-3. Set up development environment: `make install` or `pip install -e ".[dev]"`
+3. Set up development environment:
+   ```bash
+   # With uv (recommended)
+   uv venv --python 3.12
+   source .venv/bin/activate
+   uv pip install -e ".[dev]"
+
+   # Or use make
+   make install
+   ```
 4. Create a branch: `git checkout -b feature/your-feature-name`
 5. Make your changes
-6. Run tests: `make test`
+6. Run tests: `make test` or `pytest`
 7. Run CI checks: `make ci-check`
 8. Commit and push
 9. Open a Pull Request
@@ -37,7 +52,8 @@ See `.claude/commands/` for all available commands.
 
 ### Style Guide
 
-- **Python Version**: 3.11+
+- **Python Version**: 3.12 (required for CI consistency)
+- **Package Manager**: uv (recommended for speed)
 - **Line Length**: 100 characters
 - **Formatting**: Black
 - **Linting**: Ruff

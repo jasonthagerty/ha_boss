@@ -4,15 +4,38 @@ Complete guide to setting up the HA Boss development infrastructure and integrat
 
 ## Initial Development Setup
 
+### Prerequisites
+
+- **Python 3.12** (required for CI compatibility)
+- **uv** - Fast Python package installer (recommended)
+  - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
 ### 1. Clone and Install
 
+**With uv (recommended):**
+```bash
+# Clone the repository
+git clone https://github.com/jasonthagerty/ha_boss.git
+cd ha_boss
+
+# Create virtual environment with Python 3.12
+uv venv --python 3.12
+
+# Activate virtual environment
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install dependencies
+uv pip install -e ".[dev]"
+```
+
+**Traditional approach:**
 ```bash
 # Clone the repository
 git clone https://github.com/jasonthagerty/ha_boss.git
 cd ha_boss
 
 # Create virtual environment
-python -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # Install dependencies
@@ -36,11 +59,19 @@ cp .env.example .env
 ### 3. Verify Installation
 
 ```bash
+# Ensure virtual environment is activated
+source .venv/bin/activate  # or: source venv/bin/activate
+
+# Verify Python version
+python --version  # Should show Python 3.12.x
+
 # Run basic tests
 make test
+# or: pytest
 
 # Run CI checks
 make ci-check
+# or: black --check . && ruff check . && mypy ha_boss && pytest
 ```
 
 ## GitHub Integration Setup
