@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "HA Boss Team"}
+    {name = "Jason Thagerty", email = "jason@thagerty.com"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
