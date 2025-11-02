@@ -89,6 +89,8 @@ class Integration(Base):
     domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source: Mapped[str | None] = mapped_column(String(50))
+    entity_ids: Mapped[str | None] = mapped_column(Text)  # JSON string of entity IDs
+    is_discovered: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_successful_reload: Mapped[datetime | None] = mapped_column(DateTime)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
