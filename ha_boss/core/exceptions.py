@@ -49,6 +49,12 @@ class IntegrationNotFoundError(HealingError):
     pass
 
 
+class IntegrationDiscoveryError(HealingError):
+    """Failed to discover integrations through all available methods."""
+
+    pass
+
+
 class HealingFailedError(HealingError):
     """Healing attempt failed."""
 
