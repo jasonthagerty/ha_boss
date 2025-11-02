@@ -296,6 +296,184 @@ When adding new features:
 7. **Configuration**: New settings added to Pydantic models in `core/config.py`
 8. **Database**: New tables/columns require schema updates and migration notes
 
+## Feature Branch Workflow
+
+### Overview
+
+All development work is tracked via GitHub Issues and managed through feature branches. This ensures clear ownership, tracking, and integration with CI/CD.
+
+### Issue-Driven Development
+
+**GitHub Issues** are the source of truth for all work:
+- **View Issues**: https://github.com/jasonthagerty/ha_boss/issues
+- **Project Board**: https://github.com/users/jasonthagerty/projects/1
+- All issues labeled with `claude-task` are assignable to Claude
+- Issues include acceptance criteria, technical notes, and branch names
+
+### Label System
+
+Issues use the following labels for organization:
+
+**Phase Labels:**
+- `mvp` - MVP Phase 1 features (current focus)
+- `phase-1` - Phase 1: Core Monitoring & Healing
+- `phase-2` - Phase 2: Intelligence Layer
+- `phase-3` - Phase 3: Advanced Features
+
+**Priority Labels:**
+- `priority-high` - High priority (work on first)
+- `priority-medium` - Medium priority
+- `priority-low` - Low priority
+
+**Type Labels:**
+- `enhancement` - New feature or request
+- `bug` - Something isn't working
+- `documentation` - Documentation improvements
+- `ci-failure` - CI/CD pipeline failure
+- `claude-task` - Task for Claude Code to handle
+- `automated` - Automatically created issue
+
+### Branch Naming Convention
+
+**Format:** `<type>/issue-<number>-<brief-description>`
+
+**Types:**
+- `feature/` - New features (most common for MVP)
+- `fix/` - Bug fixes
+- `docs/` - Documentation only changes
+- `refactor/` - Code refactoring without functional changes
+- `test/` - Adding or updating tests
+
+**Examples:**
+- `feature/issue-2-integration-discovery`
+- `feature/issue-3-health-monitoring`
+- `fix/issue-15-websocket-reconnect`
+- `docs/issue-8-update-readme`
+
+### Complete Feature Workflow
+
+When assigned an issue or tagged with `@claude`:
+
+1. **Read the Issue**
+   - Review description, acceptance criteria, and technical notes
+   - Check related components and dependencies
+   - Understand the branch name to use
+
+2. **Create Feature Branch**
+   ```bash
+   git checkout -b feature/issue-{number}-brief-description
+   ```
+
+3. **Implement Feature**
+   - Follow acceptance criteria
+   - Add type hints (mypy compliance)
+   - Write comprehensive tests (≥80% coverage)
+   - Follow code quality standards
+
+4. **Test Locally**
+   ```bash
+   # Run all CI checks
+   make ci-check
+   # Or manually:
+   black --check . && ruff check . && mypy ha_boss && pytest
+   ```
+
+5. **Commit Changes**
+   - Use conventional commit messages
+   - Include co-authored-by for Claude
+   - Reference issue number
+
+6. **Push and Create PR**
+   ```bash
+   git push origin feature/issue-{number}-brief-description
+   gh pr create --title "feat: brief description" --body "Closes #{number}"
+   ```
+
+7. **PR Description Must Include**
+   - "Closes #{number}" to auto-close issue
+   - Summary of changes
+   - Testing performed
+   - Any breaking changes or notes
+
+8. **After Merge**
+   - Issue automatically closes
+   - Branch can be deleted
+   - Project board updates automatically
+
+### Example: Implementing Issue #2
+
+```bash
+# 1. Create branch from main
+git checkout main
+git pull origin main
+git checkout -b feature/issue-2-integration-discovery
+
+# 2. Implement the feature
+# ... write code in ha_boss/healing/integration_manager.py
+# ... write tests in tests/healing/test_integration_manager.py
+
+# 3. Run CI checks
+make ci-check
+
+# 4. Commit
+git add .
+git commit -m "feat: implement integration discovery system
+
+- Created IntegrationDiscovery class with storage file parsing
+- Added entity→integration mapping via HA API
+- Built in-memory cache for fast lookups
+- Added comprehensive tests with 85% coverage
+- Handles missing/unknown integrations gracefully
+
+Closes #2
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# 5. Push and create PR
+git push origin feature/issue-2-integration-discovery
+gh pr create --title "feat: implement integration discovery system" \
+  --body "Closes #2
+
+## Overview
+Implements the integration discovery system to map Home Assistant entities to integrations.
+
+## Changes
+- Created ha_boss/healing/integration_manager.py
+- Added storage file parsing and API mapping
+- Built entity→integration cache
+- Added 15 tests with 85% coverage
+
+## Testing
+- All tests passing (69/69)
+- CI checks passing ✓
+- Tested with mock HA storage files"
+```
+
+### Getting Assigned Issues
+
+Issues are assigned to Claude in several ways:
+
+1. **Manual Assignment**: User assigns issue to `@claude` in GitHub
+2. **@claude Mention**: Comment on issue with `@claude` to trigger assignment
+3. **claude-task Label**: Issues labeled `claude-task` are automatically available
+4. **CI Failures**: Automatic issues created from CI failures are auto-assigned
+
+### Project Board Integration
+
+- **GitHub Project**: https://github.com/users/jasonthagerty/projects/1
+- All issues automatically added to project board
+- Status updates automatically as issues progress
+- Filter by labels to view MVP, phases, or priorities
+
+### Branch Protection
+
+- `main` branch is protected
+- All changes must go through PRs
+- CI checks must pass before merge
+- Squash commits on merge to keep history clean
+
 ## CI/CD Integration
 
 ### GitHub Actions Workflows
@@ -324,16 +502,18 @@ When CI fails on main branch, a GitHub issue is automatically created with:
 - Tagged with `ci-failure`, `claude-task`, `automated` labels
 - Contains `@claude` mention to trigger automatic investigation
 
-### Working with Issues
+### Working with CI Failure Issues
 
-When assigned an issue:
+When CI fails and an automated issue is created:
 1. Read the issue description and linked workflow logs
-2. Identify root cause of failure
-3. Create a branch: `fix/issue-{number}-brief-description`
-4. Implement fix with tests
-5. Ensure all CI checks pass locally (`/ci-check`)
-6. Create PR with reference to issue: "Closes #X"
-7. PR will auto-tag Claude for review
+2. Identify root cause of failure (check test output, linting errors, etc.)
+3. Follow the **Feature Branch Workflow** (see above) using `fix/` prefix
+4. Branch name: `fix/issue-{number}-brief-description`
+5. Implement fix with regression test if applicable
+6. Ensure all CI checks pass locally (`make ci-check`)
+7. Create PR with "Closes #{number}" to auto-close issue
+
+**Note**: For all other issues (features, enhancements, documentation), see the complete "Feature Branch Workflow" section above.
 
 ## Testing Guidelines
 
@@ -573,20 +753,29 @@ To enable full Claude Code integration:
 
 ### Adding a New Feature
 
-1. Create feature branch: `feature/brief-description`
-2. Implement feature with type hints
-3. Add comprehensive tests
-4. Run `/ci-check` to verify all checks pass
-5. Update documentation if needed
-6. Create PR with description of changes
+**Always start with a GitHub issue** (or create one if it doesn't exist):
+
+1. Review issue acceptance criteria and branch name
+2. Create feature branch: `feature/issue-{number}-brief-description`
+3. Implement feature with type hints (mypy compliance)
+4. Add comprehensive tests (≥80% coverage)
+5. Run `make ci-check` to verify all checks pass
+6. Update documentation if needed
+7. Create PR with "Closes #{number}" in description
+
+See **Feature Branch Workflow** section above for complete details.
 
 ### Fixing a Bug
 
-1. Add regression test that reproduces bug
-2. Implement fix
-3. Verify test passes
-4. Run full test suite
-5. Create PR referencing issue
+**Always reference the bug issue**:
+
+1. Review bug issue and reproduce locally if possible
+2. Add regression test that reproduces bug
+3. Create branch: `fix/issue-{number}-brief-description`
+4. Implement fix
+5. Verify test passes
+6. Run full test suite (`make ci-check`)
+7. Create PR with "Closes #{number}" referencing issue
 
 ### Reviewing PRs
 
