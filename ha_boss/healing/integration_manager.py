@@ -9,8 +9,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import aiofiles
+
 from ha_boss.core.config import Config
 from ha_boss.core.database import Database, Integration
+from ha_boss.core.exceptions import IntegrationDiscoveryError
 from ha_boss.core.ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -74,7 +77,7 @@ class IntegrationDiscovery:
             try:
                 await self._discover_from_storage(storage_path)
                 logger.info(
-                    f"Discovered {len(self._entity_to_integration)} " f"entities from storage files"
+                    f"Discovered {len(self._entity_to_integration)} entities from storage files"
                 )
             except Exception as e:
                 logger.warning(f"Storage file discovery failed: {e}")
@@ -83,7 +86,7 @@ class IntegrationDiscovery:
         if not self._entity_to_integration:
             try:
                 await self._discover_from_api()
-                logger.info(f"Discovered {len(self._entity_to_integration)} " f"entities from API")
+                logger.info(f"Discovered {len(self._entity_to_integration)} entities from API")
             except Exception as e:
                 logger.warning(f"API-based discovery failed: {e}")
 
@@ -92,7 +95,7 @@ class IntegrationDiscovery:
             try:
                 await self._load_from_database()
                 logger.info(
-                    f"Loaded {len(self._entity_to_integration)} " f"entities from database cache"
+                    f"Loaded {len(self._entity_to_integration)} entities from database cache"
                 )
             except Exception as e:
                 logger.warning(f"Database cache load failed: {e}")
@@ -103,7 +106,7 @@ class IntegrationDiscovery:
 
         if not self._entity_to_integration:
             logger.error("All discovery methods failed")
-            raise Exception("Failed to discover any integrations")
+            raise IntegrationDiscoveryError("Failed to discover any integrations")
 
         return self._entity_to_integration
 
@@ -122,8 +125,9 @@ class IntegrationDiscovery:
         if not config_entries_file.exists():
             raise FileNotFoundError(f"Config entries file not found: {config_entries_file}")
 
-        with open(config_entries_file) as f:
-            data = json.load(f)
+        async with aiofiles.open(config_entries_file) as f:
+            content = await f.read()
+            data = json.loads(content)
 
         entries = data.get("data", {}).get("entries", [])
 
@@ -145,8 +149,9 @@ class IntegrationDiscovery:
         entity_registry_file = storage_path / "core.entity_registry"
 
         if entity_registry_file.exists():
-            with open(entity_registry_file) as f:
-                entity_data = json.load(f)
+            async with aiofiles.open(entity_registry_file) as f:
+                content = await f.read()
+                entity_data = json.loads(content)
 
             entities = entity_data.get("data", {}).get("entities", [])
 
@@ -210,9 +215,7 @@ class IntegrationDiscovery:
                         "source": "api_domain",
                     }
 
-        logger.debug(
-            f"Mapped {len(self._entity_to_integration)} entities " f"from API (domain-based)"
-        )
+        logger.debug(f"Mapped {len(self._entity_to_integration)} entities from API (domain-based)")
 
     async def _load_from_database(self) -> None:
         """Load cached integration mappings from database."""
@@ -246,17 +249,19 @@ class IntegrationDiscovery:
             for entity_id, entry_id in self._entity_to_integration.items():
                 integration_entities.setdefault(entry_id, []).append(entity_id)
 
+            # Fetch all existing integrations in one query to avoid race conditions
+            result = await session.execute(
+                select(Integration).where(Integration.entry_id.in_(self._integrations.keys()))
+            )
+            existing_map = {i.entry_id: i for i in result.scalars().all()}
+
             # Save or update each integration
             for entry_id, details in self._integrations.items():
-                result = await session.execute(
-                    select(Integration).where(Integration.entry_id == entry_id)
-                )
-                existing = result.scalar_one_or_none()
-
                 entity_ids_json = json.dumps(integration_entities.get(entry_id, []))
 
-                if existing:
+                if entry_id in existing_map:
                     # Update existing
+                    existing = existing_map[entry_id]
                     existing.domain = details["domain"]
                     existing.title = details["title"]
                     existing.entity_ids = entity_ids_json

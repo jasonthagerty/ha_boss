@@ -7,6 +7,7 @@ import pytest
 
 from ha_boss.core.config import Config, HomeAssistantConfig
 from ha_boss.core.database import Integration, init_database
+from ha_boss.core.exceptions import IntegrationDiscoveryError
 from ha_boss.core.ha_client import HomeAssistantClient
 from ha_boss.healing.integration_manager import IntegrationDiscovery
 
@@ -26,8 +27,10 @@ def mock_config():
 async def database(tmp_path):
     """Create test database."""
     db = await init_database(tmp_path / "test.db")
-    yield db
-    await db.close()
+    try:
+        yield db
+    finally:
+        await db.close()
 
 
 @pytest.fixture
@@ -223,7 +226,7 @@ async def test_discover_all_failure(integration_discovery, mock_ha_client):
     # Make API discovery fail
     mock_ha_client.get_states.side_effect = Exception("API error")
 
-    with pytest.raises(Exception, match="Failed to discover any integrations"):
+    with pytest.raises(IntegrationDiscoveryError, match="Failed to discover any integrations"):
         await integration_discovery.discover_all()
 
 
