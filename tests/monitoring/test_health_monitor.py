@@ -1,10 +1,11 @@
 """Tests for health_monitor module."""
 
-import pytest
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ha_boss.core.config import Config, MonitoringConfig, HomeAssistantConfig
+import pytest
+
+from ha_boss.core.config import Config, HomeAssistantConfig, MonitoringConfig
 from ha_boss.core.database import Database
 from ha_boss.core.exceptions import DatabaseError
 from ha_boss.monitoring.health_monitor import (

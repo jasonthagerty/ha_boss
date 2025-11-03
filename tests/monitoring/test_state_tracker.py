@@ -1,10 +1,11 @@
 """Tests for state_tracker module."""
 
-import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ha_boss.core.database import Database, Entity, StateHistory
+import pytest
+
+from ha_boss.core.database import Database
 from ha_boss.core.exceptions import DatabaseError
 from ha_boss.monitoring.state_tracker import (
     EntityState,
