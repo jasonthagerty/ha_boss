@@ -1,6 +1,6 @@
 """Tests for health_monitor module."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -60,7 +60,7 @@ class TestHealthIssue:
 
     def test_health_issue_initialization(self) -> None:
         """Test HealthIssue initialization."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         issue = HealthIssue(
             entity_id="sensor.test",
             issue_type="unavailable",
@@ -75,7 +75,7 @@ class TestHealthIssue:
 
     def test_health_issue_repr(self) -> None:
         """Test HealthIssue string representation."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         issue = HealthIssue(
             entity_id="sensor.test",
             issue_type="unavailable",
@@ -95,7 +95,7 @@ class TestHealthMonitorDetection:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="unavailable",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         issue_type = health_monitor._detect_issue_type(entity_state)
@@ -106,7 +106,7 @@ class TestHealthMonitorDetection:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="unknown",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         issue_type = health_monitor._detect_issue_type(entity_state)
@@ -115,7 +115,7 @@ class TestHealthMonitorDetection:
     def test_detect_stale(self, health_monitor: HealthMonitor) -> None:
         """Test detection of stale entity."""
         # Entity not updated for 2 hours (threshold is 1 hour)
-        old_time = datetime.utcnow() - timedelta(hours=2)
+        old_time = datetime.now(UTC) - timedelta(hours=2)
         entity_state = EntityState(
             entity_id="sensor.test",
             state="active",
@@ -130,7 +130,7 @@ class TestHealthMonitorDetection:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="active",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         issue_type = health_monitor._detect_issue_type(entity_state)
@@ -146,7 +146,7 @@ class TestHealthMonitorGracePeriod:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="unavailable",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         callback = AsyncMock()
@@ -167,14 +167,14 @@ class TestHealthMonitorGracePeriod:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="unavailable",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         callback = AsyncMock()
         health_monitor.on_issue_detected = callback
 
         # Simulate issue detected 10 minutes ago (grace period is 5 minutes)
-        past_time = datetime.utcnow() - timedelta(minutes=10)
+        past_time = datetime.now(UTC) - timedelta(minutes=10)
         health_monitor._issue_tracker["sensor.test"] = ("unavailable", past_time)
 
         with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
@@ -190,11 +190,11 @@ class TestHealthMonitorGracePeriod:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="unknown",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         # Start tracking unavailable
-        past_time = datetime.utcnow() - timedelta(minutes=10)
+        past_time = datetime.now(UTC) - timedelta(minutes=10)
         health_monitor._issue_tracker["sensor.test"] = ("unavailable", past_time)
 
         callback = AsyncMock()
@@ -220,11 +220,11 @@ class TestHealthMonitorRecovery:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="active",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         # Track issue that hasn't been reported yet
-        health_monitor._issue_tracker["sensor.test"] = ("unavailable", datetime.utcnow())
+        health_monitor._issue_tracker["sensor.test"] = ("unavailable", datetime.now(UTC))
 
         with patch.object(
             health_monitor, "_persist_health_event", new_callable=AsyncMock
@@ -243,11 +243,11 @@ class TestHealthMonitorRecovery:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="active",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         # Track reported issue
-        past_time = datetime.utcnow() - timedelta(minutes=10)
+        past_time = datetime.now(UTC) - timedelta(minutes=10)
         health_monitor._issue_tracker["sensor.test"] = ("unavailable", past_time)
         health_monitor._reported_issues.add("sensor.test")
 
@@ -323,7 +323,7 @@ class TestHealthMonitorPersistence:
         issue = HealthIssue(
             entity_id="sensor.test",
             issue_type="unavailable",
-            detected_at=datetime.utcnow(),
+            detected_at=datetime.now(UTC),
         )
 
         await health_monitor._persist_health_event(issue)
@@ -344,7 +344,7 @@ class TestHealthMonitorPersistence:
         issue = HealthIssue(
             entity_id="sensor.test",
             issue_type="unavailable",
-            detected_at=datetime.utcnow(),
+            detected_at=datetime.now(UTC),
         )
 
         with pytest.raises(DatabaseError):
@@ -384,7 +384,7 @@ class TestHealthMonitorLifecycle:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="unavailable",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
         mock_state_tracker.get_state = AsyncMock(return_value=entity_state)
 
@@ -403,7 +403,7 @@ class TestHealthMonitorLifecycle:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="active",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
         mock_state_tracker.get_state = AsyncMock(return_value=entity_state)
 

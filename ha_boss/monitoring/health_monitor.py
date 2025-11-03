@@ -4,7 +4,7 @@ import asyncio
 import fnmatch
 import logging
 from collections.abc import Callable, Coroutine
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ha_boss.core.config import Config
@@ -159,7 +159,7 @@ class HealthMonitor:
             return "unknown"
 
         # Check for stale state (no updates for threshold period)
-        time_since_update = datetime.utcnow() - entity_state.last_updated
+        time_since_update = datetime.now(UTC) - entity_state.last_updated
         stale_threshold = timedelta(seconds=self.config.monitoring.stale_threshold_seconds)
 
         if time_since_update > stale_threshold:
@@ -175,7 +175,7 @@ class HealthMonitor:
             issue_type: Type of issue detected
         """
         entity_id = entity_state.entity_id
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         # Check if this is a new issue or continuation
         if entity_id in self._issue_tracker:
@@ -282,7 +282,7 @@ class HealthMonitor:
         issue = HealthIssue(
             entity_id=entity_id,
             issue_type="recovered",
-            detected_at=datetime.utcnow(),
+            detected_at=datetime.now(UTC),
             details={
                 "previous_issue": previous_issue_type,
                 "current_state": entity_state.state,
@@ -361,7 +361,7 @@ class HealthMonitor:
         return HealthIssue(
             entity_id=entity_id,
             issue_type=issue_type,
-            detected_at=datetime.utcnow(),
+            detected_at=datetime.now(UTC),
             details={
                 "state": entity_state.state,
                 "last_updated": entity_state.last_updated.isoformat(),

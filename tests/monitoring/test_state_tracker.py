@@ -1,6 +1,6 @@
 """Tests for state_tracker module."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -58,7 +58,7 @@ class TestEntityState:
 
     def test_entity_state_initialization(self) -> None:
         """Test EntityState initialization."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         state = EntityState(
             entity_id="sensor.test",
             state="active",
@@ -73,7 +73,7 @@ class TestEntityState:
 
     def test_entity_state_repr(self) -> None:
         """Test EntityState string representation."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         state = EntityState(
             entity_id="sensor.test",
             state="active",
@@ -370,7 +370,7 @@ class TestStateTrackerPersistence:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="active",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
             attributes={"friendly_name": "Test Sensor"},
         )
 
@@ -393,7 +393,7 @@ class TestStateTrackerPersistence:
         entity_state = EntityState(
             entity_id="sensor.test",
             state="active",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(UTC),
         )
 
         with pytest.raises(DatabaseError):

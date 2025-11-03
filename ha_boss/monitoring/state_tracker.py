@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Callable, Coroutine
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -34,7 +34,11 @@ class EntityState:
         """
         self.entity_id = entity_id
         self.state = state
-        self.last_updated = last_updated
+        # Ensure last_updated is timezone-aware
+        if last_updated.tzinfo is None:
+            self.last_updated = last_updated.replace(tzinfo=UTC)
+        else:
+            self.last_updated = last_updated
         self.attributes = attributes or {}
 
     def __repr__(self) -> str:
@@ -83,15 +87,20 @@ class StateTracker:
                 if not entity_id:
                     continue
 
-                state = state_data.get("state")
+                state = state_data.get("state", "")
                 last_updated_str = state_data.get("last_updated")
                 attributes = state_data.get("attributes", {})
 
                 # Parse timestamp
                 try:
-                    last_updated = datetime.fromisoformat(last_updated_str.replace("Z", "+00:00"))
+                    if last_updated_str:
+                        last_updated = datetime.fromisoformat(
+                            last_updated_str.replace("Z", "+00:00")
+                        )
+                    else:
+                        last_updated = datetime.now(UTC)
                 except (ValueError, AttributeError):
-                    last_updated = datetime.utcnow()
+                    last_updated = datetime.now(UTC)
 
                 entity_state = EntityState(
                     entity_id=entity_id,
