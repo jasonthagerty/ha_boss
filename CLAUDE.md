@@ -39,24 +39,32 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 
 - **Python 3.12** (required for consistency with CI)
 - **uv** (fast Python package installer - https://github.com/astral-sh/uv)
-- **GitHub CLI (gh)** (required for issue/PR management - https://cli.github.com/)
 
-### Initial Setup
+**Note for GitHub Actions/CI**: The following tools are pre-installed in GitHub Actions runners and do not need installation:
+- `gh` (GitHub CLI) - already available
+- `git` - already available
+
+### Local Development Setup
+
+**If you're working locally** (not in GitHub Actions), you'll also need:
+- **GitHub CLI (gh)** - for issue/PR management (https://cli.github.com/)
 
 ```bash
 # Install uv if not already installed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install GitHub CLI if not already installed
-# macOS
-brew install gh
-# Linux (Debian/Ubuntu)
-curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-sudo apt update
-sudo apt install gh
-# Windows (via scoop)
-scoop install gh
+# Install GitHub CLI (LOCAL DEVELOPMENT ONLY - skip if running in GitHub Actions)
+# Check if gh is already installed
+if ! command -v gh &> /dev/null; then
+  # macOS
+  brew install gh
+  # Linux (Debian/Ubuntu)
+  # curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+  # echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+  # sudo apt update && sudo apt install gh
+  # Windows (via scoop)
+  # scoop install gh
+fi
 
 # Authenticate with GitHub (required for gh commands)
 gh auth login

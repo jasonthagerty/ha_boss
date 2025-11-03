@@ -19,11 +19,11 @@ jobs:
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write        # Allow pushing to branches
+      pull-requests: write   # Allow creating PRs
+      issues: write          # Allow updating issues
       id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      actions: read          # Required for Claude to read CI results on PRs
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,8 +43,48 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr:*)'
+          # Allow common development tools without approval
+          claude_args: >-
+            --allowed-tools "
+            Bash(black:*),
+            Bash(black --check:*),
+            Bash(ruff:*),
+            Bash(ruff check:*),
+            Bash(ruff check --fix:*),
+            Bash(mypy:*),
+            Bash(pytest:*),
+            Bash(uv:*),
+            Bash(uv run:*),
+            Bash(uv pip install:*),
+            Bash(uv venv:*),
+            Bash(make:*),
+            Bash(git add:*),
+            Bash(git commit:*),
+            Bash(git push:*),
+            Bash(git pull:*),
+            Bash(git fetch:*),
+            Bash(git checkout:*),
+            Bash(git branch:*),
+            Bash(git status:*),
+            Bash(git diff:*),
+            Bash(git log:*),
+            Bash(git restore:*),
+            Bash(gh issue:*),
+            Bash(gh pr:*),
+            Bash(gh label:*),
+            Bash(gh project:*),
+            Bash(gh run:*),
+            Bash(tree:*),
+            Bash(ls:*),
+            Bash(cat:*),
+            Bash(echo:*),
+            Bash(mkdir:*),
+            Bash(rm:*),
+            Bash(cp:*),
+            Bash(mv:*),
+            Bash(find:*),
+            Bash(grep:*),
+            Bash(which:*),
+            Bash(command -v:*)
+            "
 
