@@ -1,6 +1,6 @@
 """Database models and management for HA Boss."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +30,14 @@ class Entity(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_state: Mapped[str | None] = mapped_column(String(255))
     is_monitored: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
     def __repr__(self) -> str:
@@ -50,7 +55,7 @@ class HealthEvent(Base):
         String(50), nullable=False, index=True
     )  # unavailable, stale, recovered
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
     )
     details: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
@@ -69,7 +74,7 @@ class HealingAction(Base):
     action: Mapped[str] = mapped_column(String(100), nullable=False)  # reload_integration, etc.
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
     )
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
@@ -95,9 +100,14 @@ class Integration(Base):
     last_successful_reload: Mapped[datetime | None] = mapped_column(DateTime)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     circuit_breaker_open_until: Mapped[datetime | None] = mapped_column(DateTime)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
     def __repr__(self) -> str:
@@ -114,7 +124,7 @@ class StateHistory(Base):
     old_state: Mapped[str | None] = mapped_column(String(255))
     new_state: Mapped[str] = mapped_column(String(255), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
     )
     context: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # time_of_day, day_of_week, etc.
 
@@ -167,7 +177,7 @@ class Database:
         Returns:
             Dictionary with counts of deleted records per table
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+        cutoff_date = datetime.now(UTC) - timedelta(days=retention_days)
         deleted_counts = {}
 
         async with self.async_session() as session:
