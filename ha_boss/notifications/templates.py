@@ -166,8 +166,10 @@ class HealingFailureTemplate(NotificationTemplate):
 
         # Add error details
         if context.error:
-            error_str = str(context.error)
-            lines.append(f"**Error:** {error_str}")
+            if isinstance(context.error, Exception):
+                lines.append(f"**Error:** {type(context.error).__name__}: {context.error}")
+            else:
+                lines.append(f"**Error:** {context.error}")
 
         lines.extend(
             [

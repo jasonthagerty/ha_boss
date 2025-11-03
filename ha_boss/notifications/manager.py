@@ -229,6 +229,8 @@ class NotificationManager:
         Returns:
             Notification ID string
         """
+        from datetime import UTC, datetime
+
         # Base ID on notification type
         base_id = f"haboss_{context.notification_type.value}"
 
@@ -242,6 +244,11 @@ class NotificationManager:
         elif context.integration_name:
             name_suffix = context.integration_name.replace(" ", "_").lower()
             base_id = f"{base_id}_{name_suffix}"
+        else:
+            # For generic notifications without specific entity/integration,
+            # add timestamp to prevent collisions
+            timestamp_suffix = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+            base_id = f"{base_id}_{timestamp_suffix}"
 
         return base_id
 
