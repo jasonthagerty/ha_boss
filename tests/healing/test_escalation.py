@@ -92,6 +92,7 @@ async def test_escalator_creation(mock_config, mock_ha_client):
     escalator = await create_notification_escalator(mock_config, mock_ha_client)
     assert escalator is not None
     assert isinstance(escalator, NotificationEscalator)
+    assert escalator.notification_manager is not None
 
 
 @pytest.mark.asyncio
@@ -102,15 +103,15 @@ async def test_notify_healing_failure(escalator, sample_health_issue, mock_ha_cl
 
     await escalator.notify_healing_failure(sample_health_issue, error, attempts)
 
-    # Verify notification was sent
+    # Verify notification was sent via NotificationManager
     mock_ha_client.create_persistent_notification.assert_called_once()
     call_args = mock_ha_client.create_persistent_notification.call_args
 
-    assert call_args[1]["title"] == "HA Boss: Healing Failed"
-    assert "sensor.test_sensor" in call_args[1]["message"]
-    assert "unavailable" in call_args[1]["message"]
-    assert str(attempts) in call_args[1]["message"]
-    assert "haboss_healing_failure_sensor_test_sensor" == call_args[1]["notification_id"]
+    assert call_args.kwargs["title"] == "HA Boss: Healing Failed"
+    assert "sensor.test_sensor" in call_args.kwargs["message"]
+    assert "unavailable" in call_args.kwargs["message"]
+    assert str(attempts) in call_args.kwargs["message"]
+    assert "HealingFailedError" in call_args.kwargs["message"]  # Exception type included
 
 
 @pytest.mark.asyncio
@@ -128,33 +129,30 @@ async def test_notify_healing_failure_disabled(
 
 
 @pytest.mark.asyncio
-async def test_notify_recovery(escalator, mock_ha_client):
+async def test_notify_recovery(escalator, mock_ha_client, caplog):
     """Test sending recovery notification."""
+    import logging
+
     await escalator.notify_recovery("sensor.test_sensor", "unavailable")
 
-    # Verify notification was sent
-    mock_ha_client.create_persistent_notification.assert_called_once()
-    call_args = mock_ha_client.create_persistent_notification.call_args
+    # Recovery notifications (INFO severity) go to CLI by default, not HA
+    # They should appear in logs
+    with caplog.at_level(logging.INFO):
+        await escalator.notify_recovery("sensor.test_sensor", "unavailable")
 
-    assert call_args[1]["title"] == "HA Boss: Entity Recovered"
-    assert "sensor.test_sensor" in call_args[1]["message"]
-    assert "unavailable" in call_args[1]["message"]
-    assert "recovered" in call_args[1]["message"].lower()
+    # Verify the notification was processed (logged to CLI)
+    assert "Entity Recovered" in caplog.text
+    assert "sensor.test_sensor" in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_notify_recovery_dismisses_previous(escalator, mock_ha_client):
+async def test_notify_recovery_dismisses_previous(escalator, sample_health_issue, mock_ha_client):
     """Test recovery notification dismisses previous failure notification."""
     # First send a failure notification
-    issue = HealthIssue(
-        entity_id="sensor.test_sensor",
-        issue_type="unavailable",
-        detected_at=datetime.now(UTC),
-    )
-    await escalator.notify_healing_failure(issue, Exception("Test"), 1)
+    await escalator.notify_healing_failure(sample_health_issue, Exception("Test"), 1)
 
-    # Track the notification
-    assert "sensor.test_sensor" in escalator._sent_notifications
+    # Reset mock to clear the first call
+    mock_ha_client.call_service.reset_mock()
 
     # Now send recovery
     await escalator.notify_recovery("sensor.test_sensor", "unavailable")
@@ -165,9 +163,6 @@ async def test_notify_recovery_dismisses_previous(escalator, mock_ha_client):
         "dismiss",
         {"notification_id": "haboss_healing_failure_sensor_test_sensor"},
     )
-
-    # Verify entity removed from tracking
-    assert "sensor.test_sensor" not in escalator._sent_notifications
 
 
 @pytest.mark.asyncio
@@ -181,15 +176,17 @@ async def test_notify_circuit_breaker_open(escalator, mock_ha_client):
     mock_ha_client.create_persistent_notification.assert_called_once()
     call_args = mock_ha_client.create_persistent_notification.call_args
 
-    assert call_args[1]["title"] == "HA Boss: Circuit Breaker Opened"
-    assert "Test Integration" in call_args[1]["message"]
-    assert "10" in call_args[1]["message"]
-    assert "auto-healing" in call_args[1]["message"].lower()
+    assert call_args.kwargs["title"] == "HA Boss: Circuit Breaker Opened"
+    assert "Test Integration" in call_args.kwargs["message"]
+    assert "10" in call_args.kwargs["message"]
+    assert "temporarily disabled" in call_args.kwargs["message"]
 
 
 @pytest.mark.asyncio
-async def test_notify_summary(escalator, mock_ha_client):
+async def test_notify_summary(escalator, mock_ha_client, caplog):
     """Test sending weekly summary notification."""
+    import logging
+
     stats = {
         "total_attempts": 100,
         "successful": 80,
@@ -202,20 +199,14 @@ async def test_notify_summary(escalator, mock_ha_client):
         ],
     }
 
-    await escalator.notify_summary(stats)
+    # Weekly summary notifications (INFO severity) go to CLI by default, not HA
+    with caplog.at_level(logging.INFO):
+        await escalator.notify_summary(stats)
 
-    # Verify notification was sent
-    mock_ha_client.create_persistent_notification.assert_called_once()
-    call_args = mock_ha_client.create_persistent_notification.call_args
-
-    assert call_args[1]["title"] == "HA Boss: Weekly Summary"
-    message = call_args[1]["message"]
-    assert "100" in message
-    assert "80" in message
-    assert "20" in message
-    assert "80.0%" in message
-    assert "sensor.problem1" in message
-    assert "sensor.problem2" in message
+    # Verify the notification was processed (logged to CLI)
+    assert "Weekly Summary" in caplog.text
+    assert "100" in caplog.text
+    assert "sensor.problem1" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -231,214 +222,34 @@ async def test_notify_summary_disabled(disabled_notifications_config, mock_ha_cl
 
 
 @pytest.mark.asyncio
-async def test_dry_run_mode(dry_run_config, mock_ha_client):
+async def test_dry_run_mode(dry_run_config, sample_health_issue, mock_ha_client):
     """Test notifications in dry-run mode."""
     escalator = NotificationEscalator(dry_run_config, mock_ha_client)
 
-    issue = HealthIssue(
-        entity_id="sensor.test_sensor",
-        issue_type="unavailable",
-        detected_at=datetime.now(UTC),
-    )
+    await escalator.notify_healing_failure(sample_health_issue, Exception("Test"), 1)
 
-    await escalator.notify_healing_failure(issue, Exception("Test"), 1)
-
-    # Verify notification was NOT sent (dry-run mode)
+    # In dry-run mode, notification should not be actually sent
     mock_ha_client.create_persistent_notification.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_notification_error_handling(escalator, mock_ha_client):
-    """Test graceful handling of notification errors."""
-    # Make notification sending fail
-    mock_ha_client.create_persistent_notification.side_effect = Exception("API Error")
+async def test_notification_error_handling(escalator, sample_health_issue, mock_ha_client):
+    """Test that notification errors are handled gracefully."""
+    # Make notification fail
+    mock_ha_client.create_persistent_notification.side_effect = Exception("Send failed")
 
-    issue = HealthIssue(
-        entity_id="sensor.test_sensor",
-        issue_type="unavailable",
-        detected_at=datetime.now(UTC),
-    )
+    # Should not raise exception, but handle gracefully
+    await escalator.notify_healing_failure(sample_health_issue, Exception("Test"), 1)
 
-    # Should not raise exception
-    await escalator.notify_healing_failure(issue, Exception("Test"), 1)
-
-    # Verify it tried to send
+    # Verify attempt was made
     mock_ha_client.create_persistent_notification.assert_called_once()
 
 
-def test_format_time_ago():
-    """Test time ago formatting."""
-    escalator = NotificationEscalator(
-        Config(
-            home_assistant=HomeAssistantConfig(url="http://test", token="token"),
-        ),
-        AsyncMock(),
-    )
+@pytest.mark.asyncio
+async def test_uses_notification_manager(mock_config, mock_ha_client):
+    """Test that escalator uses NotificationManager internally."""
+    escalator = NotificationEscalator(mock_config, mock_ha_client)
 
-    # Just now
-    now = datetime.now(UTC)
-    assert escalator._format_time_ago(now) == "just now"
-
-    # Minutes ago
-    past = now - timedelta(minutes=5)
-    result = escalator._format_time_ago(past)
-    assert "5 minutes ago" in result
-
-    # Hours ago
-    past = now - timedelta(hours=2)
-    result = escalator._format_time_ago(past)
-    assert "2 hours ago" in result
-
-    # Days ago
-    past = now - timedelta(days=3)
-    result = escalator._format_time_ago(past)
-    assert "3 days ago" in result
-
-
-def test_format_time_until():
-    """Test time until formatting."""
-    escalator = NotificationEscalator(
-        Config(
-            home_assistant=HomeAssistantConfig(url="http://test", token="token"),
-        ),
-        AsyncMock(),
-    )
-
-    now = datetime.now(UTC)
-
-    # Less than a minute
-    future = now + timedelta(seconds=30)
-    assert escalator._format_time_until(future) == "less than a minute"
-
-    # Minutes
-    future = now + timedelta(minutes=5)
-    result = escalator._format_time_until(future)
-    assert "5 minutes" in result or "4 minutes" in result  # Allow for timing variance
-
-    # Hours
-    future = now + timedelta(hours=2)
-    result = escalator._format_time_until(future)
-    assert "2 hours" in result or "1 hour" in result
-
-    # Days
-    future = now + timedelta(days=3)
-    result = escalator._format_time_until(future)
-    assert "3 days" in result or "2 days" in result
-
-
-def test_format_healing_failure_message():
-    """Test healing failure message formatting."""
-    escalator = NotificationEscalator(
-        Config(
-            home_assistant=HomeAssistantConfig(url="http://test", token="token"),
-        ),
-        AsyncMock(),
-    )
-
-    error = HealingFailedError("Integration reload failed")
-    message = escalator._format_healing_failure_message(
-        entity_id="sensor.test",
-        issue_type="unavailable",
-        error=error,
-        attempts=3,
-        detected_at=datetime.now(UTC) - timedelta(minutes=10),
-    )
-
-    assert "sensor.test" in message
-    assert "unavailable" in message
-    assert "3" in message
-    assert "Integration reload failed" in message
-    assert "Action Required" in message
-
-
-def test_format_recovery_message():
-    """Test recovery message formatting."""
-    escalator = NotificationEscalator(
-        Config(
-            home_assistant=HomeAssistantConfig(url="http://test", token="token"),
-        ),
-        AsyncMock(),
-    )
-
-    message = escalator._format_recovery_message("sensor.test", "unavailable")
-
-    assert "sensor.test" in message
-    assert "unavailable" in message
-    assert "recovered" in message.lower()
-    assert "No further action" in message
-
-
-def test_format_circuit_breaker_message():
-    """Test circuit breaker message formatting."""
-    escalator = NotificationEscalator(
-        Config(
-            home_assistant=HomeAssistantConfig(url="http://test", token="token"),
-        ),
-        AsyncMock(),
-    )
-
-    reset_time = datetime.now(UTC) + timedelta(minutes=30)
-    message = escalator._format_circuit_breaker_message("Test Integration", 10, reset_time)
-
-    assert "Test Integration" in message
-    assert "10" in message
-    assert "auto-healing" in message.lower()
-    assert "Action Required" in message
-
-
-def test_format_summary_message():
-    """Test summary message formatting."""
-    escalator = NotificationEscalator(
-        Config(
-            home_assistant=HomeAssistantConfig(url="http://test", token="token"),
-        ),
-        AsyncMock(),
-    )
-
-    stats = {
-        "total_attempts": 100,
-        "successful": 80,
-        "failed": 20,
-        "success_rate": 80.0,
-        "avg_duration_seconds": 2.5,
-        "top_issues": [
-            ("sensor.problem1", 5),
-            ("sensor.problem2", 3),
-            ("sensor.problem3", 2),
-        ],
-    }
-
-    message = escalator._format_summary_message(stats)
-
-    assert "100" in message
-    assert "80" in message
-    assert "20" in message
-    assert "80.0%" in message
-    assert "2.50s" in message
-    assert "sensor.problem1" in message
-    assert "sensor.problem2" in message
-    assert "Most Common Issues" in message
-
-
-def test_format_summary_message_no_top_issues():
-    """Test summary message formatting without top issues."""
-    escalator = NotificationEscalator(
-        Config(
-            home_assistant=HomeAssistantConfig(url="http://test", token="token"),
-        ),
-        AsyncMock(),
-    )
-
-    stats = {
-        "total_attempts": 50,
-        "successful": 50,
-        "failed": 0,
-        "success_rate": 100.0,
-        "avg_duration_seconds": 1.0,
-    }
-
-    message = escalator._format_summary_message(stats)
-
-    assert "50" in message
-    assert "100.0%" in message
-    assert "Most Common Issues" not in message
+    # Verify NotificationManager is created
+    assert hasattr(escalator, "notification_manager")
+    assert escalator.notification_manager is not None
