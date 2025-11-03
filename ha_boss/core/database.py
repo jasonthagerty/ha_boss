@@ -168,6 +168,16 @@ class Database:
         """Close database connections."""
         await self.engine.dispose()
 
+    async def __aenter__(self) -> "Database":
+        """Enter async context manager."""
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object
+    ) -> None:
+        """Exit async context manager."""
+        await self.close()
+
     async def cleanup_old_records(self, retention_days: int) -> dict[str, int]:
         """Clean up old records based on retention policy.
 

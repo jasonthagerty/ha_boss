@@ -1,3 +1,5 @@
 """Command-line interface for HA Boss."""
 
-__all__ = []
+from ha_boss.cli.commands import app, main
+
+__all__ = ["app", "main"]
