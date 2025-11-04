@@ -1,0 +1,64 @@
+# HA Boss - Production Configuration
+# Conservative configuration for production deployment with longer grace periods
+
+home_assistant:
+  url: "${HA_URL}"
+  token: "${HA_TOKEN}"
+
+monitoring:
+  # No include filter = monitor all entities
+  include: []
+
+  # Longer grace period for production stability
+  grace_period_seconds: 600  # 10 minutes
+
+  # Exclude non-critical and frequently changing entities
+  exclude:
+    - "sensor.time*"
+    - "sensor.date*"
+    - "sensor.uptime*"
+    - "sun.sun"
+    - "device_tracker.*"     # Mobile devices often go offline
+    - "person.*"             # People tracking may be intermittent
+
+  # Higher threshold for stale entities
+  stale_threshold_seconds: 7200  # 2 hours
+
+  # Validate WebSocket cache more frequently in production
+  snapshot_interval_seconds: 180  # 3 minutes
+
+healing:
+  enabled: true
+  max_attempts: 2           # Be conservative in production
+  cooldown_seconds: 600     # Longer cooldown (10 minutes)
+  circuit_breaker_threshold: 5         # Lower threshold
+  circuit_breaker_reset_seconds: 7200  # 2 hours
+
+notifications:
+  on_healing_failure: true
+  weekly_summary: true
+  ha_service: "persistent_notification.create"
+
+logging:
+  level: "INFO"
+  format: "json"  # JSON format for log aggregation
+  file: "/data/ha_boss.log"
+  max_size_mb: 50
+  backup_count: 10
+
+database:
+  path: "/data/ha_boss.db"
+  echo: false
+  retention_days: 90        # Keep 3 months of history
+
+websocket:
+  reconnect_delay_seconds: 5
+  heartbeat_interval_seconds: 30
+  timeout_seconds: 10
+
+rest:
+  timeout_seconds: 10
+  retry_attempts: 3
+  retry_base_delay_seconds: 1.0
+
+mode: "production"

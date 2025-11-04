@@ -1,0 +1,26 @@
+# HA Boss - Minimal Configuration
+# Minimal configuration with only essential settings
+
+home_assistant:
+  url: "${HA_URL}"
+  token: "${HA_TOKEN}"
+
+monitoring:
+  grace_period_seconds: 300
+  exclude:
+    - "sensor.time*"
+    - "sensor.date*"
+    - "sun.sun"
+
+healing:
+  enabled: true
+  max_attempts: 3
+  cooldown_seconds: 300
+
+logging:
+  level: "INFO"
+
+database:
+  path: "/data/ha_boss.db"
+
+mode: "production"

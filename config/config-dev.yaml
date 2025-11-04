@@ -1,0 +1,58 @@
+# HA Boss - Development/Testing Configuration
+# Aggressive configuration for development and testing with shorter timeouts
+
+home_assistant:
+  url: "${TEST_HA_URL}"
+  token: "${TEST_HA_TOKEN}"
+
+monitoring:
+  # Monitor specific test entities
+  include:
+    - "sensor.test_*"
+    - "binary_sensor.test_*"
+    - "switch.test_*"
+    - "light.test_*"
+
+  # Shorter grace period for faster testing
+  grace_period_seconds: 60  # 1 minute
+
+  # Lower threshold for stale detection
+  stale_threshold_seconds: 600  # 10 minutes
+
+  # More frequent snapshots for testing
+  snapshot_interval_seconds: 60  # 1 minute
+
+healing:
+  enabled: true
+  max_attempts: 5           # More attempts for testing
+  cooldown_seconds: 120     # Shorter cooldown (2 minutes)
+  circuit_breaker_threshold: 20
+  circuit_breaker_reset_seconds: 1800  # 30 minutes
+
+notifications:
+  on_healing_failure: true
+  weekly_summary: false
+
+logging:
+  level: "DEBUG"            # Verbose logging for development
+  format: "text"            # Human-readable format
+  file: "/data/ha_boss_dev.log"
+  max_size_mb: 10
+  backup_count: 3
+
+database:
+  path: "/data/ha_boss_dev.db"
+  echo: true                # Log SQL queries for debugging
+  retention_days: 7         # Short retention for testing
+
+websocket:
+  reconnect_delay_seconds: 2  # Faster reconnection for testing
+  heartbeat_interval_seconds: 15
+  timeout_seconds: 5
+
+rest:
+  timeout_seconds: 5
+  retry_attempts: 2
+  retry_base_delay_seconds: 0.5
+
+mode: "testing"
