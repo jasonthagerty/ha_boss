@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  haboss:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ha-boss:latest
+    container_name: ha-boss
+
+    # Restart policy for reliability
+    restart: unless-stopped
+
+    # Environment variables (override in .env file)
+    environment:
+      - HA_URL=${HA_URL:-http://homeassistant.local:8123}
+      - HA_TOKEN=${HA_TOKEN:?HA_TOKEN is required}
+      - CONFIG_PATH=/app/config/config.yaml
+      - TZ=${TZ:-UTC}
+
+    # Volume mounts for persistence
+    volumes:
+      # Configuration directory
+      - ./config:/app/config:ro
+      # Data directory (database, logs)
+      - ./data:/app/data:rw
+
+    # Network configuration
+    networks:
+      - haboss-network
+
+    # Health check (uses Dockerfile HEALTHCHECK)
+    # Interval: 30s, Timeout: 5s, Start period: 60s, Retries: 3
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+    # Logging configuration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  haboss-network:
+    driver: bridge
+    name: haboss-network

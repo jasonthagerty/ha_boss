@@ -1,0 +1,56 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# CI/CD
+.github/
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Data directories (created at runtime)
+data/
+*.db
+*.db-journal
+
+# Development tools
+.pre-commit-config.yaml
+.mypy_cache/
+.ruff_cache/
+
+# Claude Code
+.claude/
+
+# Misc
+.DS_Store
+*.log
+.env
