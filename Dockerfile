@@ -51,26 +51,36 @@ COPY config/config.yaml.example ./config/config.yaml.example
 RUN mkdir -p /app/config /app/data && \
     chown -R haboss:haboss /app
 
-# Add health check script
-COPY --chmod=755 <<'EOF' /usr/local/bin/healthcheck.sh
-#!/bin/bash
-# Health check script for HA Boss
-# Verifies service is running and responsive
+# Add health check script (Python-based, no external dependencies)
+COPY --chmod=755 <<'EOF' /usr/local/bin/healthcheck.py
+#!/usr/bin/env python3
+"""Health check script for HA Boss container."""
+import os
+import sys
+from pathlib import Path
 
-# Check if database exists (service has initialized)
-if [ ! -f "/app/data/ha_boss.db" ]; then
-    echo "Database not initialized"
-    exit 1
-fi
+def main() -> int:
+    """Run health checks and return exit code."""
+    # Check if database exists (indicates initialization)
+    db_path = Path("/app/data/ha_boss.db")
+    if not db_path.exists():
+        print("Database not initialized", file=sys.stderr)
+        return 1
 
-# Check if process is running
-if ! pgrep -f "haboss" > /dev/null; then
-    echo "HA Boss process not running"
-    exit 1
-fi
+    # Check if database is readable
+    try:
+        if not db_path.is_file() or not os.access(db_path, os.R_OK):
+            print("Database exists but is not accessible", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"Database check failed: {e}", file=sys.stderr)
+        return 1
 
-# All checks passed
-exit 0
+    # All checks passed
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
 EOF
 
 # Switch to non-root user
@@ -81,7 +91,7 @@ EXPOSE 8080
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD ["/usr/local/bin/healthcheck.sh"]
+    CMD ["python3", "/usr/local/bin/healthcheck.py"]
 
 # Set entrypoint for proper signal handling
 ENTRYPOINT ["python", "-m", "ha_boss.cli.commands"]
