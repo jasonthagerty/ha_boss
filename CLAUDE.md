@@ -801,6 +801,63 @@ See **Feature Branch Workflow** section above for complete details.
 6. Run full test suite (`make ci-check`)
 7. Create PR with "Closes #{number}" referencing issue
 
+### Discovering Bugs During Development
+
+**Standard approach when discovering bugs during feature development or testing**:
+
+When you discover a bug while working on a feature or during testing, follow this process:
+
+1. **Create GitHub Issue for Tracking**
+   - Document the bug with clear description
+   - Include error messages, reproduction steps
+   - Tag with appropriate labels (bug, priority)
+   - Reference the context where discovered (e.g., "Discovered during Docker deployment testing #7")
+
+2. **Assess Severity and Fix Immediately if Appropriate**
+   - **Fix immediately if**:
+     - Bug blocks current work or testing
+     - Fix is simple and well-understood
+     - Bug affects core functionality
+   - **Defer if**:
+     - Complex fix requiring significant research
+     - Not blocking current work
+     - Requires architectural discussion
+
+3. **Fix in Current Branch (if immediate fix)**
+   - Fix the bug in your current feature branch
+   - Commit with reference to bug issue: "Fixes #number"
+   - Include bug fix in current PR
+   - Document in PR description that bug was discovered and fixed
+
+4. **Update Documentation**
+   - If the bug reveals a gap in docs/examples, fix those too
+   - Update CLAUDE.md if process improvements are identified
+
+**Example**:
+```bash
+# Discovered config validation bug during Docker testing
+gh issue create --title "bug: invalid config section" --body "..." --label "bug,priority-high"
+# Returns issue #21
+
+# Fix immediately (blocking Docker deployment)
+git add config/config.yaml.example
+git commit -m "fix: remove invalid section
+
+Fixes #21
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# Bug fix included in feature PR with note about discovery
+```
+
+**Benefits of this approach**:
+- ✅ Proper issue tracking for metrics and project management
+- ✅ Clear commit history linking fixes to issues
+- ✅ Bugs don't block forward progress
+- ✅ Documentation of discovery context helps prevent future issues
+- ✅ Single PR for related changes reduces review overhead
+
 ### Reviewing PRs
 
 Use `/review-pr [number]` command to:
