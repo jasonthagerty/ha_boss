@@ -18,6 +18,7 @@ from ha_boss.core.exceptions import (
     HomeAssistantConnectionError,
 )
 from ha_boss.core.ha_client import create_ha_client
+from ha_boss.service import HABossService
 
 # Create Typer app
 app = typer.Typer(
@@ -224,22 +225,28 @@ def start(
     try:
         # Load configuration
         with console.status("[cyan]Loading configuration...", spinner="dots"):
-            _config = load_config(config_path)
+            config = load_config(config_path)
 
         console.print("[green]✓[/green] Configuration loaded")
 
-        # TODO: Implement actual service start
-        # For MVP, this would start the monitoring loop
-        console.print("\n[yellow]Note:[/yellow] Service start not yet implemented")
-        console.print("[dim]This will be implemented in the integration phase[/dim]")
-        console.print(
-            "\n[cyan]When implemented, this will:[/cyan]\n"
-            "- Connect to Home Assistant WebSocket\n"
-            "- Start health monitoring loop\n"
-            "- Enable auto-healing for failed entities\n"
-            "- Send notifications on failures\n"
-        )
+        # Create and start service
+        console.print("\n[cyan]Initializing HA Boss service...[/cyan]")
+        service = HABossService(config)
 
+        if foreground:
+            # Run in foreground (for Docker and development)
+            console.print("[cyan]Running in foreground mode (Ctrl+C to stop)[/cyan]\n")
+            asyncio.run(service.run_forever())
+        else:
+            # Background mode
+            console.print("[yellow]Background/daemon mode not yet implemented[/yellow]")
+            console.print("[cyan]Use --foreground to run in foreground mode[/cyan]")
+            console.print(
+                "\n[dim]For Docker deployments, use: haboss start --foreground[/dim]"
+            )
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Service interrupted by user[/yellow]")
     except Exception as e:
         handle_error(e)
 

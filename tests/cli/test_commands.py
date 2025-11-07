@@ -117,25 +117,28 @@ class TestStartCommand:
     """Tests for start command."""
 
     @patch("ha_boss.cli.commands.load_config")
-    def test_start_shows_not_implemented(self, mock_load):
-        """Test that start command shows not implemented message."""
-        from ha_boss.core.config import Config, HomeAssistantConfig
+    def test_start_attempts_to_run(self, mock_load):
+        """Test that start command now attempts to run the service."""
+        from ha_boss.core.config import Config, HomeAssistantConfig, DatabaseConfig
 
         mock_load.return_value = Config(
             home_assistant=HomeAssistantConfig(
                 url="http://test:8123",
                 token="test_token",
             ),
-            mode="production",
+            database=DatabaseConfig(
+                path=":memory:",
+                retention_days=30,
+            ),
+            mode="testing",
         )
 
         result = runner.invoke(app, ["start", "--foreground"])
 
-        # Should show the not-yet-implemented message
-        assert (
-            "not yet implemented" in result.stdout.lower()
-            or "when implemented" in result.stdout.lower()
-        )
+        # Service is now implemented, so should NOT show "not implemented"
+        assert "not yet implemented" not in result.stdout.lower()
+        # Should show it's initializing
+        assert "initializing" in result.stdout.lower()
 
 
 class TestStatusCommand:
