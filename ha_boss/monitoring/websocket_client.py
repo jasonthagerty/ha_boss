@@ -262,6 +262,14 @@ class WebSocketClient:
         except (TimeoutError, WebSocketException, json.JSONDecodeError):
             return False
 
+    def is_connected(self) -> bool:
+        """Check if WebSocket is currently connected.
+
+        Returns:
+            True if connected, False otherwise
+        """
+        return self._ws is not None and not self._ws.closed
+
 
 async def create_websocket_client(
     config: Config,

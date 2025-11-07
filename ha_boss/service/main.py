@@ -4,15 +4,13 @@ import asyncio
 import logging
 import signal
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 
 from ha_boss.core.config import Config
 from ha_boss.core.database import Database
 from ha_boss.core.exceptions import (
     CircuitBreakerOpenError,
-    DatabaseError,
-    HomeAssistantAuthError,
-    HomeAssistantConnectionError,
 )
 from ha_boss.core.ha_client import create_ha_client
 from ha_boss.healing.escalation import NotificationEscalator
@@ -21,7 +19,7 @@ from ha_boss.healing.integration_manager import IntegrationDiscovery
 from ha_boss.monitoring.health_monitor import HealthIssue, HealthMonitor
 from ha_boss.monitoring.state_tracker import EntityState, StateTracker
 from ha_boss.monitoring.websocket_client import WebSocketClient
-from ha_boss.notifications.manager import NotificationChannel, NotificationManager
+from ha_boss.notifications.manager import NotificationManager
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +73,22 @@ class HABossService:
         self.health_checks_performed = 0
         self.healings_attempted = 0
         self.healings_succeeded = 0
+        self.healings_failed = 0
 
     async def start(self) -> None:
         """Start the HA Boss service and all components.
+
+        Initialization order:
+        1. Database initialization
+        2. Home Assistant client connection + test
+        3. Notification manager
+        4. Integration discovery
+        5. State tracker with REST snapshot
+        6. Health monitor
+        7. Healing manager
+        8. Escalation manager
+        9. WebSocket connection and subscription
+        10. Background monitoring tasks
 
         Raises:
             DatabaseError: Database initialization failed
@@ -219,12 +230,10 @@ class HABossService:
 
     async def _periodic_health_checks(self) -> None:
         """Periodically run health checks on all monitored entities."""
-        interval = 60  # seconds
+        interval = self.config.monitoring.health_check_interval_seconds
 
         while not self._shutdown_event.is_set():
             try:
-                await asyncio.sleep(interval)
-
                 if self.health_monitor:
                     logger.debug("Running periodic health check...")
                     issues = await self.health_monitor.check_all_entities()
@@ -232,6 +241,8 @@ class HABossService:
 
                     if issues:
                         logger.info(f"Periodic check found {len(issues)} health issues")
+
+                await asyncio.sleep(interval)
 
             except asyncio.CancelledError:
                 break
@@ -244,8 +255,6 @@ class HABossService:
 
         while not self._shutdown_event.is_set():
             try:
-                await asyncio.sleep(interval)
-
                 if self.ha_client and self.state_tracker:
                     logger.debug("Fetching REST API snapshot for validation...")
                     states = await self.ha_client.get_states()
@@ -257,6 +266,8 @@ class HABossService:
                             await self.state_tracker.update_state(state_data)
 
                     logger.debug(f"Validated {len(states)} entities via REST snapshot")
+
+                await asyncio.sleep(interval)
 
             except asyncio.CancelledError:
                 break
@@ -301,9 +312,7 @@ class HABossService:
                         f"{issues[0].issue_type}"
                     )
             except Exception as e:
-                logger.error(
-                    f"Error checking health for {new_state.entity_id}: {e}", exc_info=True
-                )
+                logger.error(f"Error checking health for {new_state.entity_id}: {e}", exc_info=True)
 
     async def _on_health_issue(self, issue: HealthIssue) -> None:
         """Callback when health issue is detected.
@@ -334,18 +343,18 @@ class HABossService:
                     self.healings_succeeded += 1
                 else:
                     logger.warning(f"✗ Healing failed for {issue.entity_id}")
+                    self.healings_failed += 1
                     # Escalate to notifications
                     if self.escalation_manager:
                         await self.escalation_manager.notify_healing_failure(
                             entity_id=issue.entity_id,
                             failure_reason=f"{issue.issue_type} detected",
-                            attempts_made=1,  # Healing manager tracks internally
+                            # HealingManager tracks retry attempts internally
+                            attempts_made=self.config.healing.max_attempts,
                         )
 
             except CircuitBreakerOpenError:
-                logger.warning(
-                    f"Circuit breaker open, skipping heal attempt for {issue.entity_id}"
-                )
+                logger.warning(f"Circuit breaker open, skipping heal attempt for {issue.entity_id}")
                 # Escalate circuit breaker trip
                 if self.escalation_manager:
                     await self.escalation_manager.notify_circuit_breaker_open(
@@ -354,7 +363,9 @@ class HABossService:
                     )
 
             except Exception as e:
-                logger.error(f"Error during healing attempt for {issue.entity_id}: {e}", exc_info=True)
+                logger.error(
+                    f"Error during healing attempt for {issue.entity_id}: {e}", exc_info=True
+                )
         else:
             logger.info("Auto-healing disabled, issue logged only")
 
@@ -430,7 +441,7 @@ class HABossService:
 
         # Register signal handlers
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda s=sig: signal_handler(s))
+            loop.add_signal_handler(sig, partial(signal_handler, sig))
 
         # Start the service
         await self.start()
@@ -460,13 +471,14 @@ class HABossService:
             "uptime_seconds": uptime_seconds,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "websocket_connected": (
-                self.websocket_client is not None and self.websocket_client._ws is not None
+                self.websocket_client.is_connected() if self.websocket_client else False
             ),
             "healing_enabled": self.config.healing.enabled,
             "statistics": {
                 "health_checks_performed": self.health_checks_performed,
                 "healings_attempted": self.healings_attempted,
                 "healings_succeeded": self.healings_succeeded,
+                "healings_failed": self.healings_failed,
                 "healing_success_rate": success_rate,
             },
         }

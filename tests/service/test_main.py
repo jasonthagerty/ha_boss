@@ -1,8 +1,7 @@
 """Tests for main service orchestration."""
 
-import asyncio
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -61,6 +60,7 @@ class TestHABossServiceInitialization:
         assert service.health_checks_performed == 0
         assert service.healings_attempted == 0
         assert service.healings_succeeded == 0
+        assert service.healings_failed == 0
 
 
 class TestHABossServiceStart:
@@ -78,9 +78,9 @@ class TestHABossServiceStart:
             patch("ha_boss.service.main.IntegrationDiscovery") as mock_integration_discovery,
             patch("ha_boss.service.main.StateTracker") as mock_state_tracker,
             patch("ha_boss.service.main.HealthMonitor") as mock_health_monitor,
-            patch("ha_boss.service.main.HealingManager") as mock_healing_manager,
-            patch("ha_boss.service.main.NotificationEscalator") as mock_escalation_manager,
-            patch("ha_boss.service.main.NotificationManager") as mock_notification_manager,
+            patch("ha_boss.service.main.HealingManager"),
+            patch("ha_boss.service.main.NotificationEscalator"),
+            patch("ha_boss.service.main.NotificationManager"),
             patch("ha_boss.service.main.WebSocketClient") as mock_websocket_client,
         ):
             # Set up mocks
@@ -90,9 +90,11 @@ class TestHABossServiceStart:
 
             mock_client = AsyncMock()
             mock_client.get_states = AsyncMock(return_value=[])
+
             # create_ha_client is async, so return the client wrapped in a coroutine
             async def mock_create_client(config):
                 return mock_client
+
             mock_ha_client.side_effect = mock_create_client
 
             mock_discovery = AsyncMock()
@@ -135,9 +137,7 @@ class TestHABossServiceStart:
             mock_ws.connect.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_start_handles_connection_errors(
-        self, service: HABossService
-    ) -> None:
+    async def test_start_handles_connection_errors(self, service: HABossService) -> None:
         """Test that start() handles connection errors gracefully."""
         with (
             patch("ha_boss.service.main.Database") as mock_db_class,
@@ -148,12 +148,12 @@ class TestHABossServiceStart:
             mock_db_class.return_value = mock_db
 
             mock_client = AsyncMock()
-            mock_client.get_states = AsyncMock(
-                side_effect=Exception("Connection failed")
-            )
+            mock_client.get_states = AsyncMock(side_effect=Exception("Connection failed"))
+
             # create_ha_client is async
             async def mock_create_client(config):
                 return mock_client
+
             mock_ha_client.side_effect = mock_create_client
 
             with pytest.raises(Exception, match="Connection failed"):
@@ -213,9 +213,7 @@ class TestHABossServiceCallbacks:
     """Test service callback handlers."""
 
     @pytest.mark.asyncio
-    async def test_on_state_updated_triggers_health_check(
-        self, service: HABossService
-    ) -> None:
+    async def test_on_state_updated_triggers_health_check(self, service: HABossService) -> None:
         """Test that state updates trigger health checks."""
         # Set up mocks
         service.health_monitor = AsyncMock()
@@ -257,9 +255,7 @@ class TestHABossServiceCallbacks:
         assert service.healings_succeeded == 1
 
     @pytest.mark.asyncio
-    async def test_on_health_issue_escalates_on_failure(
-        self, service: HABossService
-    ) -> None:
+    async def test_on_health_issue_escalates_on_failure(self, service: HABossService) -> None:
         """Test that healing failures are escalated."""
         # Set up mocks
         service.config.healing.enabled = True
@@ -283,9 +279,7 @@ class TestHABossServiceCallbacks:
         assert service.healings_succeeded == 0
 
     @pytest.mark.asyncio
-    async def test_on_health_issue_skips_recovery_events(
-        self, service: HABossService
-    ) -> None:
+    async def test_on_health_issue_skips_recovery_events(self, service: HABossService) -> None:
         """Test that recovery events don't trigger healing."""
         # Set up mocks
         service.healing_manager = AsyncMock()
