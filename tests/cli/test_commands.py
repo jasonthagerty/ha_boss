@@ -119,7 +119,7 @@ class TestStartCommand:
     @patch("ha_boss.cli.commands.load_config")
     def test_start_attempts_to_run(self, mock_load):
         """Test that start command now attempts to run the service."""
-        from ha_boss.core.config import Config, HomeAssistantConfig, DatabaseConfig
+        from ha_boss.core.config import Config, DatabaseConfig, HomeAssistantConfig
 
         mock_load.return_value = Config(
             home_assistant=HomeAssistantConfig(

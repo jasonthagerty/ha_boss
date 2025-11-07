@@ -241,9 +241,7 @@ def start(
             # Background mode
             console.print("[yellow]Background/daemon mode not yet implemented[/yellow]")
             console.print("[cyan]Use --foreground to run in foreground mode[/cyan]")
-            console.print(
-                "\n[dim]For Docker deployments, use: haboss start --foreground[/dim]"
-            )
+            console.print("\n[dim]For Docker deployments, use: haboss start --foreground[/dim]")
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Service interrupted by user[/yellow]")

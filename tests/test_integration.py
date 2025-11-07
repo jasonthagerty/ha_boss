@@ -4,7 +4,6 @@ These tests verify the complete service flow with minimal mocking,
 ensuring all components work together correctly.
 """
 
-import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -119,9 +118,7 @@ async def test_service_handles_ha_unavailable(integration_config: Config) -> Non
     with patch("ha_boss.service.main.create_ha_client") as mock_ha_client:
         # Simulate HA being unavailable
         mock_client = AsyncMock()
-        mock_client.get_states = AsyncMock(
-            side_effect=Exception("Connection refused")
-        )
+        mock_client.get_states = AsyncMock(side_effect=Exception("Connection refused"))
         mock_ha_client.return_value = mock_client
 
         service = HABossService(integration_config)
