@@ -22,6 +22,7 @@ def integration_config() -> Config:
             "grace_period_seconds": 5,  # Short for testing
             "stale_threshold_seconds": 60,
             "snapshot_interval_seconds": 60,  # Minimum allowed
+            "health_check_interval_seconds": 10,  # Short for testing
         },
         healing={
             "enabled": True,
@@ -42,9 +43,19 @@ async def test_service_full_startup_and_shutdown(integration_config: Config) -> 
     """Test complete service lifecycle: startup -> running -> shutdown."""
     # Mock external dependencies
     with (
+        patch("ha_boss.service.main.Database") as mock_db_class,
+        patch("ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock),
+        patch("ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event", new_callable=AsyncMock),
+        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database", new_callable=AsyncMock),
+        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database", new_callable=AsyncMock),
         patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
+        # Set up Database mock
+        mock_db = AsyncMock()
+        mock_db.init_db = AsyncMock()
+        mock_db.close = AsyncMock()
+        mock_db_class.return_value = mock_db
         # Set up HA client mock
         mock_client = AsyncMock()
         mock_client.get_states = AsyncMock(
@@ -136,9 +147,20 @@ async def test_service_handles_ha_unavailable(integration_config: Config) -> Non
 async def test_service_state_update_flow(integration_config: Config) -> None:
     """Test the flow: WebSocket event -> State update -> Health check."""
     with (
+        patch("ha_boss.service.main.Database") as mock_db_class,
+        patch("ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock),
+        patch("ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event", new_callable=AsyncMock),
+        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database", new_callable=AsyncMock),
+        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database", new_callable=AsyncMock),
         patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
+        # Set up Database mock
+        mock_db = AsyncMock()
+        mock_db.init_db = AsyncMock()
+        mock_db.close = AsyncMock()
+        mock_db_class.return_value = mock_db
+
         # Set up mocks
         mock_client = AsyncMock()
         mock_client.get_states = AsyncMock(
@@ -197,9 +219,20 @@ async def test_service_state_update_flow(integration_config: Config) -> None:
 async def test_service_healing_flow(integration_config: Config) -> None:
     """Test the complete healing flow: Issue detection -> Healing -> Notification."""
     with (
+        patch("ha_boss.service.main.Database") as mock_db_class,
+        patch("ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock),
+        patch("ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event", new_callable=AsyncMock),
+        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database", new_callable=AsyncMock),
+        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database", new_callable=AsyncMock),
         patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
+        # Set up Database mock
+        mock_db = AsyncMock()
+        mock_db.init_db = AsyncMock()
+        mock_db.close = AsyncMock()
+        mock_db_class.return_value = mock_db
+
         # Set up mocks
         mock_client = AsyncMock()
         mock_client.get_states = AsyncMock(return_value=[])
@@ -250,9 +283,20 @@ async def test_service_healing_flow(integration_config: Config) -> None:
 async def test_service_graceful_shutdown_on_signal(integration_config: Config) -> None:
     """Test service responds to shutdown signals gracefully."""
     with (
+        patch("ha_boss.service.main.Database") as mock_db_class,
+        patch("ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock),
+        patch("ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event", new_callable=AsyncMock),
+        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database", new_callable=AsyncMock),
+        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database", new_callable=AsyncMock),
         patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
+        # Set up Database mock
+        mock_db = AsyncMock()
+        mock_db.init_db = AsyncMock()
+        mock_db.close = AsyncMock()
+        mock_db_class.return_value = mock_db
+
         # Set up minimal mocks
         mock_client = AsyncMock()
         mock_client.get_states = AsyncMock(return_value=[])

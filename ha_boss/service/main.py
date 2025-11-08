@@ -158,7 +158,7 @@ class HABossService:
                 config=self.config,
                 database=self.database,
                 state_tracker=self.state_tracker,
-                on_health_issue=self._on_health_issue,
+                on_issue_detected=self._on_health_issue,
             )
             await self.health_monitor.start()
             logger.info("✓ Health monitor started")
@@ -176,8 +176,8 @@ class HABossService:
             # 8. Initialize escalation manager
             logger.info("Initializing escalation manager...")
             self.escalation_manager = NotificationEscalator(
-                notification_manager=self.notification_manager,
                 config=self.config,
+                ha_client=self.ha_client,
             )
             logger.info("✓ Escalation manager initialized")
 
