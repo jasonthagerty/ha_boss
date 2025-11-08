@@ -63,6 +63,11 @@ class MonitoringConfig(BaseSettings):
         description="REST API snapshot interval for validation",
         ge=60,
     )
+    health_check_interval_seconds: int = Field(
+        default=60,
+        description="Periodic health check interval",
+        ge=10,
+    )
 
 
 class HealingConfig(BaseSettings):
