@@ -188,7 +188,7 @@ class HABossService:
                 on_state_changed=self._on_websocket_state_changed,
             )
             await self.websocket_client.connect()
-            await self.websocket_client.subscribe_to_state_changes()
+            await self.websocket_client.subscribe_events("state_changed")
             logger.info("✓ WebSocket connected and subscribed")
 
             # 10. Start background tasks
@@ -216,10 +216,8 @@ class HABossService:
         task.set_name("websocket_receiver")
         self._tasks.append(task)
 
-        # Periodic health checks (every 60 seconds)
-        task = asyncio.create_task(self._periodic_health_checks())
-        task.set_name("periodic_health_checks")
-        self._tasks.append(task)
+        # Note: HealthMonitor runs its own internal monitoring loop
+        # No need for separate periodic health check task here
 
         # Periodic REST snapshot validation (every 5 minutes)
         task = asyncio.create_task(self._periodic_snapshot_validation())
@@ -227,27 +225,6 @@ class HABossService:
         self._tasks.append(task)
 
         logger.info(f"Started {len(self._tasks)} background tasks")
-
-    async def _periodic_health_checks(self) -> None:
-        """Periodically run health checks on all monitored entities."""
-        interval = self.config.monitoring.health_check_interval_seconds
-
-        while not self._shutdown_event.is_set():
-            try:
-                if self.health_monitor:
-                    logger.debug("Running periodic health check...")
-                    issues = await self.health_monitor.check_all_entities()
-                    self.health_checks_performed += 1
-
-                    if issues:
-                        logger.info(f"Periodic check found {len(issues)} health issues")
-
-                await asyncio.sleep(interval)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in periodic health checks: {e}", exc_info=True)
 
     async def _periodic_snapshot_validation(self) -> None:
         """Periodically validate state tracker cache against REST API snapshot."""
@@ -305,11 +282,11 @@ class HABossService:
         # Trigger health check for this specific entity
         if self.health_monitor:
             try:
-                issues = await self.health_monitor.check_entity(new_state.entity_id)
-                if issues:
+                issue = await self.health_monitor.check_entity_now(new_state.entity_id)
+                if issue:
                     logger.debug(
                         f"State update triggered health issue for {new_state.entity_id}: "
-                        f"{issues[0].issue_type}"
+                        f"{issue.issue_type}"
                     )
             except Exception as e:
                 logger.error(f"Error checking health for {new_state.entity_id}: {e}", exc_info=True)
@@ -336,7 +313,7 @@ class HABossService:
                 logger.info(f"Attempting auto-heal for {issue.entity_id}...")
                 self.healings_attempted += 1
 
-                success = await self.healing_manager.heal_entity(issue.entity_id)
+                success = await self.healing_manager.heal(issue)
 
                 if success:
                     logger.info(f"✓ Successfully healed {issue.entity_id}")
@@ -347,19 +324,33 @@ class HABossService:
                     # Escalate to notifications
                     if self.escalation_manager:
                         await self.escalation_manager.notify_healing_failure(
-                            entity_id=issue.entity_id,
-                            failure_reason=f"{issue.issue_type} detected",
-                            # HealingManager tracks retry attempts internally
-                            attempts_made=self.config.healing.max_attempts,
+                            health_issue=issue,
+                            error=Exception(f"Healing failed after {self.config.healing.max_attempts} attempts"),
+                            attempts=self.config.healing.max_attempts,
                         )
 
             except CircuitBreakerOpenError:
                 logger.warning(f"Circuit breaker open, skipping heal attempt for {issue.entity_id}")
                 # Escalate circuit breaker trip
-                if self.escalation_manager:
+                if self.escalation_manager and self.integration_discovery:
+                    # Get integration name for notification
+                    entry_id = self.integration_discovery.get_integration_for_entity(issue.entity_id)
+                    integration_name = issue.entity_id  # Default to entity_id
+                    if entry_id:
+                        details = self.integration_discovery.get_integration_details(entry_id)
+                        if details:
+                            integration_name = details.get("title") or details.get("domain") or entry_id
+
+                    # Calculate reset time
+                    from datetime import timedelta
+                    reset_time = datetime.now(UTC) + timedelta(
+                        seconds=self.config.healing.circuit_breaker_reset_seconds
+                    )
+
                     await self.escalation_manager.notify_circuit_breaker_open(
-                        entity_id=issue.entity_id,
+                        integration_name=integration_name,
                         failure_count=self.config.healing.circuit_breaker_threshold,
+                        reset_time=reset_time,
                     )
 
             except Exception as e:

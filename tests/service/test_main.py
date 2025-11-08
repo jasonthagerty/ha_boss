@@ -217,7 +217,7 @@ class TestHABossServiceCallbacks:
         """Test that state updates trigger health checks."""
         # Set up mocks
         service.health_monitor = AsyncMock()
-        service.health_monitor.check_entity = AsyncMock(return_value=[])
+        service.health_monitor.check_entity_now = AsyncMock(return_value=None)
 
         # Create state
         new_state = EntityState(
@@ -229,7 +229,7 @@ class TestHABossServiceCallbacks:
         await service._on_state_updated(new_state, None)
 
         # Verify health check was called
-        service.health_monitor.check_entity.assert_called_once_with("sensor.test")
+        service.health_monitor.check_entity_now.assert_called_once_with("sensor.test")
 
     @pytest.mark.asyncio
     async def test_on_health_issue_triggers_healing(self, service: HABossService) -> None:
@@ -237,7 +237,7 @@ class TestHABossServiceCallbacks:
         # Set up mocks
         service.config.healing.enabled = True
         service.healing_manager = AsyncMock()
-        service.healing_manager.heal_entity = AsyncMock(return_value=True)
+        service.healing_manager.heal = AsyncMock(return_value=True)
         service.escalation_manager = AsyncMock()
 
         # Create health issue
@@ -250,7 +250,7 @@ class TestHABossServiceCallbacks:
         await service._on_health_issue(issue)
 
         # Verify healing was attempted
-        service.healing_manager.heal_entity.assert_called_once_with("sensor.test")
+        service.healing_manager.heal.assert_called_once_with(issue)
         assert service.healings_attempted == 1
         assert service.healings_succeeded == 1
 
@@ -260,7 +260,7 @@ class TestHABossServiceCallbacks:
         # Set up mocks
         service.config.healing.enabled = True
         service.healing_manager = AsyncMock()
-        service.healing_manager.heal_entity = AsyncMock(return_value=False)
+        service.healing_manager.heal = AsyncMock(return_value=False)
         service.escalation_manager = AsyncMock()
         service.escalation_manager.notify_healing_failure = AsyncMock()
 
@@ -277,6 +277,7 @@ class TestHABossServiceCallbacks:
         service.escalation_manager.notify_healing_failure.assert_called_once()
         assert service.healings_attempted == 1
         assert service.healings_succeeded == 0
+        assert service.healings_failed == 1
 
     @pytest.mark.asyncio
     async def test_on_health_issue_skips_recovery_events(self, service: HABossService) -> None:
