@@ -325,7 +325,9 @@ class HABossService:
                     if self.escalation_manager:
                         await self.escalation_manager.notify_healing_failure(
                             health_issue=issue,
-                            error=Exception(f"Healing failed after {self.config.healing.max_attempts} attempts"),
+                            error=Exception(
+                                f"Healing failed after {self.config.healing.max_attempts} attempts"
+                            ),
                             attempts=self.config.healing.max_attempts,
                         )
 
@@ -334,15 +336,20 @@ class HABossService:
                 # Escalate circuit breaker trip
                 if self.escalation_manager and self.integration_discovery:
                     # Get integration name for notification
-                    entry_id = self.integration_discovery.get_integration_for_entity(issue.entity_id)
+                    entry_id = self.integration_discovery.get_integration_for_entity(
+                        issue.entity_id
+                    )
                     integration_name = issue.entity_id  # Default to entity_id
                     if entry_id:
                         details = self.integration_discovery.get_integration_details(entry_id)
                         if details:
-                            integration_name = details.get("title") or details.get("domain") or entry_id
+                            integration_name = (
+                                details.get("title") or details.get("domain") or entry_id
+                            )
 
                     # Calculate reset time
                     from datetime import timedelta
+
                     reset_time = datetime.now(UTC) + timedelta(
                         seconds=self.config.healing.circuit_breaker_reset_seconds
                     )

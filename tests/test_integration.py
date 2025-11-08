@@ -45,10 +45,21 @@ async def test_service_full_startup_and_shutdown(integration_config: Config) -> 
     # Mock external dependencies
     with (
         patch("ha_boss.service.main.Database") as mock_db_class,
-        patch("ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock),
-        patch("ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event", new_callable=AsyncMock),
-        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database", new_callable=AsyncMock),
-        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database", new_callable=AsyncMock),
+        patch(
+            "ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock
+        ),
+        patch(
+            "ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
+            new_callable=AsyncMock,
+        ),
         patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
@@ -160,10 +171,21 @@ async def test_service_state_update_flow(integration_config: Config) -> None:
     """Test the flow: WebSocket event -> State update -> Health check."""
     with (
         patch("ha_boss.service.main.Database") as mock_db_class,
-        patch("ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock),
-        patch("ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event", new_callable=AsyncMock),
-        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database", new_callable=AsyncMock),
-        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database", new_callable=AsyncMock),
+        patch(
+            "ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock
+        ),
+        patch(
+            "ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
+            new_callable=AsyncMock,
+        ),
         patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
@@ -241,10 +263,21 @@ async def test_service_healing_flow(integration_config: Config) -> None:
     """Test the complete healing flow: Issue detection -> Healing -> Notification."""
     with (
         patch("ha_boss.service.main.Database") as mock_db_class,
-        patch("ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock),
-        patch("ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event", new_callable=AsyncMock),
-        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database", new_callable=AsyncMock),
-        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database", new_callable=AsyncMock),
+        patch(
+            "ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock
+        ),
+        patch(
+            "ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
+            new_callable=AsyncMock,
+        ),
         patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
@@ -315,10 +348,21 @@ async def test_service_graceful_shutdown_on_signal(integration_config: Config) -
     """Test service responds to shutdown signals gracefully."""
     with (
         patch("ha_boss.service.main.Database") as mock_db_class,
-        patch("ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock),
-        patch("ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event", new_callable=AsyncMock),
-        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database", new_callable=AsyncMock),
-        patch("ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database", new_callable=AsyncMock),
+        patch(
+            "ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock
+        ),
+        patch(
+            "ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
+            new_callable=AsyncMock,
+        ),
         patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
