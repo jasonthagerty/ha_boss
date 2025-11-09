@@ -455,7 +455,7 @@ class HABossService:
         Returns:
             Dictionary with service status information
         """
-        uptime_seconds = 0
+        uptime_seconds = 0.0
         if self.start_time:
             uptime_seconds = (datetime.now(UTC) - self.start_time).total_seconds()
 

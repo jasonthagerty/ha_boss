@@ -36,12 +36,12 @@ notifications:
 logging:
   level: "DEBUG"            # Verbose logging for development
   format: "text"            # Human-readable format
-  file: "/data/ha_boss_dev.log"
+  file: "data/ha_boss_dev.log"
   max_size_mb: 10
   backup_count: 3
 
 database:
-  path: "/data/ha_boss_dev.db"
+  path: "data/ha_boss_dev.db"
   echo: true                # Log SQL queries for debugging
   retention_days: 7         # Short retention for testing
 
