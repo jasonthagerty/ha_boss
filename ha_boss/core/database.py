@@ -132,6 +132,73 @@ class StateHistory(Base):
         return f"<StateHistory({self.entity_id}, {self.old_state}→{self.new_state})>"
 
 
+# Phase 2: Pattern Collection Models
+
+
+class IntegrationReliability(Base):
+    """Track individual integration reliability events for pattern analysis."""
+
+    __tablename__ = "integration_reliability"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    integration_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    integration_domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, index=True
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # heal_success, heal_failure, unavailable
+    entity_id: Mapped[str | None] = mapped_column(String(255))
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<IntegrationReliability({self.integration_domain}, {self.event_type}, {self.timestamp})>"
+
+
+class IntegrationMetrics(Base):
+    """Aggregated integration reliability metrics for faster queries."""
+
+    __tablename__ = "integration_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    integration_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    integration_domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    period_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    total_events: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    heal_successes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    heal_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    unavailable_events: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    success_rate: Mapped[float | None] = mapped_column(Float)
+
+    def __repr__(self) -> str:
+        return f"<IntegrationMetrics({self.integration_domain}, {self.period_start}, rate={self.success_rate})>"
+
+
+class PatternInsight(Base):
+    """Store pre-calculated pattern insights for analysis."""
+
+    __tablename__ = "pattern_insights"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    insight_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # top_failures, time_of_day, correlation
+    period: Mapped[str] = mapped_column(String(20), nullable=False)  # daily, weekly, monthly
+    period_start: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<PatternInsight({self.insight_type}, {self.period}, {self.period_start})>"
+
+
 class Database:
     """Database manager for HA Boss."""
 
