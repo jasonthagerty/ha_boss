@@ -1,0 +1,13 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schema/mcp.json",
+  "description": "Example MCP server configuration for HA Boss project",
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
