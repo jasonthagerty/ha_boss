@@ -8,20 +8,23 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 
 ### Core Capabilities
 
-**Phase 1 (MVP - Current Focus)**:
+**Phase 1 (MVP - Complete)**:
 - Real-time monitoring of Home Assistant entities via WebSocket
 - Automatic detection of unavailable/stale entities
 - Auto-healing via integration reload with safety mechanisms
 - Escalated notifications when auto-healing fails
 - Docker-first deployment
 
-**Phase 2 (Intelligence Layer)**:
-- Local LLM integration (Ollama) for enhanced notifications
-- Usage pattern collection and analysis
-- Weekly summary reports
+**Phase 2 (Pattern Collection & Analysis - Current Focus)**:
+- Integration reliability tracking (success rates, failure patterns)
+- Database schema for pattern storage
+- CLI reports for reliability analysis
+- Foundation for future AI-driven insights
 
-**Phase 3 (Advanced Features)**:
+**Phase 3 (Intelligence Layer)**:
+- Local LLM integration (Ollama) for enhanced notifications
 - Pattern-based anomaly detection
+- Weekly summary reports with AI analysis
 - Automation optimization suggestions
 - Claude API integration for complex automation generation
 
@@ -39,36 +42,26 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 
 - **Python 3.12** (required for consistency with CI)
 - **uv** (fast Python package installer - https://github.com/astral-sh/uv)
+- **GitHub MCP Server** (recommended) - for issue/PR management via Claude Code
+  - See "GitHub MCP Server Integration" section below for setup
+  - Alternative: `gh` CLI (optional if MCP server configured)
 
-**Note for GitHub Actions/CI**: The following tools are pre-installed in GitHub Actions runners and do not need installation:
-- `gh` (GitHub CLI) - already available
-- `git` - already available
+**Note for GitHub Actions/CI**: The following tools are pre-installed in GitHub Actions runners:
+- `git` - version control
+- `gh` (GitHub CLI) - available as fallback
 
 ### Local Development Setup
 
-**If you're working locally** (not in GitHub Actions), you'll also need:
-- **GitHub CLI (gh)** - for issue/PR management (https://cli.github.com/)
+**Primary method (recommended):**
+- Configure GitHub MCP Server (see "GitHub MCP Server Integration" section)
+- Claude Code will handle GitHub operations automatically
+
+**Alternative (if MCP not available):**
+- **GitHub CLI (gh)** - for manual issue/PR management (https://cli.github.com/)
 
 ```bash
 # Install uv if not already installed
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install GitHub CLI (LOCAL DEVELOPMENT ONLY - skip if running in GitHub Actions)
-# Check if gh is already installed
-if ! command -v gh &> /dev/null; then
-  # macOS
-  brew install gh
-  # Linux (Debian/Ubuntu)
-  # curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-  # echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-  # sudo apt update && sudo apt install gh
-  # Windows (via scoop)
-  # scoop install gh
-fi
-
-# Authenticate with GitHub (required for gh commands)
-gh auth login
-# Follow prompts: select HTTPS, authenticate via browser, grant required scopes
 
 # Create virtual environment with Python 3.12
 uv venv --python 3.12
@@ -410,6 +403,11 @@ When assigned an issue or tagged with `@claude`:
 6. **Push and Create PR**
    ```bash
    git push origin feature/issue-{number}-brief-description
+
+   # If using GitHub MCP (recommended):
+   # Claude Code will offer to create PR automatically
+
+   # Alternatively, use gh CLI:
    gh pr create --title "feat: brief description" --body "Closes #{number}"
    ```
 
@@ -457,6 +455,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 # 5. Push and create PR
 git push origin feature/issue-2-integration-discovery
+
+# With GitHub MCP configured, Claude Code can create the PR:
+# "Create a pull request with title 'feat: implement integration discovery system'"
+
+# Or manually with gh CLI:
 gh pr create --title "feat: implement integration discovery system" \
   --body "Closes #2
 
@@ -759,12 +762,19 @@ Pre-commit hooks are available but disabled by default. Enable in `.claude/setti
 }
 ```
 
-### GitHub App Integration
+### GitHub Integration
 
-To enable full Claude Code integration:
-1. Run `/install-github-app` in Claude Code CLI
-2. Add `ANTHROPIC_API_KEY` to GitHub repository secrets
-3. Ensure workflows have correct permissions (already configured)
+**Recommended: GitHub MCP Server** (see section below)
+- Provides direct GitHub API access for issues, PRs, and repository operations
+- Works in all environments (web, desktop, CI/CD)
+- No CLI dependencies required
+
+**Alternative: GitHub App Integration** (legacy)
+- For workflow automation and CI/CD triggers
+- Steps:
+  1. Run `/install-github-app` in Claude Code CLI
+  2. Add `ANTHROPIC_API_KEY` to GitHub repository secrets
+  3. Ensure workflows have correct permissions (already configured)
 
 ### GitHub MCP Server Integration
 
