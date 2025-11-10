@@ -280,6 +280,22 @@ async def test_get_integration_details(integration_discovery, mock_storage_files
 
 
 @pytest.mark.asyncio
+async def test_get_domain(integration_discovery, mock_storage_files):
+    """Test getting integration domain."""
+    await integration_discovery._discover_from_storage(mock_storage_files)
+
+    # Test getting domain for known integration
+    domain = integration_discovery.get_domain("abc123")
+    assert domain == "hue"
+
+    domain = integration_discovery.get_domain("def456")
+    assert domain == "zwave_js"
+
+    # Unknown integration returns None
+    assert integration_discovery.get_domain("unknown") is None
+
+
+@pytest.mark.asyncio
 async def test_get_all_integrations(integration_discovery, mock_storage_files):
     """Test getting all integrations."""
     await integration_discovery._discover_from_storage(mock_storage_files)

@@ -292,6 +292,20 @@ class IntegrationDiscovery:
         """
         return self._entity_to_integration.get(entity_id)
 
+    def get_domain(self, integration_id: str) -> str | None:
+        """Get domain for an integration.
+
+        Args:
+            integration_id: Integration config entry ID
+
+        Returns:
+            Integration domain (e.g., 'hue', 'zwave') or None if not found
+        """
+        integration = self._integrations.get(integration_id)
+        if integration:
+            return integration.get("domain")
+        return None
+
     def get_integration_details(self, entry_id: str) -> dict[str, Any] | None:
         """Get integration details for a given entry ID.
 
