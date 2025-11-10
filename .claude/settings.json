@@ -11,13 +11,6 @@
     }
   },
 
-  "hooks": {
-    "pre-commit": {
-      "enabled": false,
-      "command": "pytest --maxfail=1 -x"
-    }
-  },
-
   "context": {
     "includePatterns": [
       "**/*.py",
