@@ -375,19 +375,25 @@ When assigned an issue or tagged with `@claude`:
    - Review description, acceptance criteria, and technical notes
    - Check related components and dependencies
    - Understand the branch name to use
+   - Verify issue is on project board
 
-2. **Create Feature Branch**
+2. **Start Work (Update Project)**
+   - Comment on issue: "Starting work on this issue"
+   - If epic: Update epic checklist to mark sub-task as in-progress
+   - Project board should auto-update to "In Progress"
+
+3. **Create Feature Branch**
    ```bash
    git checkout -b feature/issue-{number}-brief-description
    ```
 
-3. **Implement Feature**
+4. **Implement Feature**
    - Follow acceptance criteria
    - Add type hints (mypy compliance)
    - Write comprehensive tests (≥80% coverage)
    - Follow code quality standards
 
-4. **Test Locally**
+5. **Test Locally**
    ```bash
    # Run all CI checks
    make ci-check
@@ -395,12 +401,12 @@ When assigned an issue or tagged with `@claude`:
    black --check . && ruff check . && mypy ha_boss && pytest
    ```
 
-5. **Commit Changes**
+6. **Commit Changes**
    - Use conventional commit messages
    - Include co-authored-by for Claude
    - Reference issue number
 
-6. **Push and Create PR**
+7. **Push and Create PR**
    ```bash
    git push origin feature/issue-{number}-brief-description
 
@@ -411,16 +417,19 @@ When assigned an issue or tagged with `@claude`:
    gh pr create --title "feat: brief description" --body "Closes #{number}"
    ```
 
-7. **PR Description Must Include**
+8. **PR Description Must Include**
    - "Closes #{number}" to auto-close issue
    - Summary of changes
    - Testing performed
    - Any breaking changes or notes
 
-8. **After Merge**
-   - Issue automatically closes
+9. **After Merge (Update Project)**
+   - Issue automatically closes (via "Closes #" in PR)
    - Branch can be deleted
-   - Project board updates automatically
+   - Project board updates to "Done" automatically
+   - **If Epic**: Update epic issue checklist to mark sub-task complete
+   - **If Blocked Others**: Comment on unblocked issues to notify
+   - Move to next issue in dependency chain
 
 ### Example: Implementing Issue #2
 
@@ -478,6 +487,61 @@ Implements the integration discovery system to map Home Assistant entities to in
 - Tested with mock HA storage files"
 ```
 
+### Managing Epics and Sub-Tasks
+
+Epics track large features or phases that consist of multiple sub-tasks.
+
+#### Epic Management Workflow
+
+**When Creating an Epic:**
+1. Create the epic issue with:
+   - Clear overview and goals
+   - List of sub-tasks with checkboxes (use `- [ ]` syntax)
+   - Success criteria
+   - Timeline estimates
+2. Label with `epic` and appropriate phase label
+3. Create individual issues for each sub-task
+4. Link sub-tasks to epic in both directions:
+   - Epic body: `- [ ] #26: Task description`
+   - Sub-task body: `**Epic**: #25 Phase 2`
+
+**When Working on Sub-Tasks:**
+1. Start work: Comment on epic to notify progress
+2. Complete sub-task: Update epic checklist
+   - Change `- [ ] #26: Task` to `- [x] #26: Task`
+   - Or use GitHub's automatic linking via PR mentions
+
+**When Epic is Complete:**
+1. Verify all sub-tasks are complete (all checkboxes checked)
+2. Add summary comment with outcomes
+3. Close the epic issue
+4. Celebrate! 🎉
+
+#### Example: Phase 2 Epic (#32)
+
+```markdown
+## 📋 Subtasks
+
+### Foundation
+- [ ] #26: Design and implement pattern database schema
+- [ ] #27: Create PatternCollector service
+- [ ] #28: Implement integration reliability tracking
+
+### User-Facing
+- [ ] #29: Add pattern analysis queries and reports
+- [ ] #30: Integrate pattern collection with service orchestration
+
+### Quality
+- [ ] #31: Add comprehensive tests
+```
+
+**After completing #26:**
+```markdown
+- [x] #26: Design and implement pattern database schema ✓
+- [ ] #27: Create PatternCollector service
+...
+```
+
 ### Getting Assigned Issues
 
 Issues are assigned to Claude in several ways:
@@ -487,12 +551,126 @@ Issues are assigned to Claude in several ways:
 3. **claude-task Label**: Issues labeled `claude-task` are automatically available
 4. **CI Failures**: Automatic issues created from CI failures are auto-assigned
 
-### Project Board Integration
+### Project Board Management
 
-- **GitHub Project**: https://github.com/users/jasonthagerty/projects/1
-- All issues automatically added to project board
-- Status updates automatically as issues progress
-- Filter by labels to view MVP, phases, or priorities
+GitHub Projects provide a visual way to track work across phases and priorities. Claude Code should proactively manage the project board to keep it synchronized with actual work status.
+
+#### Project Structure
+
+- **Current Project**: https://github.com/users/jasonthagerty/projects/1
+- **Purpose**: Track all HA Boss work (Phase 1, Phase 2, Phase 3+)
+- **Organization**: By phase, priority, and status
+
+#### When to Update the Project Board
+
+Update the project board at these key moments:
+
+1. **After Creating Issues** - Link new issues to project
+2. **When Starting Work** - Move issue to "In Progress"
+3. **After Completing Work** - Move issue to "Done" when PR merged
+4. **After Creating Epics** - Ensure epic is tracked on board
+5. **When Work is Blocked** - Update status to reflect blockers
+
+#### Checking if Project Exists
+
+Before creating a new project, verify the current project exists and is appropriate:
+
+```bash
+# Use GitHub MCP to check projects
+# If project doesn't exist or you need to create a new one for a phase:
+# Ask the user first: "Should I create a new project for Phase 2, or add to the existing project?"
+```
+
+**Decision Criteria:**
+- **Same Project**: If work is part of the same product/repository
+- **New Project**: If starting a completely separate effort or major initiative
+- **For HA Boss**: All phases use the same project (Project #1)
+
+#### Managing Issues on the Project Board
+
+**Using GitHub MCP (Recommended):**
+
+While the GitHub MCP server doesn't have direct project management tools yet, you can:
+1. Issues are automatically added to the project when created
+2. Update issue status by changing labels or closing issues
+3. Ask the user if manual project board updates are needed
+
+**Manual Updates (when needed):**
+- Issues typically auto-link when created in the repository
+- Status can be updated via the GitHub web UI
+- Claude can remind the user to update project status
+
+#### Project Board Best Practices
+
+1. **Proactive Updates**: Update status as work progresses, not at the end
+2. **Status Accuracy**: Ensure status reflects reality:
+   - **Todo**: Not yet started
+   - **In Progress**: Actively working on it
+   - **Done**: PR merged and issue closed
+3. **Epic Tracking**: Keep epics updated with completion status of sub-tasks
+4. **Blocked Items**: If blocked, comment on the issue with details
+5. **Regular Reviews**: Suggest project board reviews during phase transitions
+
+#### Example: Creating Issues for Phase 2
+
+```python
+# After creating issues #26-#32 for Phase 2:
+
+# 1. Verify issues were created
+#    ✓ All 7 issues created
+
+# 2. Check if they're on the project board
+#    (Usually automatic for repository issues)
+
+# 3. If not automatic, inform the user:
+#    "Issues #26-#32 have been created for Phase 2. They should
+#     automatically appear on the project board. You can view them at:
+#     https://github.com/users/jasonthagerty/projects/1"
+
+# 4. Suggest organizing by phase:
+#    "I recommend filtering the project board by 'phase-2' label to
+#     see all Phase 2 work items."
+```
+
+#### Example: Updating Status After Completing Work
+
+```python
+# After merging PR for Issue #26:
+
+# 1. Issue automatically closes (via "Closes #26" in PR)
+# 2. Project board status updates to "Done" (automatic in most cases)
+# 3. Update epic checklist (if applicable)
+# 4. Move to next issue in the dependency chain
+
+# No manual project board update needed in most cases!
+```
+
+#### Troubleshooting Project Board Issues
+
+**Issue doesn't appear on project board:**
+- Check if repository is linked to the project
+- Manually add via issue sidebar → "Projects"
+- Verify project permissions
+
+**Status not updating:**
+- GitHub Projects (v2) usually auto-update based on issue state
+- Classic Projects may need manual updates
+- Check project automation rules
+
+**Creating a New Project (if needed):**
+
+Ask the user first, then if approved:
+```bash
+# Using gh CLI (if available):
+gh project create --owner jasonthagerty --title "HA Boss Phase 2" \
+  --body "Track Phase 2 pattern collection work"
+
+# Or guide the user through GitHub web UI:
+# 1. Go to https://github.com/users/jasonthagerty/projects
+# 2. Click "New project"
+# 3. Choose template (Board, Table, or Roadmap)
+# 4. Configure fields and views
+```
 
 ### Branch Protection
 
