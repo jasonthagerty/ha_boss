@@ -766,6 +766,117 @@ To enable full Claude Code integration:
 2. Add `ANTHROPIC_API_KEY` to GitHub repository secrets
 3. Ensure workflows have correct permissions (already configured)
 
+### GitHub MCP Server Integration
+
+The GitHub MCP (Model Context Protocol) server enables Claude Code to directly create and manage GitHub issues, PRs, and other repository operations without relying on the `gh` CLI. This is particularly useful in environments where the GitHub CLI is not available (containers, CI/CD, etc.).
+
+**Why Use GitHub MCP Server?**
+
+- ✅ Works in any environment (web, desktop, containers, CI/CD)
+- ✅ Direct API access through structured MCP tools
+- ✅ No dependency on `gh` CLI installation
+- ✅ Consistent interface across all Claude Code deployments
+- ✅ Enables automated issue creation from CI failures
+
+**Setup Instructions:**
+
+1. **Install GitHub MCP Server** (if not already installed):
+   ```bash
+   # Install globally via npm (optional, npx can be used without install)
+   npm install -g @modelcontextprotocol/server-github
+   ```
+
+2. **Create GitHub Personal Access Token**:
+   - Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - Click "Generate new token (classic)"
+   - Select scopes:
+     - `repo` (full repository access)
+     - `issues` (create/edit issues)
+     - `workflow` (trigger workflows, if needed)
+   - Copy token immediately (cannot be retrieved later)
+   - Store securely (treat like a password)
+
+3. **Configure MCP Server**:
+
+   For **Claude Code Web/Desktop** (user-level configuration):
+   - Create or edit `~/.config/claude/mcp.json` (Linux/Mac) or `%APPDATA%\Claude\mcp.json` (Windows)
+   - Use the configuration template below
+
+   For **Project Reference** (check-in example for team):
+   - See `.claude/mcp.json.example` in this repository
+   - Copy to your user-level Claude config directory
+
+   **Configuration Template:**
+   ```json
+   {
+     "mcpServers": {
+       "github": {
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-github"],
+         "env": {
+           "GITHUB_TOKEN": "ghp_your_actual_token_here"
+         }
+       }
+     }
+   }
+   ```
+
+4. **Restart Claude Code** to load the MCP server configuration
+
+5. **Verify Installation**:
+   - In Claude Code, you should now have access to GitHub tools
+   - Available operations include:
+     - Create/update/close issues
+     - Create/update pull requests
+     - Add/remove labels
+     - Add comments to issues/PRs
+     - Search issues and PRs
+     - Get repository information
+
+**Usage Examples:**
+
+Once configured, Claude Code can automatically:
+
+```bash
+# Create a new issue
+"Create a GitHub issue titled 'Bug: config validation fails' with label 'bug'"
+
+# Add comment to existing issue
+"Add a comment to issue #25 explaining the root cause"
+
+# Create PR from current branch
+"Create a pull request for this branch with title 'feat: add health monitoring'"
+```
+
+**Security Notes:**
+
+- **Never commit** the actual `mcp.json` with real tokens to the repository
+- The `.claude/mcp.json.example` file is for reference only (contains placeholder)
+- Store your actual token in the user-level config directory (not tracked by git)
+- GitHub tokens grant significant repository access - protect them like passwords
+- Consider using a separate GitHub account or bot account for CI/CD automation
+- Rotate tokens periodically and revoke unused tokens
+
+**Troubleshooting:**
+
+- **"GitHub MCP server not found"**: Ensure `npx` is available (requires Node.js)
+- **"Authentication failed"**: Verify token has correct scopes (`repo`, `issues`)
+- **"Permission denied"**: Check token hasn't expired and has access to the repository
+- **Config not loading**: Ensure `mcp.json` is in the correct location for your OS
+
+**Alternative: GitHub CLI (`gh`)**
+
+If you prefer using the GitHub CLI instead of MCP:
+- See the "Local Development Setup" section for `gh` installation
+- Note: `gh` CLI may not be available in all environments (containers, CI/CD)
+- MCP server is recommended for consistent cross-environment support
+
+**Detailed Setup & Testing Guide:**
+
+For complete step-by-step instructions, troubleshooting, and testing procedures, see:
+- `.claude/GITHUB_MCP_SETUP.md` - Comprehensive setup and testing guide
+- `.claude/mcp.json.example` - Example MCP configuration file
+
 ## Security Considerations
 
 - Never commit `.env` files or secrets
