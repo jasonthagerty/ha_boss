@@ -63,6 +63,7 @@ class HABossService:
         self.healing_manager: HealingManager | None = None
         self.notification_manager: NotificationManager | None = None
         self.escalation_manager: NotificationEscalator | None = None
+        self.pattern_collector: Any = None  # PatternCollector (Phase 2)
 
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
@@ -180,6 +181,21 @@ class HABossService:
                 ha_client=self.ha_client,
             )
             logger.info("✓ Escalation manager initialized")
+
+            # 8.5 Initialize pattern collector (Phase 2)
+            if self.config.intelligence.pattern_collection_enabled:
+                try:
+                    from ha_boss.intelligence.pattern_collector import PatternCollector
+
+                    logger.info("Initializing pattern collector...")
+                    self.pattern_collector = PatternCollector(
+                        database=self.database,
+                        config=self.config,
+                    )
+                    logger.info("✓ Pattern collector initialized")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize pattern collector: {e}")
+                    logger.info("Continuing without pattern collection")
 
             # 9. Connect WebSocket
             logger.info("Connecting to Home Assistant WebSocket...")
@@ -307,6 +323,29 @@ class HABossService:
             logger.info(f"Entity {issue.entity_id} recovered automatically")
             return
 
+        # Record unavailable event for pattern analysis (Phase 2)
+        if self.pattern_collector and issue.issue_type in ("unavailable", "stale"):
+            try:
+                # Get integration info
+                integration_id = None
+                integration_domain = None
+                if self.integration_discovery:
+                    integration_id = self.integration_discovery.get_integration_for_entity(
+                        issue.entity_id
+                    )
+                    if integration_id:
+                        integration_domain = self.integration_discovery.get_domain(integration_id)
+
+                await self.pattern_collector.record_entity_unavailable(
+                    entity_id=issue.entity_id,
+                    integration_id=integration_id,
+                    integration_domain=integration_domain,
+                    timestamp=issue.detected_at,
+                    details=issue.details,
+                )
+            except Exception as e:
+                logger.debug(f"Failed to record unavailable event: {e}")
+
         # Attempt auto-healing if enabled
         if self.config.healing.enabled and self.healing_manager:
             try:
@@ -314,6 +353,45 @@ class HABossService:
                 self.healings_attempted += 1
 
                 success = await self.healing_manager.heal(issue)
+
+                # Record healing attempt for pattern analysis (Phase 2)
+                if self.pattern_collector:
+                    try:
+                        # Get integration info
+                        integration_id = None
+                        integration_domain = None
+                        if self.integration_discovery:
+                            integration_id = self.integration_discovery.get_integration_for_entity(
+                                issue.entity_id
+                            )
+                            if integration_id:
+                                integration_domain = self.integration_discovery.get_domain(
+                                    integration_id
+                                )
+
+                        if success:
+                            await self.pattern_collector.record_healing_attempt(
+                                entity_id=issue.entity_id,
+                                integration_id=integration_id,
+                                integration_domain=integration_domain,
+                                success=True,
+                                timestamp=datetime.now(UTC),
+                                details={"issue_type": issue.issue_type},
+                            )
+                        else:
+                            await self.pattern_collector.record_healing_attempt(
+                                entity_id=issue.entity_id,
+                                integration_id=integration_id,
+                                integration_domain=integration_domain,
+                                success=False,
+                                timestamp=datetime.now(UTC),
+                                details={
+                                    "issue_type": issue.issue_type,
+                                    "max_attempts": self.config.healing.max_attempts,
+                                },
+                            )
+                    except Exception as e:
+                        logger.debug(f"Failed to record healing attempt: {e}")
 
                 if success:
                     logger.info(f"✓ Successfully healed {issue.entity_id}")
