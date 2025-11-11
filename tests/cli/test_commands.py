@@ -327,3 +327,162 @@ class TestHelpOutput:
         assert result.exit_code == 0
         assert "cleanup" in result.stdout.lower()
         assert "days" in result.stdout.lower()
+
+    def test_patterns_help(self):
+        """Test patterns command help."""
+        result = runner.invoke(app, ["patterns", "--help"])
+
+        assert result.exit_code == 0
+        assert "patterns" in result.stdout.lower()
+        assert "reliability" in result.stdout.lower()
+        assert "failures" in result.stdout.lower()
+        assert "recommendations" in result.stdout.lower()
+
+
+class TestPatternsCommands:
+    """Tests for patterns command group."""
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands._show_reliability")
+    def test_reliability_command_default(self, mock_show, mock_load, mock_config):
+        """Test reliability command with default parameters."""
+        mock_load.return_value = mock_config
+        mock_show.return_value = AsyncMock()
+
+        result = runner.invoke(app, ["patterns", "reliability"])
+
+        assert result.exit_code == 0
+        mock_show.assert_called_once()
+        # Check default parameters (7 days, no integration filter)
+        assert mock_show.call_args[0][1] == 7  # days
+        assert mock_show.call_args[0][2] is None  # integration
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands._show_reliability")
+    def test_reliability_command_with_integration(self, mock_show, mock_load, mock_config):
+        """Test reliability command with integration filter."""
+        mock_load.return_value = mock_config
+        mock_show.return_value = AsyncMock()
+
+        result = runner.invoke(app, ["patterns", "reliability", "--integration", "hue"])
+
+        assert result.exit_code == 0
+        # Check integration parameter was passed
+        assert mock_show.call_args[0][2] == "hue"
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands._show_reliability")
+    def test_reliability_command_with_custom_days(self, mock_show, mock_load, mock_config):
+        """Test reliability command with custom days parameter."""
+        mock_load.return_value = mock_config
+        mock_show.return_value = AsyncMock()
+
+        result = runner.invoke(app, ["patterns", "reliability", "--days", "30"])
+
+        assert result.exit_code == 0
+        # Check days parameter was passed
+        assert mock_show.call_args[0][1] == 30
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands._show_failures")
+    def test_failures_command_default(self, mock_show, mock_load, mock_config):
+        """Test failures command with default parameters."""
+        mock_load.return_value = mock_config
+        mock_show.return_value = AsyncMock()
+
+        result = runner.invoke(app, ["patterns", "failures"])
+
+        assert result.exit_code == 0
+        mock_show.assert_called_once()
+        # Check default parameters
+        assert mock_show.call_args[0][1] is None  # integration
+        assert mock_show.call_args[0][2] == 7  # days
+        assert mock_show.call_args[0][3] == 50  # limit
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands._show_failures")
+    def test_failures_command_with_integration(self, mock_show, mock_load, mock_config):
+        """Test failures command with integration filter."""
+        mock_load.return_value = mock_config
+        mock_show.return_value = AsyncMock()
+
+        result = runner.invoke(app, ["patterns", "failures", "--integration", "zwave"])
+
+        assert result.exit_code == 0
+        # Check integration parameter was passed
+        assert mock_show.call_args[0][1] == "zwave"
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands._show_failures")
+    def test_failures_command_with_limit(self, mock_show, mock_load, mock_config):
+        """Test failures command with custom limit."""
+        mock_load.return_value = mock_config
+        mock_show.return_value = AsyncMock()
+
+        result = runner.invoke(app, ["patterns", "failures", "--limit", "100"])
+
+        assert result.exit_code == 0
+        # Check limit parameter was passed
+        assert mock_show.call_args[0][3] == 100
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands._show_recommendations")
+    def test_recommendations_command(self, mock_show, mock_load, mock_config):
+        """Test recommendations command."""
+        mock_load.return_value = mock_config
+        mock_show.return_value = AsyncMock()
+
+        result = runner.invoke(app, ["patterns", "recommendations", "hue"])
+
+        assert result.exit_code == 0
+        mock_show.assert_called_once()
+        # Check integration parameter was passed
+        assert mock_show.call_args[0][1] == "hue"
+
+    def test_recommendations_requires_integration(self):
+        """Test that recommendations command requires integration argument."""
+        result = runner.invoke(app, ["patterns", "recommendations"])
+
+        assert result.exit_code != 0
+        # Check for missing argument error
+        output_lower = (result.stdout + str(result.stderr if result.stderr else "")).lower()
+        assert "missing argument" in output_lower or "required" in output_lower
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands._show_recommendations")
+    def test_recommendations_with_custom_days(self, mock_show, mock_load, mock_config):
+        """Test recommendations command with custom days parameter."""
+        mock_load.return_value = mock_config
+        mock_show.return_value = AsyncMock()
+
+        result = runner.invoke(app, ["patterns", "recommendations", "met", "--days", "14"])
+
+        assert result.exit_code == 0
+        # Check days parameter was passed
+        assert mock_show.call_args[0][2] == 14
+
+    def test_reliability_help(self):
+        """Test reliability command help output."""
+        result = runner.invoke(app, ["patterns", "reliability", "--help"])
+
+        assert result.exit_code == 0
+        assert "reliability" in result.stdout.lower()
+        assert "integration" in result.stdout.lower()
+        assert "days" in result.stdout.lower()
+
+    def test_failures_help(self):
+        """Test failures command help output."""
+        result = runner.invoke(app, ["patterns", "failures", "--help"])
+
+        assert result.exit_code == 0
+        assert "failures" in result.stdout.lower() or "failure" in result.stdout.lower()
+        assert "integration" in result.stdout.lower()
+        assert "limit" in result.stdout.lower()
+
+    def test_recommendations_help(self):
+        """Test recommendations command help output."""
+        result = runner.invoke(app, ["patterns", "recommendations", "--help"])
+
+        assert result.exit_code == 0
+        assert "recommendations" in result.stdout.lower()
+        assert "integration" in result.stdout.lower()
