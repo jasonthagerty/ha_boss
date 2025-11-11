@@ -77,3 +77,9 @@ Thumbs.db
 # Home Assistant specific
 secrets.yaml
 known_devices.yaml
+
+# SQLite database files
+data/*.db
+data/*.db-journal
+data/*.db-shm
+data/*.db-wal
