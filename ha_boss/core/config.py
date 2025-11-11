@@ -199,6 +199,15 @@ class RESTConfig(BaseSettings):
     )
 
 
+class IntelligenceConfig(BaseSettings):
+    """Intelligence layer configuration."""
+
+    pattern_collection_enabled: bool = Field(
+        default=True,
+        description="Enable pattern collection for reliability analysis",
+    )
+
+
 class Config(BaseSettings):
     """Main HA Boss configuration."""
 
@@ -217,6 +226,7 @@ class Config(BaseSettings):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     websocket: WebSocketConfig = Field(default_factory=WebSocketConfig)
     rest: RESTConfig = Field(default_factory=RESTConfig)
+    intelligence: IntelligenceConfig = Field(default_factory=IntelligenceConfig)
 
     mode: Literal["production", "dry_run", "testing"] = Field(
         default="production",
