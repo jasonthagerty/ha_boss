@@ -1,12 +1,10 @@
 """Tests for Phase 2 pattern collection database models."""
 
-import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from ha_boss.core.database import (
-    Database,
     IntegrationMetrics,
     IntegrationReliability,
     PatternInsight,
