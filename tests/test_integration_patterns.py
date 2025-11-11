@@ -1,14 +1,11 @@
 """Integration tests for pattern collection during service operation."""
 
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock
 
 import pytest
 
 from ha_boss.core.config import Config, DatabaseConfig, HomeAssistantConfig, IntelligenceConfig
 from ha_boss.core.database import Database, IntegrationReliability
 from ha_boss.intelligence.pattern_collector import PatternCollector
-from ha_boss.service.main import HABossService
 
 
 @pytest.fixture
