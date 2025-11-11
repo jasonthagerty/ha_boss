@@ -1,7 +1,7 @@
 """Tests for PatternCollector service."""
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
