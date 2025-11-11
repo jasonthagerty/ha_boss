@@ -139,6 +139,9 @@ database:
   path: data/ha_boss.db
   retention_days: 30
 
+intelligence:
+  pattern_collection_enabled: true  # Enable pattern collection for reliability analysis
+
 mode: production  # production, dry_run, or testing
 """
         config_file.write_text(config_template)

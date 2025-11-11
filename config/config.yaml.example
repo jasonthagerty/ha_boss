@@ -115,3 +115,9 @@ rest:
 
   # Base delay for exponential backoff (seconds)
   retry_base_delay_seconds: 1.0
+
+# Intelligence layer configuration (Phase 2+)
+intelligence:
+  # Enable pattern collection for reliability analysis
+  # Tracks healing success rates, failure patterns, and integration health
+  pattern_collection_enabled: true
