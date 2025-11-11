@@ -106,8 +106,7 @@ class PatternCollector:
                 details=details,
             )
             logger.debug(
-                f"Recorded unavailable event for {entity_id} "
-                f"(domain={integration_domain})"
+                f"Recorded unavailable event for {entity_id} " f"(domain={integration_domain})"
             )
         except Exception as e:
             # Graceful degradation: log but don't crash

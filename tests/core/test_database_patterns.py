@@ -119,9 +119,7 @@ async def test_integration_reliability_query_by_domain(test_database):
 
         # Query for hue events only
         result = await session.execute(
-            select(IntegrationReliability).where(
-                IntegrationReliability.integration_domain == "hue"
-            )
+            select(IntegrationReliability).where(IntegrationReliability.integration_domain == "hue")
         )
         events = result.scalars().all()
 
@@ -228,9 +226,7 @@ async def test_integration_metrics_query_by_period(test_database):
         # Query for metrics in last 14 days
         cutoff = now - timedelta(days=14)
         result = await session.execute(
-            select(IntegrationMetrics).where(
-                IntegrationMetrics.period_start >= cutoff
-            )
+            select(IntegrationMetrics).where(IntegrationMetrics.period_start >= cutoff)
         )
         metrics = result.scalars().all()
 
@@ -327,9 +323,7 @@ async def test_pattern_insight_query_by_type(test_database):
 
         # Query for specific type
         result = await session.execute(
-            select(PatternInsight).where(
-                PatternInsight.insight_type == "top_failures"
-            )
+            select(PatternInsight).where(PatternInsight.insight_type == "top_failures")
         )
         insights = result.scalars().all()
 
@@ -344,6 +338,7 @@ async def test_all_pattern_models_created(test_database):
 
     # Get inspector and table names within connection context
     async with test_database.engine.connect() as conn:
+
         def get_tables(sync_conn):
             inspector = inspect(sync_conn)
             return inspector.get_table_names()
@@ -362,6 +357,7 @@ async def test_integration_reliability_indexes(test_database):
     from sqlalchemy import inspect
 
     async with test_database.engine.connect() as conn:
+
         def get_indexes(sync_conn):
             inspector = inspect(sync_conn)
             return inspector.get_indexes("integration_reliability")

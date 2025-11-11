@@ -141,9 +141,7 @@ async def test_record_entity_unavailable(pattern_collector, test_database):
 
 
 @pytest.mark.asyncio
-async def test_record_entity_unavailable_missing_integration_info(
-    pattern_collector, test_database
-):
+async def test_record_entity_unavailable_missing_integration_info(pattern_collector, test_database):
     """Test recording unavailable event when integration info is missing."""
     await pattern_collector.record_entity_unavailable(
         integration_id=None,
