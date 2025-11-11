@@ -1,6 +1,5 @@
 """Integration tests for pattern collection during service operation."""
 
-
 import pytest
 
 from ha_boss.core.config import Config, DatabaseConfig, HomeAssistantConfig, IntelligenceConfig
