@@ -143,9 +143,7 @@ class IntegrationReliability(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     integration_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     integration_domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, index=True
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True
     )  # heal_success, heal_failure, unavailable
