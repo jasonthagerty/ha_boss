@@ -695,9 +695,364 @@ async def _cleanup_db(config: Config, days: int, dry_run: bool) -> None:
             )
 
 
+# Patterns subcommands
+patterns_app = typer.Typer(name="patterns", help="Pattern analysis and reliability reports")
+
+
+@patterns_app.command("reliability")
+def reliability_report(
+    integration: str | None = typer.Option(
+        None,
+        "--integration",
+        "-i",
+        help="Show reliability for specific integration (e.g., hue, zwave)",
+    ),
+    days: int = typer.Option(
+        7,
+        "--days",
+        "-d",
+        help="Number of days to analyze (default: 7)",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Display integration reliability reports with success rates and health metrics.
+
+    Shows:
+    - Success rate for healing attempts
+    - Total healing successes and failures
+    - Unavailable event counts
+    - Reliability score (Excellent/Good/Fair/Poor)
+    - Recommendations for problematic integrations
+
+    Examples:
+        haboss patterns reliability
+        haboss patterns reliability --integration hue
+        haboss patterns reliability --days 30
+    """
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Integration Reliability Report[/bold cyan]\n" f"Period: Last {days} days",
+            subtitle="Pattern Analysis",
+        )
+    )
+
+    try:
+        config = load_config(config_path)
+        asyncio.run(_show_reliability(config, days, integration))
+
+    except Exception as e:
+        handle_error(e)
+
+
+async def _show_reliability(config: Config, days: int, integration_domain: str | None) -> None:
+    """Show reliability report.
+
+    Args:
+        config: HA Boss configuration
+        days: Number of days to analyze
+        integration_domain: Optional integration filter
+    """
+    from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
+
+    async with Database(str(config.database.path)) as db:
+        analyzer = ReliabilityAnalyzer(db)
+
+        # Get metrics
+        metrics = await analyzer.get_integration_metrics(
+            days=days, integration_domain=integration_domain
+        )
+
+        if not metrics:
+            if integration_domain:
+                console.print(
+                    f"\n[yellow]No data found for integration '{integration_domain}' "
+                    f"in the last {days} days.[/yellow]"
+                )
+            else:
+                console.print(
+                    "\n[yellow]No reliability data available yet.[/yellow]\n"
+                    "[dim]Run 'haboss start' to begin collecting patterns.[/dim]"
+                )
+            return
+
+        # Create table
+        table = Table(
+            title=f"\nIntegration Reliability (Last {days} days)",
+            show_header=True,
+        )
+        table.add_column("Integration", style="cyan", no_wrap=True)
+        table.add_column("Success Rate", justify="right")
+        table.add_column("Rating", justify="center")
+        table.add_column("Heals ✓", justify="right", style="green")
+        table.add_column("Failures ✗", justify="right", style="red")
+        table.add_column("Unavailable", justify="right", style="yellow")
+
+        # Add rows
+        for metric in metrics:
+            # Color code success rate based on reliability score
+            if metric.reliability_score == "Excellent":
+                rate_color = "green"
+            elif metric.reliability_score == "Good":
+                rate_color = "cyan"
+            elif metric.reliability_score == "Fair":
+                rate_color = "yellow"
+            else:  # Poor
+                rate_color = "red"
+
+            # Color code rating
+            if metric.reliability_score == "Excellent":
+                rating_color = "green"
+            elif metric.reliability_score == "Good":
+                rating_color = "cyan"
+            elif metric.reliability_score == "Fair":
+                rating_color = "yellow"
+            else:  # Poor
+                rating_color = "red"
+
+            table.add_row(
+                metric.integration_domain,
+                f"[{rate_color}]{metric.success_rate * 100:.1f}%[/{rate_color}]",
+                f"[{rating_color}]{metric.reliability_score}[/{rating_color}]",
+                str(metric.heal_successes),
+                str(metric.heal_failures),
+                str(metric.unavailable_events),
+            )
+
+        console.print(table)
+
+        # Show recommendations for problematic integrations
+        problematic = [m for m in metrics if m.needs_attention]
+        if problematic:
+            console.print("\n[bold yellow]⚠️  Recommendations:[/bold yellow]\n")
+            for metric in problematic:
+                console.print(
+                    f"• [yellow]{metric.integration_domain}[/yellow]: "
+                    f"{metric.reliability_score} reliability ({metric.success_rate * 100:.1f}%) "
+                    f"- Check integration configuration"
+                )
+
+
+@patterns_app.command("failures")
+def failures_timeline(
+    integration: str | None = typer.Option(
+        None,
+        "--integration",
+        "-i",
+        help="Filter by integration (e.g., zwave, hue)",
+    ),
+    days: int = typer.Option(
+        7,
+        "--days",
+        "-d",
+        help="Number of days to look back (default: 7)",
+    ),
+    limit: int = typer.Option(
+        50,
+        "--limit",
+        "-l",
+        help="Maximum number of events to show (default: 50)",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Show timeline of failure events for troubleshooting.
+
+    Displays chronological list of:
+    - Healing failures
+    - Entity unavailable events
+    - Integration-specific issues
+
+    Examples:
+        haboss patterns failures
+        haboss patterns failures --integration zwave
+        haboss patterns failures --days 30 --limit 100
+    """
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Failure Timeline[/bold cyan]\n" f"Period: Last {days} days",
+            subtitle="Event History",
+        )
+    )
+
+    try:
+        config = load_config(config_path)
+        asyncio.run(_show_failures(config, integration, days, limit))
+
+    except Exception as e:
+        handle_error(e)
+
+
+async def _show_failures(
+    config: Config, integration_domain: str | None, days: int, limit: int
+) -> None:
+    """Show failure timeline.
+
+    Args:
+        config: HA Boss configuration
+        integration_domain: Optional integration filter
+        days: Number of days to analyze
+        limit: Maximum number of events to show
+    """
+    from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
+
+    async with Database(str(config.database.path)) as db:
+        analyzer = ReliabilityAnalyzer(db)
+
+        # Get failure events
+        events = await analyzer.get_failure_timeline(
+            integration_domain=integration_domain, days=days, limit=limit
+        )
+
+        if not events:
+            if integration_domain:
+                console.print(
+                    f"\n[green]No failures found for integration '{integration_domain}' "
+                    f"in the last {days} days.[/green] ✓"
+                )
+            else:
+                console.print(f"\n[green]No failures recorded in the last {days} days.[/green] ✓")
+            return
+
+        # Create table
+        table = Table(
+            title=f"\nFailure Events (Last {days} days, showing {len(events)})",
+            show_header=True,
+        )
+        table.add_column("Timestamp", style="dim")
+        table.add_column("Integration", style="cyan")
+        table.add_column("Event Type", justify="center")
+        table.add_column("Entity", style="yellow", overflow="fold")
+
+        # Add rows
+        for event in events:
+            # Color code event type
+            if event.event_type == "heal_failure":
+                event_display = "[red]Heal Failed[/red]"
+            else:  # unavailable
+                event_display = "[yellow]Unavailable[/yellow]"
+
+            # Format timestamp
+            timestamp_str = event.timestamp.strftime("%m-%d %H:%M:%S")
+
+            # Truncate entity_id if too long
+            entity_display = event.entity_id or "-"
+            if len(entity_display) > 40:
+                entity_display = entity_display[:37] + "..."
+
+            table.add_row(
+                timestamp_str,
+                event.integration_domain,
+                event_display,
+                entity_display,
+            )
+
+        console.print(table)
+
+        # Show summary statistics
+        heal_failures = sum(1 for e in events if e.event_type == "heal_failure")
+        unavailable = sum(1 for e in events if e.event_type == "unavailable")
+
+        console.print(
+            f"\n[dim]Summary: {heal_failures} heal failures, {unavailable} unavailable events[/dim]"
+        )
+
+
+@patterns_app.command("recommendations")
+def integration_recommendations(
+    integration: str = typer.Argument(..., help="Integration domain (e.g., hue, zwave, met)"),
+    days: int = typer.Option(
+        7,
+        "--days",
+        "-d",
+        help="Number of days to analyze (default: 7)",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Get actionable recommendations for a specific integration.
+
+    Provides:
+    - Health assessment
+    - Specific issues identified
+    - Suggested actions to improve reliability
+
+    Examples:
+        haboss patterns recommendations hue
+        haboss patterns recommendations zwave --days 30
+    """
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Recommendations[/bold cyan]\n"
+            f"Integration: {integration}\n"
+            f"Period: Last {days} days",
+            subtitle="Actionable Insights",
+        )
+    )
+
+    try:
+        config = load_config(config_path)
+        asyncio.run(_show_recommendations(config, integration, days))
+
+    except Exception as e:
+        handle_error(e)
+
+
+async def _show_recommendations(config: Config, integration_domain: str, days: int) -> None:
+    """Show recommendations for an integration.
+
+    Args:
+        config: HA Boss configuration
+        integration_domain: Integration to analyze
+        days: Number of days to analyze
+    """
+    from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
+
+    async with Database(str(config.database.path)) as db:
+        analyzer = ReliabilityAnalyzer(db)
+
+        # Get recommendations
+        recommendations = await analyzer.get_recommendations(
+            integration_domain=integration_domain, days=days
+        )
+
+        if not recommendations:
+            console.print(
+                f"\n[yellow]No data available for integration '{integration_domain}' "
+                f"in the last {days} days.[/yellow]"
+            )
+            return
+
+        # Display recommendations
+        console.print(f"\n[bold]Recommendations for {integration_domain}:[/bold]\n")
+        for rec in recommendations:
+            # Color code based on severity markers
+            if "CRITICAL" in rec or "⚠️" in rec:
+                console.print(f"  [red]• {rec}[/red]")
+            elif "WARNING" in rec or "⚡" in rec:
+                console.print(f"  [yellow]• {rec}[/yellow]")
+            elif "✓" in rec:
+                console.print(f"  [green]• {rec}[/green]")
+            else:
+                console.print(f"  [cyan]• {rec}[/cyan]")
+
+
 # Register subcommands
 app.add_typer(config_app, name="config")
 app.add_typer(db_app, name="db")
+app.add_typer(patterns_app, name="patterns")
 
 
 def main() -> None:
