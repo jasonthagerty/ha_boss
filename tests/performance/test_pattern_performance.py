@@ -178,9 +178,7 @@ async def test_query_performance_with_10k_events(perf_database, perf_config):
     end_time = time.perf_counter()
     query_time_ms = (end_time - start_time) * 1000
 
-    assert (
-        query_time_ms < 100.0
-    ), f"Top failing query took {query_time_ms:.2f}ms (expected < 100ms)"
+    assert query_time_ms < 100.0, f"Top failing query took {query_time_ms:.2f}ms (expected < 100ms)"
     assert len(top_failing) > 0, "Should have returned integrations"
     print(f"  ✓ get_top_failing_integrations(): {query_time_ms:.2f}ms (target: < 100ms)")
 
@@ -269,6 +267,8 @@ async def test_database_growth_impact(perf_database, perf_config):
 
     # Check that growth is sub-linear (query time shouldn't increase dramatically)
     # With 5000 events, query should still be < 100ms
-    assert query_times[-1] < 100.0, f"Query with 5000 events took {query_times[-1]:.2f}ms (expected < 100ms)"
+    assert (
+        query_times[-1] < 100.0
+    ), f"Query with 5000 events took {query_times[-1]:.2f}ms (expected < 100ms)"
 
     print(f"\n✓ Query performance scales well with database growth")
