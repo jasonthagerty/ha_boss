@@ -8,17 +8,21 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 
 ### Core Capabilities
 
-**Phase 1 (MVP - Current Focus)**:
+**Phase 1 (MVP - ✅ Complete)**:
 - Real-time monitoring of Home Assistant entities via WebSocket
 - Automatic detection of unavailable/stale entities
 - Auto-healing via integration reload with safety mechanisms
 - Escalated notifications when auto-healing fails
-- Docker-first deployment
+- Service orchestration with full lifecycle management
+- Docker-first deployment with health checks
+- 237 comprehensive tests with full coverage
 
-**Phase 2 (Intelligence Layer)**:
-- Local LLM integration (Ollama) for enhanced notifications
-- Usage pattern collection and analysis
-- Weekly summary reports
+**Phase 2 (Intelligence Layer - Ready to Start)**:
+- Pattern collection & analysis (Epic #25 created, 6 issues planned)
+- Integration reliability tracking and metrics
+- CLI reports for failure trends and insights
+- Foundation for ML-based anomaly detection
+- Local LLM integration (Ollama) for enhanced notifications (future)
 
 **Phase 3 (Advanced Features)**:
 - Pattern-based anomaly detection
@@ -150,6 +154,8 @@ ha_boss/
 │   │   ├── ha_client.py       # Home Assistant API wrapper
 │   │   ├── database.py        # SQLAlchemy models and DB management
 │   │   └── llm_router.py      # LLM task routing (Phase 2+)
+│   ├── service/                # Service orchestration (MVP)
+│   │   └── main.py            # HABossService - main service coordinator
 │   ├── monitoring/             # Entity monitoring
 │   │   ├── state_tracker.py   # Track entity states
 │   │   ├── health_monitor.py  # Health checks and anomaly detection
@@ -177,8 +183,10 @@ ha_boss/
 │       └── commands.py        # CLI commands (Typer)
 ├── tests/                     # Test suite
 │   ├── core/                  # Core component tests
+│   ├── service/               # Service orchestration tests
 │   ├── monitoring/            # Monitoring tests
 │   ├── healing/               # Healing tests
+│   ├── integration/           # Integration tests
 │   └── fixtures/              # Shared pytest fixtures
 ├── config/                    # Configuration directory
 │   ├── config.yaml.example   # Example configuration
@@ -228,7 +236,8 @@ async def call_ha_api_with_retry(
 - SQLAlchemy async with aiosqlite
 - Models defined with type hints
 - Migrations via Alembic (future)
-- Separate tables for: entities, health_events, healing_actions, integrations
+- **Phase 1 tables**: entities, health_events, healing_actions, integrations
+- **Phase 2 planned**: integration_reliability, integration_metrics, pattern_insights
 
 ### Component Interactions
 
