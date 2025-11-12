@@ -1,7 +1,8 @@
 """Performance benchmarks for pattern collection."""
 
 import time
-from datetime import UTC, datetime
+from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 
@@ -12,7 +13,7 @@ from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
 
 
 @pytest.fixture
-async def perf_database(tmp_path):
+async def perf_database(tmp_path: Path) -> AsyncGenerator[Database, None]:
     """Create test database for performance tests."""
     db_path = tmp_path / "perf_test.db"
     db = Database(str(db_path))
@@ -22,7 +23,7 @@ async def perf_database(tmp_path):
 
 
 @pytest.fixture
-def perf_config():
+def perf_config() -> Config:
     """Create test configuration for performance tests."""
     return Config(
         home_assistant=HomeAssistantConfig(
@@ -30,7 +31,7 @@ def perf_config():
             token="test_token",
         ),
         database=DatabaseConfig(
-            path=":memory:",
+            path=Path(":memory:"),
             retention_days=30,
         ),
         intelligence=IntelligenceConfig(
@@ -42,7 +43,7 @@ def perf_config():
 
 @pytest.mark.performance
 @pytest.mark.asyncio
-async def test_pattern_recording_latency(perf_database, perf_config):
+async def test_pattern_recording_latency(perf_database: Database, perf_config: Config) -> None:
     """Test that pattern recording latency is < 5ms.
 
     Acceptance: Pattern recording should complete in < 5ms.
@@ -78,7 +79,9 @@ async def test_pattern_recording_latency(perf_database, perf_config):
 
 @pytest.mark.performance
 @pytest.mark.asyncio
-async def test_healing_attempt_recording_latency(perf_database, perf_config):
+async def test_healing_attempt_recording_latency(
+    perf_database: Database, perf_config: Config
+) -> None:
     """Test that healing attempt recording latency is < 5ms.
 
     Acceptance: Healing attempt recording should complete in < 5ms.
@@ -116,7 +119,9 @@ async def test_healing_attempt_recording_latency(perf_database, perf_config):
 
 @pytest.mark.performance
 @pytest.mark.asyncio
-async def test_query_performance_with_10k_events(perf_database, perf_config):
+async def test_query_performance_with_10k_events(
+    perf_database: Database, perf_config: Config
+) -> None:
     """Test that queries complete in < 100ms with 10k events.
 
     Acceptance: Reliability queries should complete in < 100ms even with 10k events.
@@ -191,12 +196,13 @@ async def test_query_performance_with_10k_events(perf_database, perf_config):
     assert (
         query_time_ms < 100.0
     ), f"Recommendations query took {query_time_ms:.2f}ms (expected < 100ms)"
+    assert isinstance(recommendations, list), "Should return a list of recommendations"
     print(f"  ✓ get_recommendations(): {query_time_ms:.2f}ms (target: < 100ms)")
 
 
 @pytest.mark.performance
 @pytest.mark.asyncio
-async def test_concurrent_pattern_recording(perf_database, perf_config):
+async def test_concurrent_pattern_recording(perf_database: Database, perf_config: Config) -> None:
     """Test that concurrent pattern recording doesn't degrade performance.
 
     Acceptance: Concurrent recordings should not significantly degrade latency.
@@ -206,7 +212,7 @@ async def test_concurrent_pattern_recording(perf_database, perf_config):
     pattern_collector = PatternCollector(config=perf_config, database=perf_database)
 
     # Test concurrent recording
-    async def record_batch(batch_id: int, count: int):
+    async def record_batch(batch_id: int, count: int) -> None:
         """Record a batch of events."""
         for i in range(count):
             await pattern_collector.record_entity_unavailable(
@@ -235,7 +241,7 @@ async def test_concurrent_pattern_recording(perf_database, perf_config):
 
 @pytest.mark.performance
 @pytest.mark.asyncio
-async def test_database_growth_impact(perf_database, perf_config):
+async def test_database_growth_impact(perf_database: Database, perf_config: Config) -> None:
     """Test that database growth doesn't significantly impact query performance.
 
     Acceptance: Query times should remain roughly constant as database grows.
@@ -271,4 +277,4 @@ async def test_database_growth_impact(perf_database, perf_config):
         query_times[-1] < 100.0
     ), f"Query with 5000 events took {query_times[-1]:.2f}ms (expected < 100ms)"
 
-    print(f"\n✓ Query performance scales well with database growth")
+    print("\n✓ Query performance scales well with database growth")
