@@ -28,6 +28,13 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 - Automation optimization suggestions
 - Claude API integration for complex automation generation
 
+**Phase 3 LLM Stack Decision** (see `docs/LLM_SETUP.md` for details):
+- **Backend**: Ollama with Llama 3.1 8B (Q4_K_M quantization)
+- **Mode**: CPU inference for MVP (9.18 tokens/s)
+- **Performance**: Meets < 15s requirement for low-volume use (1-10 requests/day)
+- **Future**: GPU acceleration planned (Issue #52) for 2-5x speedup
+- **Deployment**: Docker container on blackbox server (Intel ARC A770)
+
 ### Design Philosophy
 
 1. **Start Simple**: MVP focuses on monitoring + healing without AI complexity
