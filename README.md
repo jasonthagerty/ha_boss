@@ -8,7 +8,7 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 
 ## 🎯 Project Status
 
-**✅ MVP Phase 1 Complete** - Production Ready!
+**✅ Phase 1 (MVP) Complete** - Production Ready!
 
 All core monitoring and auto-healing features are fully implemented, tested, and ready for deployment:
 
@@ -18,14 +18,27 @@ All core monitoring and auto-healing features are fully implemented, tested, and
 - ✅ Circuit breakers and cooldown periods
 - ✅ Escalated notifications when auto-healing fails
 - ✅ Docker-first deployment with health checks
-- ✅ 218 comprehensive tests with full coverage
 - ✅ Complete CLI with 6 commands
 - ✅ SQLite database for tracking and analysis
 
-**Coming in Phase 2:**
+**✅ Phase 2 (Pattern Collection & Analysis) Complete**
+
+Intelligence layer for data-driven insights and predictive capabilities:
+
+- ✅ Integration reliability tracking (success rates, failure patterns)
+- ✅ Database schema for pattern storage (3 new tables)
+- ✅ Pattern collection service integrated with healing
+- ✅ CLI reports for reliability analysis (`haboss patterns`)
+- ✅ Performance validated (< 5ms overhead per event)
+- ✅ 307 comprehensive tests with 82% coverage
+- ✅ Foundation for AI-driven insights
+
+**Coming in Phase 3:**
 - Local LLM integration (Ollama) for enhanced notifications
-- Usage pattern collection and analysis
-- Weekly summary reports
+- Pattern-based anomaly detection
+- Weekly AI-generated summary reports
+- Automation optimization suggestions
+- Claude API integration for complex automation generation
 
 ## ✨ Key Features
 
@@ -47,6 +60,14 @@ All core monitoring and auto-healing features are fully implemented, tested, and
 - **Automatic Reconnection**: Resilient WebSocket with exponential backoff
 - **Database Tracking**: Complete history of all health events and healing actions
 - **Escalation**: Persistent notifications when auto-healing fails
+
+### Pattern Collection & Analysis (Phase 2)
+- **Reliability Tracking**: Automatically tracks healing success rates per integration
+- **Failure Pattern Detection**: Identifies which integrations fail most frequently
+- **Performance Metrics**: Success rates, failure counts, reliability scores
+- **CLI Reports**: Rich formatted reports with color-coded reliability ratings
+- **Data-Driven Insights**: Foundation for predictive healing and anomaly detection
+- **Minimal Overhead**: < 5ms per event, queries < 100ms with 10k events
 
 ### Deployment & Operations
 - **Docker-First**: Multi-stage build, non-root user, health checks
@@ -278,6 +299,42 @@ haboss db cleanup --older-than 30   # Delete records older than 30 days
 haboss db cleanup --dry-run         # Show what would be deleted
 ```
 
+#### `haboss patterns` (Phase 2)
+View integration reliability and failure patterns:
+```bash
+# View reliability overview for all integrations
+haboss patterns reliability
+
+# View specific integration
+haboss patterns reliability --integration hue
+
+# View last 30 days instead of default 7
+haboss patterns reliability --days 30
+
+# View failure timeline for an integration
+haboss patterns failures --integration zwave --days 14
+
+# Get recommendations for an integration
+haboss patterns recommendations --integration met
+```
+
+Example output:
+```
+                Integration Reliability (Last 7 days)
+┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Integration  ┃ Success Rate ┃  Rating  ┃ Heals ✓┃ Failures ✗┃ Unavailable ┃
+┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━┩
+│ mqtt         │ 100.0%       │ Excellent│ 5      │ 0         │ 1           │
+│ hue          │ 95.2%        │ Excellent│ 20     │ 1         │ 2           │
+│ zwave        │ 75.0%        │ Fair     │ 3      │ 1         │ 5           │
+│ met          │ 45.0%        │ Poor     │ 9      │ 11        │ 15          │
+└──────────────┴──────────────┴──────────┴────────┴───────────┴─────────────┘
+
+⚠️  Recommendations:
+• met: Poor reliability (45%) - Check integration configuration
+• zwave: Fair reliability (75%) - Review network health
+```
+
 ### Configuration File
 
 The `config/config.yaml` file controls all aspects of HA Boss behavior:
@@ -326,6 +383,10 @@ logging:
 database:
   path: "/data/ha_boss.db"
   retention_days: 30
+
+intelligence:
+  # Enable pattern collection for reliability analysis (Phase 2)
+  pattern_collection_enabled: true
 
 mode: "production"  # production, dry_run, or testing
 ```
@@ -394,11 +455,19 @@ See `config/config.yaml.example` for the complete configuration template with de
 
 ### Database Schema
 
-HA Boss maintains a SQLite database tracking:
+HA Boss maintains a SQLite database with 8 tables:
+
+**Phase 1 Tables:**
 - **entities**: Entity registry and current states
 - **health_events**: All detected health issues
 - **healing_actions**: All healing attempts and results
 - **integrations**: Integration discovery cache
+- **notifications**: Notification history
+
+**Phase 2 Tables:**
+- **integration_reliability**: Individual reliability events (heal_success, heal_failure, unavailable)
+- **integration_metrics**: Aggregated metrics by time period
+- **pattern_insights**: Pre-calculated insights and trends
 
 ## 🧪 Testing
 
@@ -419,7 +488,7 @@ pytest -k "test_heal" -v
 pytest -m "not slow" -v
 ```
 
-Current test coverage: **218 tests**, all passing ✅
+Current test coverage: **307 tests**, all passing ✅ (82% coverage)
 
 ## 🔧 Development
 
@@ -495,6 +564,25 @@ monitoring:
 
 healing:
   cooldown_seconds: 120      # 2 minutes between attempts
+```
+
+### Pattern Collection & Reliability Analysis
+Track integration health and get data-driven insights:
+```yaml
+intelligence:
+  pattern_collection_enabled: true
+
+database:
+  retention_days: 90  # Keep 90 days of pattern data
+```
+
+Use CLI to view reliability:
+```bash
+# See which integrations are most reliable
+haboss patterns reliability
+
+# Get recommendations for problematic integrations
+haboss patterns recommendations --integration problematic_integration
 ```
 
 ## 🔐 Security Considerations

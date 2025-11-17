@@ -15,13 +15,13 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 - Escalated notifications when auto-healing fails
 - Docker-first deployment
 
-**Phase 2 (Pattern Collection & Analysis - Current Focus)**:
+**Phase 2 (Pattern Collection & Analysis - Complete)**:
 - Integration reliability tracking (success rates, failure patterns)
 - Database schema for pattern storage
 - CLI reports for reliability analysis
 - Foundation for future AI-driven insights
 
-**Phase 3 (Intelligence Layer)**:
+**Phase 3 (AI-Powered Intelligence Layer - Current Focus)**:
 - Local LLM integration (Ollama) for enhanced notifications
 - Pattern-based anomaly detection
 - Weekly summary reports with AI analysis
