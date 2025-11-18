@@ -40,7 +40,11 @@ class OllamaClient:
             self._client = None
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
+        """Get or create HTTP client.
+
+        Note: Prefer using async context manager to ensure proper cleanup.
+        If using directly, call close() when done to avoid resource leaks.
+        """
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=self.timeout)
         return self._client
@@ -57,11 +61,14 @@ class OllamaClient:
         Args:
             prompt: Text prompt for generation
             max_tokens: Maximum tokens to generate (None = model default)
-            temperature: Sampling temperature (0.0-1.0, default 0.7)
+            temperature: Sampling temperature (0.0-2.0, default 0.7)
             system_prompt: Optional system prompt for context
 
         Returns:
             Generated text, or None if generation failed
+
+        Raises:
+            ValueError: If temperature is not in range [0.0, 2.0]
 
         Example:
             >>> client = OllamaClient("http://localhost:11434", "llama3.1:8b")
@@ -69,6 +76,10 @@ class OllamaClient:
             >>> if text:
             ...     print(text)
         """
+        # Validate temperature parameter
+        if not 0.0 <= temperature <= 2.0:
+            raise ValueError(f"temperature must be between 0.0 and 2.0, got {temperature}")
+
         try:
             client = await self._get_client()
 

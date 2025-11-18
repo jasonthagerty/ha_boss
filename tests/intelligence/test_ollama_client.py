@@ -263,7 +263,7 @@ async def test_url_trailing_slash_removed():
 
 @pytest.mark.asyncio
 async def test_empty_response():
-    """Test handling of empty response."""
+    """Test handling of empty response (missing 'response' field)."""
     mock_response = MagicMock()
     mock_response.json.return_value = {"done": True}  # No "response" field
     mock_response.raise_for_status = MagicMock()
@@ -277,8 +277,69 @@ async def test_empty_response():
 
         result = await client.generate("Test prompt")
 
-        # Should return empty string, not None
+        # Should return empty string when field is missing
         assert result == ""
+
+
+@pytest.mark.asyncio
+async def test_none_response():
+    """Test handling of null response value."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"response": None, "done": True}
+    mock_response.raise_for_status = MagicMock()
+
+    client = OllamaClient("http://localhost:11434", "llama3.1:8b")
+
+    with patch.object(client, "_get_client") as mock_get_client:
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_get_client.return_value = mock_client
+
+        result = await client.generate("Test prompt")
+
+        # Should return empty string when response is null
+        assert result == ""
+
+
+@pytest.mark.asyncio
+async def test_temperature_validation_too_low():
+    """Test temperature validation rejects values below 0.0."""
+    client = OllamaClient("http://localhost:11434", "llama3.1:8b")
+
+    with pytest.raises(ValueError, match="temperature must be between 0.0 and 2.0"):
+        await client.generate("Test prompt", temperature=-0.1)
+
+
+@pytest.mark.asyncio
+async def test_temperature_validation_too_high():
+    """Test temperature validation rejects values above 2.0."""
+    client = OllamaClient("http://localhost:11434", "llama3.1:8b")
+
+    with pytest.raises(ValueError, match="temperature must be between 0.0 and 2.0"):
+        await client.generate("Test prompt", temperature=2.1)
+
+
+@pytest.mark.asyncio
+async def test_temperature_validation_boundary_values():
+    """Test temperature validation accepts boundary values."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"response": "test", "done": True}
+    mock_response.raise_for_status = MagicMock()
+
+    client = OllamaClient("http://localhost:11434", "llama3.1:8b")
+
+    with patch.object(client, "_get_client") as mock_get_client:
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_get_client.return_value = mock_client
+
+        # Should accept 0.0
+        result = await client.generate("Test", temperature=0.0)
+        assert result == "test"
+
+        # Should accept 2.0
+        result = await client.generate("Test", temperature=2.0)
+        assert result == "test"
 
 
 @pytest.mark.asyncio
