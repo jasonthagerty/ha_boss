@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import anthropic
 import pytest
+from anthropic.types import TextBlock
 
 from ha_boss.intelligence.claude_client import ClaudeClient
 
@@ -22,7 +23,7 @@ def claude_client():
 async def test_generate_success(claude_client: ClaudeClient):
     """Test successful text generation."""
     # Mock Anthropic SDK response
-    mock_text_block = MagicMock()
+    mock_text_block = MagicMock(spec=TextBlock)
     mock_text_block.text = "Here's an automation for your lights."
     mock_text_block.type = "text"
 
@@ -54,7 +55,7 @@ async def test_generate_success(claude_client: ClaudeClient):
 @pytest.mark.asyncio
 async def test_generate_with_options(claude_client: ClaudeClient):
     """Test generation with custom options."""
-    mock_text_block = MagicMock()
+    mock_text_block = MagicMock(spec=TextBlock)
     mock_text_block.text = "Test response"
 
     mock_response = MagicMock()
@@ -189,7 +190,7 @@ async def test_generate_invalid_temperature():
 @pytest.mark.asyncio
 async def test_is_available_success(claude_client: ClaudeClient):
     """Test availability check when API is available."""
-    mock_text_block = MagicMock()
+    mock_text_block = MagicMock(spec=TextBlock)
     mock_text_block.text = "OK"
 
     mock_response = MagicMock()

@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 import anthropic
+from anthropic.types import TextBlock
 
 logger = logging.getLogger(__name__)
 
@@ -108,8 +109,8 @@ class ClaudeClient:
             # Extract text from response
             if response.content and len(response.content) > 0:
                 first_block = response.content[0]
-                if hasattr(first_block, "text"):
-                    return str(first_block.text) if first_block.text else ""
+                if isinstance(first_block, TextBlock):
+                    return first_block.text or ""
             return ""
 
         except anthropic.APIConnectionError as e:
