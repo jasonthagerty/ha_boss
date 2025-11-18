@@ -207,6 +207,38 @@ class IntelligenceConfig(BaseSettings):
         description="Enable pattern collection for reliability analysis",
     )
 
+    # AI/LLM configuration (Phase 3)
+    ollama_enabled: bool = Field(
+        default=True,
+        description="Enable Ollama for AI features",
+    )
+    ollama_url: str = Field(
+        default="http://localhost:11434",
+        description="Ollama API URL",
+    )
+    ollama_model: str = Field(
+        default="llama3.1:8b",
+        description="Ollama model to use",
+    )
+    ollama_timeout_seconds: float = Field(
+        default=30.0,
+        description="Ollama request timeout",
+        ge=1.0,
+    )
+
+    claude_enabled: bool = Field(
+        default=False,
+        description="Enable Claude API for complex tasks",
+    )
+    claude_api_key: str | None = Field(
+        default=None,
+        description="Claude API key (optional)",
+    )
+    claude_model: str = Field(
+        default="claude-3-5-sonnet-20241022",
+        description="Claude model to use",
+    )
+
 
 class Config(BaseSettings):
     """Main HA Boss configuration."""
