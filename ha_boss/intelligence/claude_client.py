@@ -1,15 +1,15 @@
-"""Claude API client for complex AI tasks."""
+"""Claude API client for complex AI tasks using official Anthropic SDK."""
 
 import logging
 from typing import Any
 
-import httpx
+import anthropic
 
 logger = logging.getLogger(__name__)
 
 
 class ClaudeClient:
-    """Client for interacting with Claude API.
+    """Client for interacting with Claude API using official Anthropic SDK.
 
     Provides async interface for LLM text generation with graceful error handling.
     All methods return None on errors to support graceful degradation.
@@ -26,41 +26,32 @@ class ClaudeClient:
         self._api_key = api_key
         self.model = model
         self.timeout = timeout
-        self._client: httpx.AsyncClient | None = None
-        self._base_url = "https://api.anthropic.com/v1"
+        self._client: anthropic.AsyncAnthropic | None = None
 
     async def __aenter__(self) -> "ClaudeClient":
         """Async context manager entry."""
-        self._client = httpx.AsyncClient(
+        self._client = anthropic.AsyncAnthropic(
+            api_key=self._api_key,
             timeout=self.timeout,
-            headers={
-                "x-api-key": self._api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
         )
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         if self._client:
-            await self._client.aclose()
+            await self._client.close()
             self._client = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client.
+    async def _get_client(self) -> anthropic.AsyncAnthropic:
+        """Get or create Anthropic client.
 
         Note: Prefer using async context manager to ensure proper cleanup.
         If using directly, call close() when done to avoid resource leaks.
         """
         if self._client is None:
-            self._client = httpx.AsyncClient(
+            self._client = anthropic.AsyncAnthropic(
+                api_key=self._api_key,
                 timeout=self.timeout,
-                headers={
-                    "x-api-key": self._api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
             )
         return self._client
 
@@ -98,10 +89,11 @@ class ClaudeClient:
         try:
             client = await self._get_client()
 
-            # Build request payload
+            # Build message request
             messages = [{"role": "user", "content": prompt}]
 
-            payload: dict[str, Any] = {
+            # Make API request using SDK
+            kwargs: dict[str, Any] = {
                 "model": self.model,
                 "messages": messages,
                 "max_tokens": max_tokens,
@@ -109,42 +101,43 @@ class ClaudeClient:
             }
 
             if system_prompt:
-                payload["system"] = system_prompt
+                kwargs["system"] = system_prompt
 
-            # Make request
-            response = await client.post(
-                f"{self._base_url}/messages",
-                json=payload,
-            )
-            response.raise_for_status()
+            response = await client.messages.create(**kwargs)
 
-            # Parse response
-            data = response.json()
-            content_blocks = data.get("content", [])
-            if content_blocks and len(content_blocks) > 0:
-                text = content_blocks[0].get("text", "")
-                return str(text) if text else ""
+            # Extract text from response
+            if response.content and len(response.content) > 0:
+                first_block = response.content[0]
+                if hasattr(first_block, "text"):
+                    return str(first_block.text) if first_block.text else ""
             return ""
 
-        except httpx.ConnectError as e:
+        except anthropic.APIConnectionError as e:
             logger.warning(f"Cannot connect to Claude API: {e}")
             logger.info("AI features degraded - Claude API not available")
             return None
 
-        except httpx.TimeoutException:
+        except anthropic.APITimeoutError:
             logger.error(
                 f"Claude request timed out after {self.timeout}s. "
                 "Consider increasing timeout or using simpler prompts."
             )
             return None
 
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                logger.error("Claude API authentication failed - check API key")
-            elif e.response.status_code == 429:
-                logger.warning("Claude API rate limit exceeded - try again later")
-            else:
-                logger.error(f"Claude API error: {e.response.status_code} - {e.response.text}")
+        except anthropic.AuthenticationError:
+            logger.error("Claude API authentication failed - check API key")
+            return None
+
+        except anthropic.RateLimitError:
+            logger.warning("Claude API rate limit exceeded - try again later")
+            return None
+
+        except anthropic.APIStatusError as e:
+            logger.error(f"Claude API error: {e.status_code} - {e.message}")
+            return None
+
+        except anthropic.APIError as e:
+            logger.error(f"Claude API error: {e}", exc_info=True)
             return None
 
         except Exception as e:
@@ -171,7 +164,7 @@ class ClaudeClient:
             return False
 
     async def close(self) -> None:
-        """Close HTTP client and cleanup resources."""
+        """Close Anthropic client and cleanup resources."""
         if self._client:
-            await self._client.aclose()
+            await self._client.close()
             self._client = None
