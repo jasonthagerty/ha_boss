@@ -23,7 +23,7 @@ class ClaudeClient:
             model: Model name to use (e.g., claude-3-5-sonnet-20241022)
             timeout: Request timeout in seconds
         """
-        self.api_key = api_key
+        self._api_key = api_key
         self.model = model
         self.timeout = timeout
         self._client: httpx.AsyncClient | None = None
@@ -34,7 +34,7 @@ class ClaudeClient:
         self._client = httpx.AsyncClient(
             timeout=self.timeout,
             headers={
-                "x-api-key": self.api_key,
+                "x-api-key": self._api_key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
@@ -57,7 +57,7 @@ class ClaudeClient:
             self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 headers={
-                    "x-api-key": self.api_key,
+                    "x-api-key": self._api_key,
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },

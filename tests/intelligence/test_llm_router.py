@@ -328,6 +328,32 @@ async def test_temperature_passed_through_for_ollama(mock_ollama):
 
 
 @pytest.mark.asyncio
+async def test_temperature_validation(mock_ollama):
+    """Test temperature validation raises ValueError for out of range values."""
+    router = LLMRouter(
+        ollama_client=mock_ollama,
+        claude_client=None,
+        local_only=False,
+    )
+
+    # Test temperature too high
+    with pytest.raises(ValueError, match="temperature must be between 0.0 and 2.0"):
+        await router.generate(
+            prompt="Test",
+            complexity=TaskComplexity.SIMPLE,
+            temperature=2.5,
+        )
+
+    # Test temperature too low
+    with pytest.raises(ValueError, match="temperature must be between 0.0 and 2.0"):
+        await router.generate(
+            prompt="Test",
+            complexity=TaskComplexity.SIMPLE,
+            temperature=-0.1,
+        )
+
+
+@pytest.mark.asyncio
 async def test_get_available_llms_both_available(mock_ollama, mock_claude):
     """Test get_available_llms when both are available."""
     router = LLMRouter(

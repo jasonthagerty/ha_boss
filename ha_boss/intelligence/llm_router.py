@@ -78,11 +78,15 @@ class LLMRouter:
             prompt: Text prompt for generation
             complexity: Task complexity level
             max_tokens: Maximum tokens to generate (None = model default)
-            temperature: Sampling temperature (0.0-2.0 for Ollama, 0.0-1.0 for Claude)
+            temperature: Sampling temperature (0.0-2.0). Note: Automatically
+                clamped to 1.0 when routing to Claude API.
             system_prompt: Optional system prompt for context
 
         Returns:
             Generated text, or None if no LLM available or all failed
+
+        Raises:
+            ValueError: If temperature is not in range [0.0, 2.0]
 
         Example:
             >>> router = LLMRouter(ollama, claude, local_only=False)
@@ -97,6 +101,10 @@ class LLMRouter:
             ...     TaskComplexity.COMPLEX
             ... )
         """
+        # Validate temperature parameter
+        if not 0.0 <= temperature <= 2.0:
+            raise ValueError(f"temperature must be between 0.0 and 2.0, got {temperature}")
+
         # Determine primary and fallback LLMs based on complexity
         primary: OllamaClient | ClaudeClient | None
         fallback: OllamaClient | ClaudeClient | None
@@ -224,7 +232,7 @@ class LLMRouter:
             return result
 
         except Exception as e:
-            logger.error(f"Error generating with {type(client).__name__}: {e}")
+            logger.error(f"Error generating with {type(client).__name__}: {e}", exc_info=True)
             return None
 
     async def get_available_llms(self) -> list[str]:
