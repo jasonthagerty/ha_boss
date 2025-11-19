@@ -112,6 +112,10 @@ class NotificationsConfig(BaseSettings):
         default="persistent_notification.create",
         description="Home Assistant notification service",
     )
+    ai_enhanced: bool = Field(
+        default=True,
+        description="Enable AI-enhanced notifications with LLM analysis",
+    )
 
 
 class LoggingConfig(BaseSettings):
