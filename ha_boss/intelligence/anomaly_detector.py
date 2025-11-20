@@ -184,7 +184,9 @@ class AnomalyDetector:
                 # Calculate expected failure rate (failures per hour in baseline)
                 if baseline:
                     baseline_hours = (baseline_end - baseline_start).total_seconds() / 3600
-                    baseline_rate = baseline.failure_count / baseline_hours if baseline_hours > 0 else 0
+                    baseline_rate = (
+                        baseline.failure_count / baseline_hours if baseline_hours > 0 else 0
+                    )
                 else:
                     # No baseline data - use 0 as expected
                     baseline_rate = 0
@@ -469,7 +471,9 @@ class AnomalyDetector:
             return response
 
         except Exception as e:
-            logger.warning(f"Failed to generate AI explanation for {anomaly.integration_domain}: {e}")
+            logger.warning(
+                f"Failed to generate AI explanation for {anomaly.integration_domain}: {e}"
+            )
             return None
 
     def _build_explanation_prompt(self, anomaly: Anomaly) -> str:
