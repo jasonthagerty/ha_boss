@@ -1,6 +1,6 @@
 """Tests for enhanced notification generator."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -147,7 +147,7 @@ SUGGESTIONS:
 2. Verify API credentials are still valid
 3. Look for firmware update issues on the bridge"""
 
-    reset_time = datetime.now() + timedelta(hours=1)
+    reset_time = datetime.now(UTC) + timedelta(hours=1)
 
     result = await generator.generate_circuit_breaker_analysis(
         integration_name="Philips Hue",
@@ -170,7 +170,7 @@ async def test_generate_circuit_breaker_analysis_llm_fails(generator, mock_llm_r
     """Test circuit breaker analysis when LLM fails."""
     mock_llm_router.generate.return_value = None
 
-    reset_time = datetime.now() + timedelta(hours=1)
+    reset_time = datetime.now(UTC) + timedelta(hours=1)
 
     result = await generator.generate_circuit_breaker_analysis(
         integration_name="Test Integration",

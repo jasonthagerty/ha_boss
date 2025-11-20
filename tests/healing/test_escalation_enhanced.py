@@ -1,6 +1,6 @@
 """Tests for enhanced notification escalation with AI analysis."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -60,7 +60,7 @@ def health_issue():
     return HealthIssue(
         entity_id="sensor.test_sensor",
         issue_type="unavailable",
-        detected_at=datetime.now(),
+        detected_at=datetime.now(UTC),
         details={},
     )
 
@@ -181,7 +181,7 @@ async def test_notify_circuit_breaker_with_ai_analysis(
     with patch.object(escalator, "notification_manager") as mock_nm:
         mock_nm.notify = AsyncMock()
 
-        reset_time = datetime.now() + timedelta(hours=1)
+        reset_time = datetime.now(UTC) + timedelta(hours=1)
 
         await escalator.notify_circuit_breaker_open(
             integration_name="Test Integration",
@@ -207,7 +207,7 @@ async def test_notify_circuit_breaker_without_ai(mock_config_ai_disabled, mock_h
     with patch.object(escalator, "notification_manager") as mock_nm:
         mock_nm.notify = AsyncMock()
 
-        reset_time = datetime.now() + timedelta(hours=1)
+        reset_time = datetime.now(UTC) + timedelta(hours=1)
 
         await escalator.notify_circuit_breaker_open(
             integration_name="Test Integration",

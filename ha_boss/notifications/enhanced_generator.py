@@ -1,7 +1,7 @@
 """Enhanced notification generator with LLM-powered context."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ha_boss.intelligence.llm_router import LLMRouter, TaskComplexity
@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 # Performance target: < 2s for notification generation
 DEFAULT_MAX_TOKENS = 256
-DEFAULT_TIMEOUT_SECONDS = 2.0
 
 
 class EnhancedNotificationGenerator:
@@ -226,7 +225,7 @@ Be concise and practical. Focus on the most likely causes and solutions."""
             Dict with 'analysis' and 'suggestions' keys, or None if generation fails
         """
         try:
-            time_until_reset = reset_time - datetime.now()
+            time_until_reset = reset_time - datetime.now(UTC)
             minutes_until = max(0, int(time_until_reset.total_seconds() / 60))
 
             parts = [
