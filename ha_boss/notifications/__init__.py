@@ -1,5 +1,6 @@
 """Notification system for alerts and escalations."""
 
+from ha_boss.notifications.enhanced_generator import EnhancedNotificationGenerator
 from ha_boss.notifications.manager import (
     NotificationChannel,
     NotificationManager,
@@ -17,6 +18,8 @@ __all__ = [
     "NotificationManager",
     "NotificationChannel",
     "create_notification_manager",
+    # Enhanced Generator
+    "EnhancedNotificationGenerator",
     # Templates
     "NotificationContext",
     "NotificationType",

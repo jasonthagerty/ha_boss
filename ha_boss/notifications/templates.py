@@ -171,11 +171,30 @@ class HealingFailureTemplate(NotificationTemplate):
             else:
                 lines.append(f"**Error:** {context.error}")
 
+        # Check for AI-enhanced content
+        if context.extra and "ai_analysis" in context.extra:
+            ai_data = context.extra["ai_analysis"]
+            lines.append("")
+            lines.append("**AI Analysis:**")
+            if ai_data.get("analysis"):
+                lines.append(ai_data["analysis"])
+
+            if ai_data.get("suggestions"):
+                lines.append("")
+                lines.append("**Suggested Actions:**")
+                lines.append(ai_data["suggestions"])
+        else:
+            # Standard action required message
+            lines.extend(
+                [
+                    "",
+                    "**Action Required:**",
+                    "Please investigate and fix the integration manually.",
+                ]
+            )
+
         lines.extend(
             [
-                "",
-                "**Action Required:**",
-                "Please investigate and fix the integration manually.",
                 "",
                 "HA Boss will retry automatically when conditions allow.",
             ]
@@ -274,11 +293,35 @@ class CircuitBreakerTemplate(NotificationTemplate):
                 "",
                 "Auto-healing has been temporarily disabled for this integration",
                 "due to repeated failures.",
-                "",
-                "**Action Required:**",
-                "1. Check Home Assistant logs for error details",
-                "2. Fix the integration configuration",
-                "3. Manually reload the integration",
+            ]
+        )
+
+        # Check for AI-enhanced content
+        if context.extra and "ai_analysis" in context.extra:
+            ai_data = context.extra["ai_analysis"]
+            lines.append("")
+            lines.append("**AI Analysis:**")
+            if ai_data.get("analysis"):
+                lines.append(ai_data["analysis"])
+
+            if ai_data.get("suggestions"):
+                lines.append("")
+                lines.append("**Suggested Actions:**")
+                lines.append(ai_data["suggestions"])
+        else:
+            # Standard action required message
+            lines.extend(
+                [
+                    "",
+                    "**Action Required:**",
+                    "1. Check Home Assistant logs for error details",
+                    "2. Fix the integration configuration",
+                    "3. Manually reload the integration",
+                ]
+            )
+
+        lines.extend(
+            [
                 "",
                 f"Automatic healing will resume at {reset_at}.",
             ]
