@@ -15,6 +15,7 @@ class NotificationType(str, Enum):
     CONNECTION_ERROR = "connection_error"
     WEEKLY_SUMMARY = "weekly_summary"
     RECOVERY = "recovery"
+    ANOMALY_DETECTED = "anomaly_detected"
 
 
 class NotificationSeverity(str, Enum):
@@ -410,6 +411,69 @@ class WeeklySummaryTemplate(NotificationTemplate):
         return title, message
 
 
+class AnomalyDetectedTemplate(NotificationTemplate):
+    """Template for anomaly detection notifications."""
+
+    @staticmethod
+    def render(context: NotificationContext) -> tuple[str, str]:
+        """Render anomaly detection notification.
+
+        Args:
+            context: Notification context with anomaly details in extra
+
+        Returns:
+            Tuple of (title, message)
+        """
+        title = "HA Boss: Anomaly Detected"
+
+        # Get anomaly data from extra
+        anomaly_data = context.extra or {}
+
+        lines = [
+            f"**Type:** {anomaly_data.get('anomaly_type', 'Unknown')}",
+            f"**Integration:** {context.integration_name or anomaly_data.get('integration_domain', 'Unknown')}",
+            f"**Severity:** {anomaly_data.get('severity_label', 'Unknown')}",
+        ]
+
+        # Add description
+        if anomaly_data.get("description"):
+            lines.extend(["", anomaly_data["description"]])
+
+        # Add AI explanation if available
+        if anomaly_data.get("ai_explanation"):
+            lines.extend(
+                [
+                    "",
+                    "**AI Analysis:**",
+                    anomaly_data["ai_explanation"],
+                ]
+            )
+
+        # Add additional details
+        details = anomaly_data.get("details", {})
+        if details:
+            lines.append("")
+            lines.append("**Details:**")
+            if "failure_count" in details:
+                lines.append(f"- Recent failures: {details['failure_count']}")
+            if "rate_increase" in details:
+                lines.append(f"- Rate increase: {details['rate_increase']:.1f}x")
+            if "correlation" in details:
+                lines.append(f"- Correlation: {details['correlation']:.0%}")
+            if "concentration" in details:
+                lines.append(f"- Time concentration: {details['concentration']:.0%}")
+
+        lines.extend(
+            [
+                "",
+                "Please investigate the integration for potential issues.",
+            ]
+        )
+
+        message = "\n".join(lines)
+        return title, message
+
+
 class TemplateRegistry:
     """Registry for mapping notification types to templates."""
 
@@ -420,6 +484,7 @@ class TemplateRegistry:
         NotificationType.CIRCUIT_BREAKER: CircuitBreakerTemplate,
         NotificationType.CONNECTION_ERROR: ConnectionErrorTemplate,
         NotificationType.WEEKLY_SUMMARY: WeeklySummaryTemplate,
+        NotificationType.ANOMALY_DETECTED: AnomalyDetectedTemplate,
     }
 
     @classmethod

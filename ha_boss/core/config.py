@@ -211,6 +211,24 @@ class IntelligenceConfig(BaseSettings):
         description="Enable pattern collection for reliability analysis",
     )
 
+    # Anomaly detection configuration
+    anomaly_detection_enabled: bool = Field(
+        default=True,
+        description="Enable automatic anomaly detection",
+    )
+    anomaly_sensitivity_threshold: float = Field(
+        default=2.0,
+        description="Standard deviations for anomaly detection (higher = less sensitive)",
+        ge=1.0,
+        le=5.0,
+    )
+    anomaly_scan_hours: int = Field(
+        default=24,
+        description="Hours of data to scan for anomalies",
+        ge=1,
+        le=168,
+    )
+
     # AI/LLM configuration (Phase 3)
     ollama_enabled: bool = Field(
         default=True,
