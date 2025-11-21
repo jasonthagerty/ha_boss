@@ -1,7 +1,6 @@
 """Pattern-based anomaly detection for integration failures."""
 
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -295,7 +294,6 @@ class AnomalyDetector:
 
                 # Find the most common hour
                 max_hour = max(hour_counts, key=lambda h: hour_counts[h])
-                max_count = hour_counts[max_hour]
 
                 # Check if failures are concentrated (>60% in same 2-hour window)
                 window_count = sum(
@@ -388,7 +386,7 @@ class AnomalyDetector:
             co_occurrences: dict[tuple[str, str], int] = {}
             integration_counts: dict[str, int] = {}
 
-            for bucket, integrations in time_buckets.items():
+            for _bucket, integrations in time_buckets.items():
                 # Count each integration
                 for integration in integrations:
                     integration_counts[integration] = integration_counts.get(integration, 0) + 1
