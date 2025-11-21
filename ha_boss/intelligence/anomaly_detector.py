@@ -47,17 +47,6 @@ class Anomaly:
             return "Low"
 
 
-@dataclass
-class FailureStats:
-    """Statistics for failure analysis."""
-
-    integration_domain: str
-    integration_id: str
-    failure_count: int
-    period_hours: int
-    timestamps: list[datetime] = field(default_factory=list)
-
-
 class AnomalyDetector:
     """Detect anomalies in integration failure patterns.
 
@@ -295,14 +284,7 @@ class AnomalyDetector:
                 # Find the most common hour
                 max_hour = max(hour_counts, key=lambda h: hour_counts[h])
 
-                # Check if failures are concentrated (>60% in same 2-hour window)
-                window_count = sum(
-                    hour_counts.get(h, 0)
-                    for h in range((max_hour - 1) % 24, (max_hour + 2) % 24)
-                    if h in hour_counts or ((max_hour - 1) % 24 <= h <= (max_hour + 1) % 24)
-                )
-
-                # More precise window calculation
+                # Check if failures are concentrated (>60% in same 3-hour window)
                 window_hours = [(max_hour - 1) % 24, max_hour, (max_hour + 1) % 24]
                 window_count = sum(hour_counts.get(h, 0) for h in window_hours)
 

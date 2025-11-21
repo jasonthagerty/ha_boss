@@ -624,7 +624,7 @@ class TestPerformance:
 
         # Measure execution time
         start_time = time.time()
-        anomalies = await detector.detect_anomalies(hours=720)  # 30 days
+        _anomalies = await detector.detect_anomalies(hours=720)  # 30 days
         elapsed_time = time.time() - start_time
 
         # Should complete within 5 seconds
