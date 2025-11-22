@@ -569,7 +569,9 @@ class TestAutomationAnalyzer:
         assert result.trigger_count == 1
 
     @pytest.mark.asyncio
-    async def test_no_triggers_info(self, mock_ha_client: AsyncMock, mock_config: MagicMock) -> None:
+    async def test_no_triggers_info(
+        self, mock_ha_client: AsyncMock, mock_config: MagicMock
+    ) -> None:
         """Test detection of automation with no triggers."""
         # Setup
         automation = {

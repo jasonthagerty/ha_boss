@@ -1449,21 +1449,19 @@ async def _analyze_all_automations(config: Config, include_ai: bool) -> None:
 
         console.print(f"\n[cyan]Found {len(automations)} automations[/cyan]\n")
 
-        # Analyze each automation
+        # Analyze each automation with single progress bar
         results = []
-        for automation in automations:
-            entity_id = automation.get("entity_id", "unknown")
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
-                task = progress.add_task(f"Analyzing {entity_id}...", total=None)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Analyzing automations...", total=len(automations))
+            for automation in automations:
                 result = await analyzer._analyze_automation_state(automation, include_ai=include_ai)
-                progress.remove_task(task)
-
-            if result:
-                results.append(result)
+                if result:
+                    results.append(result)
+                progress.advance(task)
 
         # Display summary table
         _display_analysis_summary(results)
