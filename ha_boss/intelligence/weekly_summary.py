@@ -134,8 +134,8 @@ class WeeklySummaryGenerator:
 
         # Sort by success rate (best first for top performers)
         sorted_by_best = sorted(current_metrics, key=lambda m: m.success_rate, reverse=True)
-        # Already sorted worst first
-        sorted_by_worst = current_metrics
+        # Sort by success rate (worst first for needs attention)
+        sorted_by_worst = sorted(current_metrics, key=lambda m: m.success_rate)
 
         # Top 3 performers
         top_performers = [m for m in sorted_by_best[:3] if m.heal_attempts > 0]
@@ -180,8 +180,13 @@ class WeeklySummaryGenerator:
 
         # Generate AI summary if LLM router available
         if self.llm_router and self.config.notifications.ai_enhanced:
-            summary.ai_summary = await self._generate_ai_summary(summary)
-            summary.ai_recommendations = await self._generate_ai_recommendations(summary)
+            import asyncio
+
+            # Run AI generation in parallel for better performance
+            summary.ai_summary, summary.ai_recommendations = await asyncio.gather(
+                self._generate_ai_summary(summary),
+                self._generate_ai_recommendations(summary),
+            )
 
         logger.info(
             f"Weekly summary generated: {total_healing_attempts} heals, "

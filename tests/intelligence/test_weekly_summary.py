@@ -354,6 +354,26 @@ class TestWeeklySummaryGenerator:
         assert "zwave" in domains  # 40% success rate
 
     @pytest.mark.asyncio
+    async def test_needs_attention_sorted_by_worst(self, generator, sample_weekly_data):
+        """Test that needs_attention is sorted by worst success rate first."""
+        summary = await generator.generate_summary()
+
+        # Verify needs_attention is sorted from worst to best
+        if len(summary.needs_attention) > 1:
+            for i in range(len(summary.needs_attention) - 1):
+                current = summary.needs_attention[i].success_rate
+                next_rate = summary.needs_attention[i + 1].success_rate
+                assert current <= next_rate, (
+                    f"needs_attention not sorted: {summary.needs_attention[i].integration_domain} "
+                    f"({current}) should be <= {summary.needs_attention[i + 1].integration_domain} "
+                    f"({next_rate})"
+                )
+
+        # ZWave (40%) should be first since it's the worst
+        if summary.needs_attention:
+            assert summary.needs_attention[0].integration_domain == "zwave"
+
+    @pytest.mark.asyncio
     async def test_trend_calculation(self, generator, sample_weekly_data, previous_week_data):
         """Test trend calculation between weeks."""
         summary = await generator.generate_summary()
