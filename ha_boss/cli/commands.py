@@ -969,6 +969,198 @@ async def _show_failures(
         )
 
 
+@patterns_app.command("weekly-summary")
+def weekly_summary(
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+    no_notify: bool = typer.Option(
+        False,
+        "--no-notify",
+        help="Skip sending notification to Home Assistant",
+    ),
+    no_ai: bool = typer.Option(
+        False,
+        "--no-ai",
+        help="Skip AI-generated analysis",
+    ),
+) -> None:
+    """Generate and display weekly summary report.
+
+    Analyzes the past week of integration health data and generates
+    a summary including:
+    - Overall success rate and healing statistics
+    - Top performing integrations
+    - Integrations needing attention
+    - Trends compared to previous week
+    - AI-powered analysis and recommendations
+
+    Examples:
+        haboss patterns weekly-summary
+        haboss patterns weekly-summary --no-notify
+        haboss patterns weekly-summary --no-ai
+    """
+    console.print(
+        Panel.fit(
+            "[bold cyan]Weekly Summary Report[/bold cyan]",
+            subtitle="AI-Powered Health Analysis",
+        )
+    )
+
+    try:
+        config = load_config(config_path)
+
+        # Override AI setting if requested
+        if no_ai:
+            config.notifications.ai_enhanced = False
+
+        asyncio.run(_generate_weekly_summary(config, send_notify=not no_notify))
+
+    except Exception as e:
+        handle_error(e)
+
+
+async def _generate_weekly_summary(config: Config, send_notify: bool) -> None:
+    """Generate and display weekly summary.
+
+    Args:
+        config: HA Boss configuration
+        send_notify: Whether to send HA notification
+    """
+    from ha_boss.core.ha_client import create_ha_client
+    from ha_boss.intelligence.claude_client import ClaudeClient
+    from ha_boss.intelligence.llm_router import LLMRouter
+    from ha_boss.intelligence.ollama_client import OllamaClient
+    from ha_boss.intelligence.weekly_summary import WeeklySummaryGenerator
+    from ha_boss.notifications.manager import NotificationManager
+
+    async with Database(str(config.database.path)) as db:
+        await db.init_db()
+
+        # Set up LLM router if AI is enabled
+        llm_router = None
+        if config.notifications.ai_enhanced:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Initializing AI...", total=None)
+
+                ollama_client = None
+                claude_client = None
+
+                if config.intelligence.ollama_enabled:
+                    ollama_client = OllamaClient(
+                        url=config.intelligence.ollama_url,
+                        model=config.intelligence.ollama_model,
+                        timeout=config.intelligence.ollama_timeout_seconds,
+                    )
+
+                if config.intelligence.claude_enabled and config.intelligence.claude_api_key:
+                    claude_client = ClaudeClient(
+                        api_key=config.intelligence.claude_api_key,
+                        model=config.intelligence.claude_model,
+                    )
+
+                llm_router = LLMRouter(
+                    ollama_client=ollama_client,
+                    claude_client=claude_client,
+                    local_only=not config.intelligence.claude_enabled,
+                )
+
+                progress.remove_task(task)
+
+        # Set up notification manager if needed
+        notification_manager = None
+        ha_client = None
+        if send_notify:
+            try:
+                ha_client = await create_ha_client(config)
+                notification_manager = NotificationManager(config, ha_client)
+            except Exception as e:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Cannot connect to HA for notifications: {e}",
+                    style="dim",
+                )
+
+        # Generate summary
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Generating weekly summary...", total=None)
+
+            generator = WeeklySummaryGenerator(
+                config=config,
+                database=db,
+                llm_router=llm_router,
+                notification_manager=notification_manager,
+            )
+
+            summary = await generator.generate_summary()
+
+            # Store in database
+            await generator.store_in_database(summary)
+
+            progress.remove_task(task)
+
+        # Display report
+        report = generator.format_report(summary)
+        console.print(Panel(report, title="Weekly Summary", expand=False))
+
+        # Show statistics table
+        table = Table(title="\nStatistics", show_header=False)
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", justify="right")
+
+        table.add_row("Integrations Monitored", str(summary.total_integrations))
+        table.add_row("Healing Attempts", str(summary.total_healing_attempts))
+        table.add_row("Successful Healings", f"[green]{summary.successful_healings}[/green]")
+        table.add_row("Failed Healings", f"[red]{summary.failed_healings}[/red]")
+        table.add_row(
+            "Success Rate",
+            f"[{'green' if summary.overall_success_rate >= 0.8 else 'yellow' if summary.overall_success_rate >= 0.6 else 'red'}]"
+            f"{summary.overall_success_rate:.1%}[/]",
+        )
+
+        if summary.success_rate_change is not None:
+            if summary.success_rate_change > 0:
+                change_str = f"[green]+{summary.success_rate_change:.1f}%[/green]"
+            elif summary.success_rate_change < 0:
+                change_str = f"[red]{summary.success_rate_change:.1f}%[/red]"
+            else:
+                change_str = "0%"
+            table.add_row("vs Last Week", change_str)
+
+        console.print(table)
+
+        # Send notification if requested
+        if send_notify and notification_manager:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Sending notification...", total=None)
+                await generator.send_notification(summary)
+                progress.remove_task(task)
+
+            console.print("\n[green]✓[/green] Notification sent to Home Assistant")
+        elif send_notify and not notification_manager:
+            console.print("\n[yellow]Notification skipped (HA not available)[/yellow]")
+
+        # Close HA client if we opened one
+        if ha_client:
+            await ha_client.close()
+
+        console.print("\n[green]✓ Weekly summary generated successfully[/green]")
+
+
 @patterns_app.command("recommendations")
 def integration_recommendations(
     integration: str = typer.Argument(..., help="Integration domain (e.g., hue, zwave, met)"),
