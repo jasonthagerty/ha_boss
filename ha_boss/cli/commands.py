@@ -1,8 +1,11 @@
 """Command-line interface for HA Boss using Typer."""
 
+from __future__ import annotations
+
 import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
@@ -11,6 +14,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from ha_boss.core.config import Config, load_config
+
+if TYPE_CHECKING:
+    from ha_boss.automation.analyzer import AnalysisResult
 from ha_boss.core.database import Database
 from ha_boss.core.exceptions import (
     ConfigurationError,
@@ -1244,10 +1250,357 @@ async def _show_recommendations(config: Config, integration_domain: str, days: i
                 console.print(f"  [cyan]• {rec}[/cyan]")
 
 
+# Automation subcommands
+automation_app = typer.Typer(name="automation", help="Automation analysis and optimization")
+
+
+@automation_app.command("analyze")
+def analyze_automation(
+    automation_id: str | None = typer.Argument(
+        None,
+        help="Automation ID to analyze (e.g., bedroom_lights or automation.bedroom_lights)",
+    ),
+    all_automations: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Analyze all automations",
+    ),
+    no_ai: bool = typer.Option(
+        False,
+        "--no-ai",
+        help="Skip AI-powered analysis",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Analyze Home Assistant automations for optimization opportunities.
+
+    Provides:
+    - Structure overview (triggers, conditions, actions)
+    - Static analysis for common anti-patterns
+    - AI-powered optimization suggestions
+    - Actionable recommendations
+
+    Examples:
+        haboss automation analyze bedroom_lights
+        haboss automation analyze automation.morning_routine
+        haboss automation analyze --all
+        haboss automation analyze bedroom_lights --no-ai
+    """
+    if not automation_id and not all_automations:
+        console.print("[red]Error:[/red] Either provide an automation ID or use --all")
+        raise typer.Exit(code=1)
+
+    console.print(
+        Panel.fit(
+            "[bold cyan]Automation Analyzer[/bold cyan]",
+            subtitle="Optimization Suggestions",
+        )
+    )
+
+    try:
+        config = load_config(config_path)
+
+        # Override AI setting if requested
+        if no_ai:
+            config.notifications.ai_enhanced = False
+
+        if all_automations:
+            asyncio.run(_analyze_all_automations(config, include_ai=not no_ai))
+        elif automation_id:  # Type guard for mypy
+            asyncio.run(_analyze_single_automation(config, automation_id, include_ai=not no_ai))
+
+    except Exception as e:
+        handle_error(e)
+
+
+async def _analyze_single_automation(config: Config, automation_id: str, include_ai: bool) -> None:
+    """Analyze a single automation.
+
+    Args:
+        config: HA Boss configuration
+        automation_id: Automation entity ID (validated by CLI before calling)
+        include_ai: Whether to include AI analysis
+    """
+    from ha_boss.automation.analyzer import AutomationAnalyzer
+    from ha_boss.intelligence.claude_client import ClaudeClient
+    from ha_boss.intelligence.llm_router import LLMRouter
+    from ha_boss.intelligence.ollama_client import OllamaClient
+
+    async with await create_ha_client(config) as ha_client:
+        # Set up LLM router if AI is enabled
+        llm_router = None
+        if include_ai and config.notifications.ai_enhanced:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Initializing AI...", total=None)
+
+                ollama_client = None
+                claude_client = None
+
+                if config.intelligence.ollama_enabled:
+                    ollama_client = OllamaClient(
+                        url=config.intelligence.ollama_url,
+                        model=config.intelligence.ollama_model,
+                        timeout=config.intelligence.ollama_timeout_seconds,
+                    )
+
+                if config.intelligence.claude_enabled and config.intelligence.claude_api_key:
+                    claude_client = ClaudeClient(
+                        api_key=config.intelligence.claude_api_key,
+                        model=config.intelligence.claude_model,
+                    )
+
+                llm_router = LLMRouter(
+                    ollama_client=ollama_client,
+                    claude_client=claude_client,
+                    local_only=not config.intelligence.claude_enabled,
+                )
+
+                progress.remove_task(task)
+
+        # Create analyzer
+        analyzer = AutomationAnalyzer(ha_client, config, llm_router)
+
+        # Analyze automation
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(f"Analyzing {automation_id}...", total=None)
+            result = await analyzer.analyze_automation(automation_id, include_ai=include_ai)
+            progress.remove_task(task)
+
+        if not result:
+            console.print(f"\n[red]Error:[/red] Automation '{automation_id}' not found")
+            return
+
+        # Display results
+        _display_analysis_result(result)
+
+
+async def _analyze_all_automations(config: Config, include_ai: bool) -> None:
+    """Analyze all automations.
+
+    Args:
+        config: HA Boss configuration
+        include_ai: Whether to include AI analysis
+    """
+    from ha_boss.automation.analyzer import AutomationAnalyzer
+    from ha_boss.intelligence.claude_client import ClaudeClient
+    from ha_boss.intelligence.llm_router import LLMRouter
+    from ha_boss.intelligence.ollama_client import OllamaClient
+
+    async with await create_ha_client(config) as ha_client:
+        # Set up LLM router if AI is enabled
+        llm_router = None
+        if include_ai and config.notifications.ai_enhanced:
+            ollama_client = None
+            claude_client = None
+
+            if config.intelligence.ollama_enabled:
+                ollama_client = OllamaClient(
+                    url=config.intelligence.ollama_url,
+                    model=config.intelligence.ollama_model,
+                    timeout=config.intelligence.ollama_timeout_seconds,
+                )
+
+            if config.intelligence.claude_enabled and config.intelligence.claude_api_key:
+                claude_client = ClaudeClient(
+                    api_key=config.intelligence.claude_api_key,
+                    model=config.intelligence.claude_model,
+                )
+
+            llm_router = LLMRouter(
+                ollama_client=ollama_client,
+                claude_client=claude_client,
+                local_only=not config.intelligence.claude_enabled,
+            )
+
+        # Create analyzer
+        analyzer = AutomationAnalyzer(ha_client, config, llm_router)
+
+        # Get all automations
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Fetching automations...", total=None)
+            automations = await analyzer.get_automations()
+            progress.remove_task(task)
+
+        if not automations:
+            console.print("\n[yellow]No automations found in Home Assistant[/yellow]")
+            return
+
+        console.print(f"\n[cyan]Found {len(automations)} automations[/cyan]\n")
+
+        # Analyze each automation with single progress bar
+        results = []
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Analyzing automations...", total=len(automations))
+            for automation in automations:
+                result = await analyzer.analyze_automation_state(automation, include_ai=include_ai)
+                if result:
+                    results.append(result)
+                progress.advance(task)
+
+        # Display summary table
+        _display_analysis_summary(results)
+
+        # Show details for automations with issues
+        automations_with_issues = [r for r in results if r.has_issues]
+        if automations_with_issues:
+            console.print(
+                f"\n[bold yellow]Automations Needing Attention ({len(automations_with_issues)}):[/bold yellow]"
+            )
+            for result in automations_with_issues:
+                console.print(f"\n[cyan]{'─' * 60}[/cyan]")
+                _display_analysis_result(result, compact=True)
+
+
+def _display_analysis_result(result: AnalysisResult, compact: bool = False) -> None:
+    """Display analysis result with formatting.
+
+    Args:
+        result: Analysis result to display
+        compact: Use compact format
+    """
+    from ha_boss.automation.analyzer import SuggestionSeverity
+
+    # Header
+    if not compact:
+        console.print(f"\n[bold]Automation:[/bold] {result.friendly_name}")
+        console.print(f"[dim]Entity ID: {result.automation_id}[/dim]")
+    else:
+        console.print(f"\n[bold]{result.friendly_name}[/bold] ({result.automation_id})")
+
+    # Structure overview
+    state_color = "green" if result.state == "on" else "yellow"
+    console.print(
+        f"State: [{state_color}]{result.state}[/{state_color}] | "
+        f"Triggers: {result.trigger_count} | "
+        f"Conditions: {result.condition_count} | "
+        f"Actions: {result.action_count}"
+    )
+
+    # Suggestions
+    if result.suggestions:
+        if not compact:
+            console.print("\n[bold]Analysis:[/bold]")
+
+        for suggestion in result.suggestions:
+            if suggestion.severity == SuggestionSeverity.ERROR:
+                icon = "[red]✗[/red]"
+                title_style = "red"
+            elif suggestion.severity == SuggestionSeverity.WARNING:
+                icon = "[yellow]⚠[/yellow]"
+                title_style = "yellow"
+            else:  # INFO
+                icon = "[green]✓[/green]"
+                title_style = "green"
+
+            console.print(f"{icon} [{title_style}]{suggestion.title}[/{title_style}]")
+            if not compact:
+                console.print(f"   [dim]{suggestion.description}[/dim]")
+    else:
+        console.print("\n[green]✓ No issues found[/green]")
+
+    # AI analysis
+    if result.ai_analysis and not compact:
+        console.print("\n[bold]AI Suggestions:[/bold]")
+        console.print(Panel(result.ai_analysis, expand=False, border_style="blue"))
+
+
+def _display_analysis_summary(results: list[AnalysisResult]) -> None:
+    """Display summary table of all analyzed automations.
+
+    Args:
+        results: List of analysis results
+    """
+    from ha_boss.automation.analyzer import SuggestionSeverity
+
+    table = Table(title="Automation Analysis Summary", show_header=True)
+    table.add_column("Automation", style="cyan", no_wrap=True, overflow="ellipsis", max_width=35)
+    table.add_column("State", justify="center")
+    table.add_column("T/C/A", justify="center")  # Triggers/Conditions/Actions
+    table.add_column("Issues", justify="center")
+    table.add_column("Status", justify="center")
+
+    for result in results:
+        # State formatting
+        state_color = "green" if result.state == "on" else "yellow"
+        state_display = f"[{state_color}]{result.state}[/{state_color}]"
+
+        # Structure counts
+        tca_display = f"{result.trigger_count}/{result.condition_count}/{result.action_count}"
+
+        # Count issues
+        errors = sum(1 for s in result.suggestions if s.severity == SuggestionSeverity.ERROR)
+        warnings = sum(1 for s in result.suggestions if s.severity == SuggestionSeverity.WARNING)
+
+        if errors > 0:
+            issues_display = f"[red]{errors} errors[/red]"
+        elif warnings > 0:
+            issues_display = f"[yellow]{warnings} warnings[/yellow]"
+        else:
+            issues_display = "[green]0[/green]"
+
+        # Overall status
+        if errors > 0:
+            status = "[red]Needs Fix[/red]"
+        elif warnings > 0:
+            status = "[yellow]Review[/yellow]"
+        else:
+            status = "[green]Good[/green]"
+
+        table.add_row(
+            result.friendly_name,
+            state_display,
+            tca_display,
+            issues_display,
+            status,
+        )
+
+    console.print(table)
+
+    # Summary stats
+    total = len(results)
+    with_errors = sum(
+        1 for r in results if any(s.severity == SuggestionSeverity.ERROR for s in r.suggestions)
+    )
+    with_warnings = sum(
+        1
+        for r in results
+        if any(s.severity == SuggestionSeverity.WARNING for s in r.suggestions)
+        and not any(s.severity == SuggestionSeverity.ERROR for s in r.suggestions)
+    )
+    good = total - with_errors - with_warnings
+
+    console.print(
+        f"\n[dim]Summary: {good} good, {with_warnings} need review, {with_errors} need fix[/dim]"
+    )
+
+
 # Register subcommands
 app.add_typer(config_app, name="config")
 app.add_typer(db_app, name="db")
 app.add_typer(patterns_app, name="patterns")
+app.add_typer(automation_app, name="automation")
 
 
 def main() -> None:
