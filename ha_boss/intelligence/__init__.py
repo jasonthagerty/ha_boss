@@ -15,6 +15,11 @@ from ha_boss.intelligence.reliability_analyzer import (
     ReliabilityAnalyzer,
     ReliabilityMetric,
 )
+from ha_boss.intelligence.weekly_summary import (
+    IntegrationTrend,
+    WeeklySummary,
+    WeeklySummaryGenerator,
+)
 
 __all__ = [
     # Anomaly Detection
@@ -32,4 +37,8 @@ __all__ = [
     "ReliabilityAnalyzer",
     "ReliabilityMetric",
     "FailureEvent",
+    # Weekly Summary
+    "IntegrationTrend",
+    "WeeklySummary",
+    "WeeklySummaryGenerator",
 ]
