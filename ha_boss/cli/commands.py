@@ -1312,26 +1312,22 @@ def analyze_automation(
 
         if all_automations:
             asyncio.run(_analyze_all_automations(config, include_ai=not no_ai))
-        else:
+        elif automation_id:  # Type guard for mypy
             asyncio.run(_analyze_single_automation(config, automation_id, include_ai=not no_ai))
 
     except Exception as e:
         handle_error(e)
 
 
-async def _analyze_single_automation(
-    config: Config, automation_id: str | None, include_ai: bool
-) -> None:
+async def _analyze_single_automation(config: Config, automation_id: str, include_ai: bool) -> None:
     """Analyze a single automation.
 
     Args:
         config: HA Boss configuration
-        automation_id: Automation entity ID
+        automation_id: Automation entity ID (validated by CLI before calling)
         include_ai: Whether to include AI analysis
     """
     from ha_boss.automation.analyzer import AutomationAnalyzer
-
-    assert automation_id is not None, "automation_id is required"
     from ha_boss.intelligence.claude_client import ClaudeClient
     from ha_boss.intelligence.llm_router import LLMRouter
     from ha_boss.intelligence.ollama_client import OllamaClient
@@ -1458,7 +1454,7 @@ async def _analyze_all_automations(config: Config, include_ai: bool) -> None:
         ) as progress:
             task = progress.add_task("Analyzing automations...", total=len(automations))
             for automation in automations:
-                result = await analyzer._analyze_automation_state(automation, include_ai=include_ai)
+                result = await analyzer.analyze_automation_state(automation, include_ai=include_ai)
                 if result:
                     results.append(result)
                 progress.advance(task)

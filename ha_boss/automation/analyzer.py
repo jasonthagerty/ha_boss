@@ -114,7 +114,7 @@ class AutomationAnalyzer:
             logger.error(f"Failed to fetch automation {automation_id}: {e}")
             return None
 
-        return await self._analyze_automation_state(state, include_ai)
+        return await self.analyze_automation_state(state, include_ai)
 
     async def analyze_all(
         self,
@@ -122,28 +122,45 @@ class AutomationAnalyzer:
     ) -> list[AnalysisResult]:
         """Analyze all automations.
 
+        When AI analysis is disabled, automations are analyzed concurrently
+        for better performance.
+
         Args:
             include_ai: Whether to include AI-powered analysis
 
         Returns:
             List of analysis results
         """
+        import asyncio
+
         automations = await self.get_automations()
-        results = []
 
-        for automation in automations:
-            result = await self._analyze_automation_state(automation, include_ai)
-            if result:
-                results.append(result)
+        if not include_ai:
+            # Analyze concurrently when AI is disabled (no LLM rate limiting concerns)
+            tasks = [
+                self.analyze_automation_state(automation, include_ai=False)
+                for automation in automations
+            ]
+            results = await asyncio.gather(*tasks)
+            return [r for r in results if r is not None]
+        else:
+            # Analyze sequentially when AI is enabled to avoid overwhelming LLM
+            results = []
+            for automation in automations:
+                result = await self.analyze_automation_state(automation, include_ai)
+                if result:
+                    results.append(result)
+            return results
 
-        return results
-
-    async def _analyze_automation_state(
+    async def analyze_automation_state(
         self,
         state: dict[str, Any],
-        include_ai: bool,
+        include_ai: bool = True,
     ) -> AnalysisResult:
         """Analyze an automation state object.
+
+        This method is useful when you already have the automation state
+        (e.g., from get_automations) and want to avoid an additional API call.
 
         Args:
             state: Automation entity state from HA API

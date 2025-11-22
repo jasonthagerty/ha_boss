@@ -656,6 +656,93 @@ class TestAutomationAnalyzer:
         ]
         assert len(complex_warnings) == 1
 
+    @pytest.mark.asyncio
+    async def test_empty_attributes(
+        self, mock_ha_client: AsyncMock, mock_config: MagicMock
+    ) -> None:
+        """Test handling of automation with empty attributes."""
+        # Setup
+        automation = {
+            "entity_id": "automation.empty_attrs",
+            "state": "on",
+            "attributes": {},
+        }
+        mock_ha_client.get_state.return_value = automation
+
+        analyzer = AutomationAnalyzer(mock_ha_client, mock_config)
+
+        # Execute
+        result = await analyzer.analyze_automation("empty_attrs", include_ai=False)
+
+        # Verify - should handle gracefully
+        assert result is not None
+        assert result.automation_id == "automation.empty_attrs"
+        assert result.trigger_count == 0
+        assert result.condition_count == 0
+        assert result.action_count == 0
+        # Should have "no triggers" and "no actions" suggestions
+        assert any("no triggers" in s.title.lower() for s in result.suggestions)
+        assert any("no actions" in s.title.lower() for s in result.suggestions)
+
+    @pytest.mark.asyncio
+    async def test_malformed_trigger_data(
+        self, mock_ha_client: AsyncMock, mock_config: MagicMock
+    ) -> None:
+        """Test handling of malformed trigger data."""
+        # Setup - trigger as string instead of dict/list
+        automation = {
+            "entity_id": "automation.malformed",
+            "state": "on",
+            "attributes": {
+                "friendly_name": "Malformed",
+                "trigger": "invalid",  # Should be list or dict
+                "condition": None,  # Should be list or dict
+                "action": 123,  # Should be list or dict
+            },
+        }
+        mock_ha_client.get_state.return_value = automation
+
+        analyzer = AutomationAnalyzer(mock_ha_client, mock_config)
+
+        # Execute - should not raise
+        result = await analyzer.analyze_automation("malformed", include_ai=False)
+
+        # Verify - should handle gracefully with 0 counts
+        assert result is not None
+        assert result.trigger_count == 0
+        assert result.condition_count == 0
+        assert result.action_count == 0
+
+    @pytest.mark.asyncio
+    async def test_concurrent_analysis_without_ai(
+        self, mock_ha_client: AsyncMock, mock_config: MagicMock
+    ) -> None:
+        """Test that analyze_all uses concurrent analysis when AI is disabled."""
+        # Setup
+        automations = [
+            {
+                "entity_id": f"automation.test_{i}",
+                "state": "on",
+                "attributes": {
+                    "friendly_name": f"Test {i}",
+                    "trigger": [{"platform": "state", "entity_id": "sensor.test"}],
+                    "condition": [],
+                    "action": [{"service": "test.test"}],
+                },
+            }
+            for i in range(5)
+        ]
+        mock_ha_client.get_states.return_value = automations
+
+        analyzer = AutomationAnalyzer(mock_ha_client, mock_config)
+
+        # Execute
+        results = await analyzer.analyze_all(include_ai=False)
+
+        # Verify
+        assert len(results) == 5
+        assert all(r.automation_id.startswith("automation.test_") for r in results)
+
 
 class TestAnalysisResult:
     """Tests for AnalysisResult dataclass."""
