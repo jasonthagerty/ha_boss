@@ -1,6 +1,6 @@
 """Tests for database management."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -36,7 +36,7 @@ async def test_create_entity(tmp_path):
             entity_id="sensor.test_temp",
             domain="sensor",
             friendly_name="Test Temperature",
-            last_seen=datetime.utcnow(),
+            last_seen=datetime.now(UTC),
             last_state="22.5",
             is_monitored=True,
         )
@@ -133,8 +133,8 @@ async def test_cleanup_old_records(tmp_path):
     db = await init_database(db_path)
 
     # Create old and recent records
-    old_timestamp = datetime.utcnow() - timedelta(days=60)
-    recent_timestamp = datetime.utcnow() - timedelta(days=5)
+    old_timestamp = datetime.now(UTC) - timedelta(days=60)
+    recent_timestamp = datetime.now(UTC) - timedelta(days=5)
 
     async with db.async_session() as session:
         # Old health event
