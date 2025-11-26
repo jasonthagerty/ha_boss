@@ -406,10 +406,7 @@ class TestAutomationGenerator:
         generator = AutomationGenerator(mock_ha_client, mock_config, mock_llm_router)
 
         assert generator._generate_automation_id("Bedroom Lights") == "automation.bedroom_lights"
-        assert (
-            generator._generate_automation_id("Turn On @ Sunset")
-            == "automation.turn_on_sunset"
-        )
+        assert generator._generate_automation_id("Turn On @ Sunset") == "automation.turn_on_sunset"
         assert (
             generator._generate_automation_id("Test - Multiple -- Dashes")
             == "automation.test_multiple_dashes"

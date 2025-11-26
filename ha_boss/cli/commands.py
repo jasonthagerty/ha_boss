@@ -1513,7 +1513,9 @@ def generate_automation(
     )
 
     if mode not in ["single", "restart", "queued", "parallel"]:
-        console.print(f"[red]Error:[/red] Invalid mode '{mode}'. Must be single, restart, queued, or parallel")
+        console.print(
+            f"[red]Error:[/red] Invalid mode '{mode}'. Must be single, restart, queued, or parallel"
+        )
         raise typer.Exit(code=1)
 
     try:
@@ -1569,6 +1571,8 @@ async def _generate_automation(
                     timeout=config.intelligence.ollama_timeout_seconds,
                 )
 
+            # API key is guaranteed to be set due to check above
+            assert config.intelligence.claude_api_key is not None
             claude_client = ClaudeClient(
                 api_key=config.intelligence.claude_api_key,
                 model=config.intelligence.claude_model,
@@ -1597,7 +1601,9 @@ async def _generate_automation(
 
         if not automation:
             console.print("\n[red]Error:[/red] Failed to generate automation")
-            console.print("[yellow]Hint:[/yellow] Try rephrasing your prompt or check Claude API configuration")
+            console.print(
+                "[yellow]Hint:[/yellow] Try rephrasing your prompt or check Claude API configuration"
+            )
             return
 
         # Display preview

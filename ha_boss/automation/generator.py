@@ -1,6 +1,5 @@
 """Automation generator using Claude API for natural language to HA automation."""
 
-import json
 import logging
 import re
 from dataclasses import dataclass
@@ -154,9 +153,7 @@ Always use best practices: meaningful aliases, clear descriptions, appropriate m
             if generated.is_valid:
                 logger.info(f"Successfully generated automation: {generated.alias}")
             else:
-                logger.warning(
-                    f"Generated automation has validation errors: {validation_errors}"
-                )
+                logger.warning(f"Generated automation has validation errors: {validation_errors}")
 
             return generated
 
@@ -237,9 +234,7 @@ Output the complete automation as valid YAML only (no markdown, no explanations)
         if "mode" in automation:
             valid_modes = ["single", "restart", "queued", "parallel"]
             if automation["mode"] not in valid_modes:
-                errors.append(
-                    f"Invalid mode '{automation['mode']}'. Must be one of: {valid_modes}"
-                )
+                errors.append(f"Invalid mode '{automation['mode']}'. Must be one of: {valid_modes}")
 
         # Validate triggers have platform
         triggers = automation.get("trigger", [])
@@ -256,7 +251,7 @@ Output the complete automation as valid YAML only (no markdown, no explanations)
                 errors.append(f"Action {i} must be a dict")
             else:
                 # Actions can be: service, delay, wait_template, wait_for_trigger,
-                # repeat, choose, if, etc.
+                # repeat, choose, if, variables, etc.
                 valid_action_keys = {
                     "service",
                     "delay",
@@ -268,11 +263,10 @@ Output the complete automation as valid YAML only (no markdown, no explanations)
                     "event",
                     "device_id",
                     "scene",
+                    "variables",
                 }
                 if not any(key in action for key in valid_action_keys):
-                    errors.append(
-                        f"Action {i} must contain one of: {', '.join(valid_action_keys)}"
-                    )
+                    errors.append(f"Action {i} must contain one of: {', '.join(valid_action_keys)}")
 
         return errors
 
@@ -330,7 +324,7 @@ Output the complete automation as valid YAML only (no markdown, no explanations)
                 "1. Go to Configuration -> Automations\n"
                 "2. Click '+ Add Automation'\n"
                 "3. Click '...' menu -> 'Edit in YAML'\n"
-                f"4. Paste the YAML above\n"
+                "4. Paste the YAML above\n"
                 "5. Save"
             )
 
