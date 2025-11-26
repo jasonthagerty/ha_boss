@@ -1473,6 +1473,155 @@ async def _analyze_all_automations(config: Config, include_ai: bool) -> None:
                 _display_analysis_result(result, compact=True)
 
 
+@automation_app.command("generate")
+def generate_automation(
+    prompt: str = typer.Argument(..., help="Natural language description of the automation"),
+    mode: str = typer.Option(
+        "single",
+        "--mode",
+        "-m",
+        help="Automation mode (single, restart, queued, parallel)",
+    ),
+    preview_only: bool = typer.Option(
+        False,
+        "--preview",
+        "-p",
+        help="Only preview the automation, don't create it",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Generate Home Assistant automation from natural language.
+
+    Uses Claude API to translate your description into a valid Home Assistant
+    automation YAML. Requires Claude API to be configured in config.yaml.
+
+    Examples:
+        haboss automation generate "Turn on lights when motion detected after sunset"
+        haboss automation generate "Send notification if garage door open > 10 minutes" --mode restart
+        haboss automation generate "Turn off all lights at 11pm" --preview
+    """
+    console.print(
+        Panel.fit(
+            "[bold cyan]Automation Generator[/bold cyan]",
+            subtitle="AI-Powered Automation Creation",
+        )
+    )
+
+    if mode not in ["single", "restart", "queued", "parallel"]:
+        console.print(f"[red]Error:[/red] Invalid mode '{mode}'. Must be single, restart, queued, or parallel")
+        raise typer.Exit(code=1)
+
+    try:
+        config = load_config(config_path)
+
+        # Check Claude API is configured
+        if not config.intelligence.claude_enabled or not config.intelligence.claude_api_key:
+            console.print(
+                "[red]Error:[/red] Claude API must be configured to generate automations\n"
+                "[yellow]Hint:[/yellow] Set claude_enabled: true and claude_api_key in config.yaml"
+            )
+            raise typer.Exit(code=1)
+
+        asyncio.run(_generate_automation(config, prompt, mode, preview_only))
+
+    except Exception as e:
+        handle_error(e)
+
+
+async def _generate_automation(
+    config: Config,
+    prompt: str,
+    mode: str,
+    preview_only: bool,
+) -> None:
+    """Generate automation using Claude API.
+
+    Args:
+        config: HA Boss configuration
+        prompt: Natural language description
+        mode: Automation mode
+        preview_only: Only show preview, don't create
+    """
+    from ha_boss.automation.generator import AutomationGenerator
+    from ha_boss.intelligence.claude_client import ClaudeClient
+    from ha_boss.intelligence.llm_router import LLMRouter
+    from ha_boss.intelligence.ollama_client import OllamaClient
+
+    async with await create_ha_client(config) as ha_client:
+        # Set up LLM router with Claude
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Initializing Claude API...", total=None)
+
+            ollama_client = None
+            if config.intelligence.ollama_enabled:
+                ollama_client = OllamaClient(
+                    url=config.intelligence.ollama_url,
+                    model=config.intelligence.ollama_model,
+                    timeout=config.intelligence.ollama_timeout_seconds,
+                )
+
+            claude_client = ClaudeClient(
+                api_key=config.intelligence.claude_api_key,
+                model=config.intelligence.claude_model,
+            )
+
+            llm_router = LLMRouter(
+                ollama_client=ollama_client,
+                claude_client=claude_client,
+                local_only=False,  # Need Claude for generation
+            )
+
+            progress.remove_task(task)
+
+        # Create generator
+        generator = AutomationGenerator(ha_client, config, llm_router)
+
+        # Generate automation
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Generating automation with Claude API...", total=None)
+            automation = await generator.generate_from_prompt(prompt, mode)
+            progress.remove_task(task)
+
+        if not automation:
+            console.print("\n[red]Error:[/red] Failed to generate automation")
+            console.print("[yellow]Hint:[/yellow] Try rephrasing your prompt or check Claude API configuration")
+            return
+
+        # Display preview
+        console.print("\n" + generator.format_automation_preview(automation))
+
+        if not automation.is_valid:
+            console.print(
+                "\n[red]Warning:[/red] Generated automation has validation errors. Review carefully before using."
+            )
+
+        # Offer to create if not preview-only
+        if not preview_only:
+            console.print("\n[bold]Instructions to create this automation:[/bold]")
+            console.print("1. Go to Home Assistant → Configuration → Automations")
+            console.print("2. Click '+ Add Automation' → '...' menu → 'Edit in YAML'")
+            console.print("3. Copy and paste the YAML above")
+            console.print("4. Save the automation\n")
+
+            # For future: could implement direct creation via HA API
+            # For now, provide YAML for manual creation
+        else:
+            console.print("\n[dim](Preview only - not creating automation)[/dim]")
+
+
 def _display_analysis_result(result: AnalysisResult, compact: bool = False) -> None:
     """Display analysis result with formatting.
 
