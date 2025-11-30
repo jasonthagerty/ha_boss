@@ -57,6 +57,11 @@ notifications:
   # Home Assistant notification service
   ha_service: "persistent_notification.create"
 
+  # AI-enhanced notifications (Phase 3)
+  # Use LLM to generate natural language explanations for failures
+  # Requires Ollama or Claude API configured in intelligence section
+  ai_enhanced: true
+
   # Optional: Email notifications
   # email:
   #   enabled: false
@@ -116,8 +121,28 @@ rest:
   # Base delay for exponential backoff (seconds)
   retry_base_delay_seconds: 1.0
 
-# Intelligence layer configuration (Phase 2+)
+# Intelligence layer configuration (Phase 2 & 3)
 intelligence:
-  # Enable pattern collection for reliability analysis
+  # Enable pattern collection for reliability analysis (Phase 2)
   # Tracks healing success rates, failure patterns, and integration health
   pattern_collection_enabled: true
+
+  # Anomaly detection (Phase 3)
+  anomaly_detection_enabled: true  # Auto-detect unusual patterns
+  anomaly_sensitivity_threshold: 2.0  # Standard deviations (higher = less sensitive)
+  anomaly_scan_hours: 24  # Hours of data to scan
+
+  # Local LLM via Ollama (Phase 3)
+  # Ollama provides privacy-first AI features running locally
+  # Install: https://ollama.ai or run via Docker
+  ollama_enabled: true
+  ollama_url: "http://localhost:11434"
+  ollama_model: "llama3.1:8b"  # Recommended: llama3.1:8b or mistral
+  ollama_timeout_seconds: 30
+
+  # Claude API for complex tasks (Phase 3, optional)
+  # Used for automation generation and deep analysis
+  # Get API key at: https://console.anthropic.com
+  claude_enabled: false  # Enable when you have an API key
+  claude_api_key: "${CLAUDE_API_KEY}"  # Set in .env file
+  claude_model: "claude-3-5-sonnet-20241022"

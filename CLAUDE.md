@@ -21,12 +21,15 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 - CLI reports for reliability analysis
 - Foundation for future AI-driven insights
 
-**Phase 3 (AI-Powered Intelligence Layer - Current Focus)**:
+**Phase 3 (AI-Powered Intelligence Layer - Complete)**:
 - Local LLM integration (Ollama) for enhanced notifications
-- Pattern-based anomaly detection
-- Weekly summary reports with AI analysis
-- Automation optimization suggestions
-- Claude API integration for complex automation generation
+- Claude API integration for complex reasoning and automation generation
+- Intelligent LLM router with local-first fallback strategy
+- Pattern-based anomaly detection with AI-generated insights
+- Weekly AI-analyzed summary reports
+- Automation analysis with optimization suggestions
+- Natural language automation generation
+- Performance benchmarks validating < 15s response times
 
 **Phase 3 LLM Stack Decision** (see `docs/LLM_SETUP.md` for details):
 - **Backend**: Ollama with Llama 3.1 8B (Q4_K_M quantization)
@@ -149,29 +152,31 @@ ha_boss/
 │   │   ├── config.py          # Pydantic configuration models
 │   │   ├── ha_client.py       # Home Assistant API wrapper
 │   │   ├── database.py        # SQLAlchemy models and DB management
-│   │   └── llm_router.py      # LLM task routing (Phase 2+)
+│   │   └── llm_router.py      # LLM task routing
 │   ├── monitoring/             # Entity monitoring
 │   │   ├── state_tracker.py   # Track entity states
 │   │   ├── health_monitor.py  # Health checks and anomaly detection
 │   │   ├── websocket_client.py # WebSocket connection manager
-│   │   └── anomaly_detector.py # LLM-powered anomaly detection (Phase 2+)
+│   │   └── anomaly_detector.py # LLM-powered anomaly detection
 │   ├── healing/                # Auto-healing system
 │   │   ├── integration_manager.py  # Integration discovery and reload
 │   │   ├── heal_strategies.py      # Healing strategies and logic
 │   │   └── escalation.py           # Notification escalation
-│   ├── intelligence/           # AI features (Phase 2+)
-│   │   ├── local_llm.py       # Ollama client
+│   ├── intelligence/           # AI features
+│   │   ├── ollama_client.py   # Ollama client
 │   │   ├── claude_client.py   # Claude API client
-│   │   ├── pattern_analyzer.py # Usage pattern analysis
-│   │   └── optimization_engine.py # Automation optimization
-│   ├── automation/             # Automation management (Phase 3+)
-│   │   ├── manager.py         # Automation CRUD operations
-│   │   ├── generator.py       # AI automation generation
-│   │   └── optimizer.py       # Pattern-based optimization
+│   │   ├── llm_router.py      # Intelligent LLM routing
+│   │   ├── anomaly_detector.py # Pattern-based anomaly detection
+│   │   ├── weekly_summary.py  # AI-generated weekly reports
+│   │   ├── pattern_collector.py # Pattern data collection
+│   │   └── reliability_analyzer.py # Integration reliability analysis
+│   ├── automation/             # Automation management
+│   │   ├── analyzer.py        # Automation analysis
+│   │   └── generator.py       # AI automation generation
 │   ├── notifications/          # Notification system
 │   │   ├── manager.py         # Notification routing
 │   │   └── templates.py       # Message templates
-│   ├── api/                   # REST API (Phase 2+)
+│   ├── api/                   # REST API (future)
 │   │   └── routes.py          # FastAPI routes
 │   └── cli/                   # Command-line interface
 │       └── commands.py        # CLI commands (Typer)
