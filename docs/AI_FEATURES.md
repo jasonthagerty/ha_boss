@@ -221,11 +221,8 @@ Recommendations:
 
 **Configuration**:
 ```yaml
-intelligence:
-  weekly_summary_enabled: true
-
 notifications:
-  weekly_summary: true
+  weekly_summary: true  # Enable weekly summary reports
 ```
 
 **Delivery**: Sent to Home Assistant as persistent notification every Monday at 09:00
@@ -273,12 +270,6 @@ AI Analysis:
 This automation could be simplified by using the wait_template action
 with a timeout instead of separate on/off automations. This would
 reduce automation count and improve reliability.
-```
-
-**Configuration**:
-```yaml
-intelligence:
-  automation_analysis_enabled: true
 ```
 
 **CLI Commands**:
@@ -499,7 +490,7 @@ Claude API charges per token:
 
 **Cost Control**:
 - Only used for automation generation (not notifications)
-- Set `llm_strategy: "local_only"` to disable Claude completely
+- Keep `claude_enabled: false` to disable Claude completely
 - Monitor usage at https://console.anthropic.com
 
 ---
@@ -515,30 +506,25 @@ intelligence:
   # Pattern collection (Phase 2)
   pattern_collection_enabled: true
 
+  # Anomaly detection
+  anomaly_detection_enabled: true
+  anomaly_sensitivity_threshold: 2.0
+  anomaly_scan_hours: 24
+
   # Local LLM (Ollama)
+  ollama_enabled: true
   ollama_url: "http://localhost:11434"  # Or http://ollama:11434 in Docker
   ollama_model: "llama3.1:8b"
   ollama_timeout_seconds: 30
 
   # Cloud LLM (Claude) - Optional
+  claude_enabled: false  # Enable when you have an API key
   claude_api_key: "${CLAUDE_API_KEY}"
   claude_model: "claude-3-5-sonnet-20241022"
-  claude_timeout_seconds: 60
-
-  # Feature toggles
-  ai_enhanced_notifications: true
-  anomaly_detection_enabled: true
-  weekly_summary_enabled: true
-  automation_analysis_enabled: true
-
-  # LLM routing strategy
-  # - local_only: Only use Ollama (privacy-first)
-  # - hybrid: Use Ollama for simple tasks, Claude for complex (recommended)
-  llm_strategy: "hybrid"
 
 notifications:
   on_healing_failure: true
-  weekly_summary: true
+  weekly_summary: true  # Enable weekly summary reports
   ha_service: "persistent_notification.create"
   ai_enhanced: true  # Enable AI-enhanced notifications
 ```
@@ -561,13 +547,12 @@ notifications:
 - Required only for automation generation
 - Set in .env file for security
 
-**`llm_strategy`**: LLM selection strategy
-- `local_only`: Never use Claude (privacy mode)
-- `hybrid`: Use Ollama for most tasks, Claude for automation generation (recommended)
-
-**`ai_enhanced_notifications`**: Enable AI explanations in notifications
-- Requires Ollama or Claude configured
+**`notifications.ai_enhanced`**: Enable AI explanations in notifications
+- Requires Ollama configured (with `ollama_enabled: true`)
 - Falls back to simple text if LLM unavailable
+
+**`notifications.weekly_summary`**: Enable weekly summary reports
+- Sent every Monday at 09:00 as persistent notification
 
 ---
 
@@ -590,7 +575,7 @@ notifications:
 ### Security Best Practices
 
 1. **API Keys**: Store Claude API key in `.env` file (not in config.yaml)
-2. **Local-Only Mode**: Use `llm_strategy: "local_only"` for maximum privacy
+2. **Local-Only Mode**: Keep `claude_enabled: false` for maximum privacy
 3. **Network Isolation**: Run Ollama on isolated network if desired
 4. **Minimal Context**: HA Boss only sends necessary context to LLMs
 5. **No Sensitive Data**: Entity IDs and states only (no passwords, tokens, etc.)
@@ -729,9 +714,10 @@ INFO: AI features disabled - using fallback notifications
 Begin with Ollama-only setup (no Claude) to validate AI features work:
 ```yaml
 intelligence:
+  ollama_enabled: true
   ollama_url: "http://localhost:11434"
   ollama_model: "llama3.1:8b"
-  llm_strategy: "local_only"  # Privacy mode
+  claude_enabled: false  # Privacy mode - local LLM only
 ```
 
 ### 2. Monitor LLM Usage
@@ -788,10 +774,10 @@ haboss automation generate "similar to existing_pattern but for bedroom"
 ### 6. Cost Control for Claude API
 
 Minimize Claude costs:
-- Use `llm_strategy: "hybrid"` (only use Claude when needed)
+- Only enable Claude when needed (set `claude_enabled: true` only for automation generation)
 - Set monthly budget alerts at https://console.anthropic.com
 - Monitor usage regularly
-- Consider local-only mode if cost is a concern
+- Keep `claude_enabled: false` for local-only mode if cost is a concern
 
 ---
 
