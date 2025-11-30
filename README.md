@@ -33,12 +33,21 @@ Intelligence layer for data-driven insights and predictive capabilities:
 - ✅ 307 comprehensive tests with 82% coverage
 - ✅ Foundation for AI-driven insights
 
-**Coming in Phase 3:**
-- Local LLM integration (Ollama) for enhanced notifications
-- Pattern-based anomaly detection
-- Weekly AI-generated summary reports
-- Automation optimization suggestions
-- Claude API integration for complex automation generation
+**✅ Phase 3 (AI-Powered Intelligence Layer) Complete**
+
+AI-powered features using local LLM (Ollama) and Claude API for intelligent automation management:
+
+- ✅ Local LLM integration (Ollama) with Llama 3.1 8B
+- ✅ Claude API integration for complex reasoning tasks
+- ✅ Intelligent LLM router (local-first with cloud fallback)
+- ✅ AI-enhanced notifications with natural language explanations
+- ✅ Pattern-based anomaly detection with AI insights
+- ✅ Weekly AI-generated summary reports
+- ✅ Automation analysis and optimization suggestions
+- ✅ Natural language automation generation via Claude
+- ✅ Performance benchmarks validating < 15s response times
+- ✅ Privacy-first design: fully functional with local LLM only
+- ✅ Hybrid AI architecture balancing cost, speed, and capability
 
 ## ✨ Key Features
 
@@ -68,6 +77,18 @@ Intelligence layer for data-driven insights and predictive capabilities:
 - **CLI Reports**: Rich formatted reports with color-coded reliability ratings
 - **Data-Driven Insights**: Foundation for predictive healing and anomaly detection
 - **Minimal Overhead**: < 5ms per event, queries < 100ms with 10k events
+
+### AI Intelligence Layer (Phase 3)
+- **Local LLM Integration**: Uses Ollama with Llama 3.1 8B for privacy-first AI features
+- **Claude API Support**: Optional cloud AI for complex reasoning and automation generation
+- **Smart Routing**: Automatically selects local vs cloud LLM based on task complexity
+- **Enhanced Notifications**: AI-generated natural language explanations for failures
+- **Anomaly Detection**: Automatically identifies unusual failure patterns with AI insights
+- **Weekly Summaries**: AI-analyzed health reports delivered as HA notifications
+- **Automation Analysis**: Suggests improvements to existing Home Assistant automations
+- **Automation Generation**: Create automations from natural language descriptions
+- **Performance Validated**: All AI operations meet < 15s response time requirements
+- **Privacy First**: Fully functional with local LLM only (no cloud required)
 
 ### Deployment & Operations
 - **Docker-First**: Multi-stage build, non-root user, health checks
@@ -387,6 +408,28 @@ database:
 intelligence:
   # Enable pattern collection for reliability analysis (Phase 2)
   pattern_collection_enabled: true
+
+  # Anomaly detection (Phase 3)
+  anomaly_detection_enabled: true
+
+  # Local LLM via Ollama (Phase 3)
+  ollama_enabled: true
+  ollama_url: "http://localhost:11434"
+  ollama_model: "llama3.1:8b"
+  ollama_timeout_seconds: 30
+
+  # Claude API for complex tasks (Phase 3, optional)
+  claude_enabled: false
+  claude_api_key: "${CLAUDE_API_KEY}"  # Set in environment or .env
+  claude_model: "claude-3-5-sonnet-20241022"
+
+notifications:
+  on_healing_failure: true
+  weekly_summary: true
+  ha_service: "persistent_notification.create"
+
+  # AI-enhanced notifications (Phase 3)
+  ai_enhanced: true  # Use LLM to generate explanations
 
 mode: "production"  # production, dry_run, or testing
 ```
