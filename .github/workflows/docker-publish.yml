@@ -53,13 +53,12 @@ jobs:
             # Tag with major for tags (v1.2.3 -> 1)
             type=semver,pattern={{major}}
             # Tag with commit SHA for traceability
-            type=sha,prefix={{branch}}-
-            # Tag with branch name for non-main branches
-            type=ref,event=branch,enable=${{ github.ref != 'refs/heads/main' }}
+            type=sha,prefix=sha-
             # Tag with PR number for pull requests
-            type=ref,event=pr
+            type=ref,event=pr,prefix=pr-
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
