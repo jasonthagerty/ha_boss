@@ -381,178 +381,53 @@ Issues use the following labels for organization:
 
 ### Complete Feature Workflow
 
-When assigned an issue or tagged with `@claude`:
+1. **Review Issue**: Read description, acceptance criteria, dependencies
+2. **Comment**: "Starting work on this issue" (updates project board)
+3. **Create Branch**: `git checkout -b feature/issue-{number}-brief-description`
+4. **Implement**: Follow acceptance criteria, add type hints, write tests (≥80% coverage)
+5. **Test**: Run `make ci-check` before committing
+6. **Commit**: Use conventional commits, reference issue number, include co-author
+7. **Create PR**: Include "Closes #{number}", summary, and testing notes
+8. **After Merge**: Update epic checklist if applicable, notify unblocked issues
 
-1. **Read the Issue**
-   - Review description, acceptance criteria, and technical notes
-   - Check related components and dependencies
-   - Understand the branch name to use
-   - Verify issue is on project board
-
-2. **Start Work (Update Project)**
-   - Comment on issue: "Starting work on this issue"
-   - If epic: Update epic checklist to mark sub-task as in-progress
-   - Project board should auto-update to "In Progress"
-
-3. **Create Feature Branch**
-   ```bash
-   git checkout -b feature/issue-{number}-brief-description
-   ```
-
-4. **Implement Feature**
-   - Follow acceptance criteria
-   - Add type hints (mypy compliance)
-   - Write comprehensive tests (≥80% coverage)
-   - Follow code quality standards
-
-5. **Test Locally**
-   ```bash
-   # Run all CI checks
-   make ci-check
-   # Or manually:
-   black --check . && ruff check . && mypy ha_boss && pytest
-   ```
-
-6. **Commit Changes**
-   - Use conventional commit messages
-   - Include co-authored-by for Claude
-   - Reference issue number
-
-7. **Push and Create PR**
-   ```bash
-   git push origin feature/issue-{number}-brief-description
-
-   # If using GitHub MCP (recommended):
-   # Claude Code will offer to create PR automatically
-
-   # Alternatively, use gh CLI:
-   gh pr create --title "feat: brief description" --body "Closes #{number}"
-   ```
-
-8. **PR Description Must Include**
-   - "Closes #{number}" to auto-close issue
-   - Summary of changes
-   - Testing performed
-   - Any breaking changes or notes
-
-9. **After Merge (Update Project)**
-   - Issue automatically closes (via "Closes #" in PR)
-   - Branch can be deleted
-   - Project board updates to "Done" automatically
-   - **If Epic**: Update epic issue checklist to mark sub-task complete
-   - **If Blocked Others**: Comment on unblocked issues to notify
-   - Move to next issue in dependency chain
-
-### Example: Implementing Issue #2
+### Example: Feature Implementation Workflow
 
 ```bash
-# 1. Create branch from main
-git checkout main
-git pull origin main
+# Create branch
 git checkout -b feature/issue-2-integration-discovery
 
-# 2. Implement the feature
-# ... write code in ha_boss/healing/integration_manager.py
-# ... write tests in tests/healing/test_integration_manager.py
-
-# 3. Run CI checks
+# Implement, test, and commit
+# ... (write code and tests)
 make ci-check
+git commit -m "feat: implement integration discovery
 
-# 4. Commit
-git add .
-git commit -m "feat: implement integration discovery system
-
-- Created IntegrationDiscovery class with storage file parsing
-- Added entity→integration mapping via HA API
-- Built in-memory cache for fast lookups
-- Added comprehensive tests with 85% coverage
-- Handles missing/unknown integrations gracefully
+- Created IntegrationDiscovery class
+- Added entity→integration mapping
+- Added tests with 85% coverage
 
 Closes #2
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
 Co-Authored-By: Claude <noreply@anthropic.com>"
 
-# 5. Push and create PR
+# Push and create PR (via GitHub MCP or gh CLI)
 git push origin feature/issue-2-integration-discovery
-
-# With GitHub MCP configured, Claude Code can create the PR:
-# "Create a pull request with title 'feat: implement integration discovery system'"
-
-# Or manually with gh CLI:
-gh pr create --title "feat: implement integration discovery system" \
-  --body "Closes #2
-
-## Overview
-Implements the integration discovery system to map Home Assistant entities to integrations.
-
-## Changes
-- Created ha_boss/healing/integration_manager.py
-- Added storage file parsing and API mapping
-- Built entity→integration cache
-- Added 15 tests with 85% coverage
-
-## Testing
-- All tests passing (69/69)
-- CI checks passing ✓
-- Tested with mock HA storage files"
 ```
 
 ### Managing Epics and Sub-Tasks
 
-Epics track large features or phases that consist of multiple sub-tasks.
+Epics track large features consisting of multiple sub-tasks.
 
-#### Epic Management Workflow
+**Epic Structure:**
+- Use checkboxes to list sub-tasks: `- [ ] #26: Task description`
+- Label with `epic` and phase label
+- Link sub-tasks back to epic: `**Epic**: #25`
 
-**When Creating an Epic:**
-1. Create the epic issue with:
-   - Clear overview and goals
-   - List of sub-tasks with checkboxes (use `- [ ]` syntax)
-   - Success criteria
-   - Timeline estimates
-2. Label with `epic` and appropriate phase label
-3. Create individual issues for each sub-task
-4. Link sub-tasks to epic in both directions:
-   - Epic body: `- [ ] #26: Task description`
-   - Sub-task body: `**Epic**: #25 Phase 2`
-
-**When Working on Sub-Tasks:**
-1. Start work: Comment on epic to notify progress
-2. Complete sub-task: Update epic checklist
-   - Change `- [ ] #26: Task` to `- [x] #26: Task`
-   - Or use GitHub's automatic linking via PR mentions
-
-**When Epic is Complete:**
-1. Verify all sub-tasks are complete (all checkboxes checked)
-2. Add summary comment with outcomes
-3. Close the epic issue
-4. Celebrate! 🎉
-
-#### Example: Phase 2 Epic (#32)
-
-```markdown
-## 📋 Subtasks
-
-### Foundation
-- [ ] #26: Design and implement pattern database schema
-- [ ] #27: Create PatternCollector service
-- [ ] #28: Implement integration reliability tracking
-
-### User-Facing
-- [ ] #29: Add pattern analysis queries and reports
-- [ ] #30: Integrate pattern collection with service orchestration
-
-### Quality
-- [ ] #31: Add comprehensive tests
-```
-
-**After completing #26:**
-```markdown
-- [x] #26: Design and implement pattern database schema ✓
-- [ ] #27: Create PatternCollector service
-...
-```
+**Workflow:**
+1. Create epic with checklist of sub-tasks
+2. Create individual issues for each sub-task
+3. Update checklist as sub-tasks complete: `- [x] #26: Task ✓`
+4. Close epic when all sub-tasks are done
 
 ### Getting Assigned Issues
 
@@ -565,124 +440,20 @@ Issues are assigned to Claude in several ways:
 
 ### Project Board Management
 
-GitHub Projects provide a visual way to track work across phases and priorities. Claude Code should proactively manage the project board to keep it synchronized with actual work status.
+**Current Project**: https://github.com/users/jasonthagerty/projects/1
 
-#### Project Structure
+All HA Boss work (all phases) is tracked on a single project board organized by phase, priority, and status.
 
-- **Current Project**: https://github.com/users/jasonthagerty/projects/1
-- **Purpose**: Track all HA Boss work (Phase 1, Phase 2, Phase 3+)
-- **Organization**: By phase, priority, and status
+**When to Update:**
+- After creating issues → Link to project (usually automatic)
+- When starting work → Move to "In Progress"
+- After PR merge → Issue closes and moves to "Done" (automatic)
+- For epics → Update checklist as sub-tasks complete
 
-#### When to Update the Project Board
-
-Update the project board at these key moments:
-
-1. **After Creating Issues** - Link new issues to project
-2. **When Starting Work** - Move issue to "In Progress"
-3. **After Completing Work** - Move issue to "Done" when PR merged
-4. **After Creating Epics** - Ensure epic is tracked on board
-5. **When Work is Blocked** - Update status to reflect blockers
-
-#### Checking if Project Exists
-
-Before creating a new project, verify the current project exists and is appropriate:
-
-```bash
-# Use GitHub MCP to check projects
-# If project doesn't exist or you need to create a new one for a phase:
-# Ask the user first: "Should I create a new project for Phase 2, or add to the existing project?"
-```
-
-**Decision Criteria:**
-- **Same Project**: If work is part of the same product/repository
-- **New Project**: If starting a completely separate effort or major initiative
-- **For HA Boss**: All phases use the same project (Project #1)
-
-#### Managing Issues on the Project Board
-
-**Using GitHub MCP (Recommended):**
-
-While the GitHub MCP server doesn't have direct project management tools yet, you can:
-1. Issues are automatically added to the project when created
-2. Update issue status by changing labels or closing issues
-3. Ask the user if manual project board updates are needed
-
-**Manual Updates (when needed):**
-- Issues typically auto-link when created in the repository
-- Status can be updated via the GitHub web UI
-- Claude can remind the user to update project status
-
-#### Project Board Best Practices
-
-1. **Proactive Updates**: Update status as work progresses, not at the end
-2. **Status Accuracy**: Ensure status reflects reality:
-   - **Todo**: Not yet started
-   - **In Progress**: Actively working on it
-   - **Done**: PR merged and issue closed
-3. **Epic Tracking**: Keep epics updated with completion status of sub-tasks
-4. **Blocked Items**: If blocked, comment on the issue with details
-5. **Regular Reviews**: Suggest project board reviews during phase transitions
-
-#### Example: Creating Issues for Phase 2
-
-```python
-# After creating issues #26-#32 for Phase 2:
-
-# 1. Verify issues were created
-#    ✓ All 7 issues created
-
-# 2. Check if they're on the project board
-#    (Usually automatic for repository issues)
-
-# 3. If not automatic, inform the user:
-#    "Issues #26-#32 have been created for Phase 2. They should
-#     automatically appear on the project board. You can view them at:
-#     https://github.com/users/jasonthagerty/projects/1"
-
-# 4. Suggest organizing by phase:
-#    "I recommend filtering the project board by 'phase-2' label to
-#     see all Phase 2 work items."
-```
-
-#### Example: Updating Status After Completing Work
-
-```python
-# After merging PR for Issue #26:
-
-# 1. Issue automatically closes (via "Closes #26" in PR)
-# 2. Project board status updates to "Done" (automatic in most cases)
-# 3. Update epic checklist (if applicable)
-# 4. Move to next issue in the dependency chain
-
-# No manual project board update needed in most cases!
-```
-
-#### Troubleshooting Project Board Issues
-
-**Issue doesn't appear on project board:**
-- Check if repository is linked to the project
-- Manually add via issue sidebar → "Projects"
-- Verify project permissions
-
-**Status not updating:**
-- GitHub Projects (v2) usually auto-update based on issue state
-- Classic Projects may need manual updates
-- Check project automation rules
-
-**Creating a New Project (if needed):**
-
-Ask the user first, then if approved:
-```bash
-# Using gh CLI (if available):
-gh project create --owner jasonthagerty --title "HA Boss Phase 2" \
-  --body "Track Phase 2 pattern collection work"
-
-# Or guide the user through GitHub web UI:
-# 1. Go to https://github.com/users/jasonthagerty/projects
-# 2. Click "New project"
-# 3. Choose template (Board, Table, or Roadmap)
-# 4. Configure fields and views
-```
+**Key Notes:**
+- Issues are automatically added to the project when created
+- Status updates automatically when issues close
+- All phases use the same project (Project #1)
 
 ### Branch Protection
 
@@ -696,41 +467,27 @@ gh project create --owner jasonthagerty --title "HA Boss Phase 2" \
 ### GitHub Actions Workflows
 
 **CI Pipeline** (`.github/workflows/ci.yml`):
-- Runs on push to main/develop and on PRs
-- Tests against Python 3.11 and 3.12
-- Runs: black (format), ruff (lint), mypy (types), pytest (tests)
-- On main branch failures: automatically creates GitHub issue tagged with `claude-task`
+- Runs on push to main/develop and PRs
+- Tests Python 3.11 and 3.12
+- Checks: black, ruff, mypy, pytest
+- Auto-creates issue on main branch failures (tagged `claude-task`)
 
 **Claude Code Action** (`.github/workflows/claude.yml`):
-- Triggers when `@claude` is mentioned in issues/comments
-- Triggers when issue is labeled with `claude-task`
-- Claude has write access to create PRs and update issues
+- Triggers on `@claude` mentions or `claude-task` label
+- Enables automated PR creation and issue updates
 
 **Security Scan** (`.github/workflows/security.yml`):
-- Runs on push and weekly schedule
-- Uses bandit for security linting
-- Uses safety for dependency vulnerability checking
-
-### Automated Issue Creation
-
-When CI fails on main branch, a GitHub issue is automatically created with:
-- Link to failed workflow run
-- Commit SHA and author
-- Tagged with `ci-failure`, `claude-task`, `automated` labels
-- Contains `@claude` mention to trigger automatic investigation
+- Runs on push and weekly
+- Tools: bandit, safety
 
 ### Working with CI Failure Issues
 
-When CI fails and an automated issue is created:
-1. Read the issue description and linked workflow logs
-2. Identify root cause of failure (check test output, linting errors, etc.)
-3. Follow the **Feature Branch Workflow** (see above) using `fix/` prefix
-4. Branch name: `fix/issue-{number}-brief-description`
-5. Implement fix with regression test if applicable
-6. Ensure all CI checks pass locally (`make ci-check`)
-7. Create PR with "Closes #{number}" to auto-close issue
-
-**Note**: For all other issues (features, enhancements, documentation), see the complete "Feature Branch Workflow" section above.
+When CI fails on main branch, an automated issue is created. Follow the standard workflow:
+1. Read issue description and workflow logs to identify root cause
+2. Create fix branch: `fix/issue-{number}-brief-description`
+3. Implement fix with regression test if needed
+4. Run `make ci-check` locally
+5. Create PR with "Closes #{number}"
 
 ## Testing Guidelines
 
@@ -952,21 +709,9 @@ Pre-commit hooks are available but disabled by default. Enable in `.claude/setti
 }
 ```
 
-### GitHub Integration
-
-**Recommended: GitHub MCP Server** (see section below)
-- Provides direct GitHub API access for issues, PRs, and repository operations
-- Works in all environments (web, desktop, CI/CD)
-- No CLI dependencies required
-
-**Alternative: GitHub App Integration** (legacy)
-- For workflow automation and CI/CD triggers
-- Steps:
-  1. Run `/install-github-app` in Claude Code CLI
-  2. Add `ANTHROPIC_API_KEY` to GitHub repository secrets
-  3. Ensure workflows have correct permissions (already configured)
-
 ### GitHub MCP Server Integration
+
+**Recommended: GitHub MCP Server** for all GitHub operations
 
 The GitHub MCP (Model Context Protocol) server enables Claude Code to directly create and manage GitHub issues, PRs, and other repository operations without relying on the `gh` CLI. This is particularly useful in environments where the GitHub CLI is not available (containers, CI/CD, etc.).
 
@@ -1088,86 +833,36 @@ For complete step-by-step instructions, troubleshooting, and testing procedures,
 
 ### Adding a New Feature
 
-**Always start with a GitHub issue** (or create one if it doesn't exist):
-
-1. Review issue acceptance criteria and branch name
-2. Create feature branch: `feature/issue-{number}-brief-description`
-3. Implement feature with type hints (mypy compliance)
-4. Add comprehensive tests (≥80% coverage)
-5. Run `make ci-check` to verify all checks pass
-6. Update documentation if needed
-7. Create PR with "Closes #{number}" in description
-
-See **Feature Branch Workflow** section above for complete details.
+Always start with a GitHub issue, then follow the **Complete Feature Workflow** above.
 
 ### Fixing a Bug
 
-**Always reference the bug issue**:
-
-1. Review bug issue and reproduce locally if possible
-2. Add regression test that reproduces bug
+1. Review bug issue and reproduce locally
+2. Add regression test that reproduces the bug
 3. Create branch: `fix/issue-{number}-brief-description`
-4. Implement fix
-5. Verify test passes
-6. Run full test suite (`make ci-check`)
-7. Create PR with "Closes #{number}" referencing issue
+4. Implement fix and verify test passes
+5. Run `make ci-check` and create PR with "Closes #{number}"
 
 ### Discovering Bugs During Development
 
-**Standard approach when discovering bugs during feature development or testing**:
+When discovering bugs during feature work:
 
-When you discover a bug while working on a feature or during testing, follow this process:
-
-1. **Create GitHub Issue for Tracking**
-   - Document the bug with clear description
-   - Include error messages, reproduction steps
-   - Tag with appropriate labels (bug, priority)
-   - Reference the context where discovered (e.g., "Discovered during Docker deployment testing #7")
-
-2. **Assess Severity and Fix Immediately if Appropriate**
-   - **Fix immediately if**:
-     - Bug blocks current work or testing
-     - Fix is simple and well-understood
-     - Bug affects core functionality
-   - **Defer if**:
-     - Complex fix requiring significant research
-     - Not blocking current work
-     - Requires architectural discussion
-
-3. **Fix in Current Branch (if immediate fix)**
-   - Fix the bug in your current feature branch
-   - Commit with reference to bug issue: "Fixes #number"
-   - Include bug fix in current PR
-   - Document in PR description that bug was discovered and fixed
-
-4. **Update Documentation**
-   - If the bug reveals a gap in docs/examples, fix those too
-   - Update CLAUDE.md if process improvements are identified
+1. **Create GitHub issue** with description, error messages, and context
+2. **Fix immediately if**: blocking, simple, or affects core functionality
+3. **Defer if**: complex, not blocking, or needs architectural discussion
+4. **If fixing now**: Include in current branch/PR with "Fixes #number" in commit
 
 **Example**:
 ```bash
-# Discovered config validation bug during Docker testing
-gh issue create --title "bug: invalid config section" --body "..." --label "bug,priority-high"
-# Returns issue #21
+# Create issue for tracking
+gh issue create --title "bug: invalid config" --label "bug,priority-high"
 
-# Fix immediately (blocking Docker deployment)
-git add config/config.yaml.example
-git commit -m "fix: remove invalid section
+# Fix in current branch
+git commit -m "fix: remove invalid config section
 
 Fixes #21
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-Co-Authored-By: Claude <noreply@anthropic.com>"
-
-# Bug fix included in feature PR with note about discovery
+..."
 ```
-
-**Benefits of this approach**:
-- ✅ Proper issue tracking for metrics and project management
-- ✅ Clear commit history linking fixes to issues
-- ✅ Bugs don't block forward progress
-- ✅ Documentation of discovery context helps prevent future issues
-- ✅ Single PR for related changes reduces review overhead
 
 ### Reviewing PRs
 
