@@ -87,7 +87,7 @@ EOF
 USER haboss
 
 # Expose port (for future API)
-EXPOSE 8080
+EXPOSE 8090
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
