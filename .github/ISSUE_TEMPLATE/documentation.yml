@@ -1,0 +1,112 @@
+name: Documentation
+description: Report missing, incorrect, or unclear documentation
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve the documentation! Report missing, incorrect, or confusing documentation.
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation needs improvement?
+      options:
+        - Missing documentation
+        - Incorrect/outdated information
+        - Unclear/confusing explanation
+        - Missing examples
+        - Typo or formatting issue
+        - API/CLI reference incomplete
+        - Configuration reference incomplete
+        - Broken link
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: location
+    attributes:
+      label: Documentation Location
+      description: Where is the documentation that needs improvement?
+      options:
+        - README.md
+        - Wiki - Home
+        - Wiki - Installation
+        - Wiki - Configuration
+        - Wiki - CLI Commands
+        - Wiki - Architecture
+        - Wiki - AI Features
+        - Wiki - Development
+        - Wiki - Troubleshooting
+        - CONTRIBUTING.md
+        - Code comments/docstrings
+        - Command help text
+        - Multiple locations
+        - Other
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current Documentation
+      description: |
+        Link to or quote the current documentation that needs improvement.
+        For wiki pages, include the section/heading.
+      placeholder: |
+        https://github.com/jasonthagerty/ha_boss/wiki/Configuration#monitoring
+
+        Current text says: "Configure monitoring options here"
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What's Wrong or Missing?
+      description: Explain what's wrong, missing, unclear, or could be improved
+      placeholder: |
+        The configuration page doesn't explain what grace_period_seconds does...
+        The installation guide is missing steps for setting up Ollama...
+        The CLI command `haboss patterns weekly-summary` isn't documented...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested Improvement
+      description: |
+        How should the documentation be improved? Provide suggested text if possible.
+      placeholder: |
+        Add a section explaining grace_period_seconds:
+
+        **Grace Period**: The time (in seconds) HA Boss waits before considering
+        an entity in 'unavailable' state as actually failed. This prevents false
+        positives from temporary network issues.
+
+        Default: 300 (5 minutes)
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any additional context, examples, or related issues
+      placeholder: |
+        This caused confusion for users in issue #123...
+        Similar projects document this as...
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Would you like to contribute the documentation fix?
+      options:
+        - label: I can submit a PR to fix this documentation
+
+  - type: checkboxes
+    id: claude-assignable
+    attributes:
+      label: Claude Assignment
+      description: Should this be assigned to Claude for updating?
+      options:
+        - label: Assign to Claude (@claude)

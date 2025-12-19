@@ -6,13 +6,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug! Please fill out the information below.
+        Thanks for taking the time to report a bug! Please fill out the information below to help us diagnose and fix the issue.
 
   - type: textarea
     id: description
     attributes:
       label: Description
-      description: A clear description of the bug
+      description: A clear and concise description of the bug
       placeholder: What happened?
     validations:
       required: true
@@ -23,8 +23,9 @@ body:
       label: Steps to Reproduce
       description: Steps to reproduce the behavior
       placeholder: |
-        1. Run command '...'
-        2. See error
+        1. Start HA Boss with command '...'
+        2. Configure monitoring for '...'
+        3. Observe error '...'
     validations:
       required: true
 
@@ -36,19 +37,87 @@ body:
     validations:
       required: true
 
-  - type: textarea
-    id: logs
+  - type: dropdown
+    id: deployment
     attributes:
-      label: Relevant Logs
-      description: Any relevant log output
-      render: shell
+      label: Deployment Type
+      description: How are you running HA Boss?
+      options:
+        - Docker (docker-compose)
+        - Docker (standalone)
+        - Local (pip install)
+        - Local (development)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component is affected?
+      options:
+        - Monitoring (WebSocket, health checks)
+        - Healing (integration reload, circuit breakers)
+        - AI/Intelligence (LLM, Claude, weekly reports)
+        - Automation (analysis, generation)
+        - Pattern Analysis (reliability tracking)
+        - CLI Commands
+        - Configuration
+        - Database
+        - Notifications
+        - Docker/Deployment
+        - Other/Unsure
 
   - type: input
     id: version
     attributes:
-      label: Version
-      description: What version are you running?
-      placeholder: "0.1.0"
+      label: HA Boss Version
+      description: What version are you running? (run `haboss --version` or check Docker image tag)
+      placeholder: "e.g., 0.3.0, latest, commit abc123"
+
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant Version
+      description: What version of Home Assistant are you running?
+      placeholder: "e.g., 2024.12.1"
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant Configuration
+      description: |
+        Relevant sections of your config.yaml or environment variables.
+        **⚠️ Remove tokens and sensitive data before posting!**
+      render: yaml
+      placeholder: |
+        monitoring:
+          grace_period_seconds: 300
+        healing:
+          enabled: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: |
+        Relevant log output from HA Boss.
+        Run with `LOGGING__LEVEL=DEBUG` for detailed logs.
+        **⚠️ Remove tokens and sensitive data before posting!**
+      render: shell
+      placeholder: |
+        2024-12-19 10:00:00 ERROR [ha_boss.monitoring] Failed to ...
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please confirm you've done the following
+      options:
+        - label: I have checked the [Troubleshooting Guide](https://github.com/jasonthagerty/ha_boss/wiki/Troubleshooting)
+        - label: I have removed sensitive data (tokens, URLs) from logs and config
+        - label: I have searched for similar issues
 
   - type: checkboxes
     id: claude-assignable

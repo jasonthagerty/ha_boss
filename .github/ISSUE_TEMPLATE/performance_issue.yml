@@ -1,0 +1,157 @@
+name: Performance Issue
+description: Report slow performance, high memory/CPU usage, or resource problems
+title: "[Performance]: "
+labels: ["performance", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to report performance issues, including slow responses, high resource usage, or timeouts.
+
+  - type: dropdown
+    id: performance-type
+    attributes:
+      label: Performance Issue Type
+      description: What type of performance issue are you experiencing?
+      options:
+        - High CPU usage
+        - High memory usage
+        - Slow startup time
+        - Slow command response
+        - LLM/AI timeout or slow response
+        - Database query performance
+        - WebSocket lag or delays
+        - Integration reload timeouts
+        - Pattern analysis slow
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the performance issue in detail
+      placeholder: |
+        HA Boss uses 80% CPU constantly...
+        Weekly summary takes 5 minutes to generate...
+    validations:
+      required: true
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Performance Metrics
+      description: |
+        Provide any performance metrics you've observed
+      placeholder: |
+        CPU: 85% average
+        Memory: 2.5GB RSS
+        Response time: 30 seconds for `haboss status`
+        Database size: 500MB
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Details
+      description: Details about your deployment environment
+      placeholder: |
+        Hardware: Raspberry Pi 4 (4GB RAM)
+        OS: Debian 12
+        Docker version: 24.0.7
+        Number of monitored entities: 250
+        Database size: 100MB
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment Type
+      description: How are you running HA Boss?
+      options:
+        - Docker (docker-compose)
+        - Docker (standalone)
+        - Local (pip install)
+        - Local (development)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: HA Boss Version
+      placeholder: "e.g., 0.3.0, latest"
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: |
+        Your HA Boss configuration (focus on monitoring scope and features enabled)
+        **⚠️ Remove tokens!**
+      render: yaml
+      placeholder: |
+        monitoring:
+          include:
+            - "sensor.*"
+            - "binary_sensor.*"
+          grace_period_seconds: 300
+
+        intelligence:
+          ollama_enabled: true
+          claude_enabled: true
+
+  - type: textarea
+    id: ai-config
+    attributes:
+      label: AI/LLM Configuration (if applicable)
+      description: If the issue involves AI features, provide LLM configuration
+      render: yaml
+      placeholder: |
+        intelligence:
+          ollama_enabled: true
+          ollama_url: http://localhost:11434
+          ollama_model: llama3.1:8b
+          ollama_timeout_seconds: 60
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: |
+        Logs showing performance issues (slow queries, timeouts, etc.)
+        Run with DEBUG logging for detailed timing info
+      render: shell
+      placeholder: |
+        2024-12-19 10:00:00 DEBUG [ha_boss.database] Query took 5.2s: ...
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this performance issue?
+      placeholder: |
+        1. Configure monitoring for 200+ entities
+        2. Run `haboss patterns reliability`
+        3. Observe slow response time
+    validations:
+      required: true
+
+  - type: textarea
+    id: workarounds
+    attributes:
+      label: Workarounds Tried
+      description: Have you found any workarounds or configuration changes that help?
+      placeholder: |
+        Reducing monitored entities to 50 improved CPU usage...
+        Disabling AI features reduced memory by 500MB...
+
+  - type: checkboxes
+    id: claude-assignable
+    attributes:
+      label: Claude Assignment
+      description: Should this be assigned to Claude for investigation?
+      options:
+        - label: Assign to Claude (@claude)

@@ -1,0 +1,161 @@
+name: Home Assistant Integration Issue
+description: Problems connecting to or integrating with Home Assistant
+title: "[Integration]: "
+labels: ["integration", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for issues related to connecting to Home Assistant, integration reload failures, or entity monitoring problems.
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue Type
+      description: What type of integration issue are you experiencing?
+      options:
+        - Connection failure (cannot connect to HA)
+        - Authentication error (invalid token)
+        - WebSocket disconnection/reconnection issues
+        - Integration reload failures
+        - Specific integration not being monitored
+        - Entity state not updating
+        - Integration discovery problems
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the integration issue you're experiencing
+      placeholder: HA Boss cannot reload the Zigbee integration...
+    validations:
+      required: true
+
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant Version
+      description: What version of Home Assistant are you running?
+      placeholder: "e.g., 2024.12.1"
+    validations:
+      required: true
+
+  - type: input
+    id: ha-installation
+    attributes:
+      label: HA Installation Type
+      description: How is Home Assistant installed?
+      placeholder: "e.g., Home Assistant OS, Container, Core, Supervised"
+
+  - type: input
+    id: integration-name
+    attributes:
+      label: Affected Integration(s)
+      description: Which Home Assistant integration(s) are affected?
+      placeholder: "e.g., Zigbee Home Automation (ZHA), MQTT, Z-Wave JS"
+
+  - type: textarea
+    id: ha-config
+    attributes:
+      label: Home Assistant Configuration
+      description: |
+        Relevant sections from your HA configuration.
+        **⚠️ Remove sensitive data!**
+      render: yaml
+      placeholder: |
+        # Example integration config from configuration.yaml
+        zha:
+          usb_path: /dev/ttyUSB0
+
+  - type: textarea
+    id: haboss-config
+    attributes:
+      label: HA Boss Configuration
+      description: |
+        Your HA Boss config.yaml settings
+        **⚠️ Remove tokens and sensitive URLs!**
+      render: yaml
+      placeholder: |
+        home_assistant:
+          url: http://homeassistant.local:8123
+        monitoring:
+          include:
+            - "sensor.*"
+            - "binary_sensor.*"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-logs
+    attributes:
+      label: Error Logs
+      description: |
+        Logs from HA Boss showing the integration issue.
+        Enable DEBUG logging: `LOGGING__LEVEL=DEBUG`
+        **⚠️ Remove tokens and sensitive data!**
+      render: shell
+      placeholder: |
+        2024-12-19 10:00:00 ERROR [ha_boss.healing] Failed to reload integration 'zha'...
+    validations:
+      required: true
+
+  - type: textarea
+    id: ha-logs
+    attributes:
+      label: Home Assistant Logs (Optional)
+      description: |
+        Relevant logs from Home Assistant (if available)
+        Settings → System → Logs
+      render: shell
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: HA Boss Deployment
+      description: How are you running HA Boss?
+      options:
+        - Docker (docker-compose)
+        - Docker (standalone)
+        - Local (pip install)
+        - Local (development)
+        - Other
+
+  - type: input
+    id: haboss-version
+    attributes:
+      label: HA Boss Version
+      description: What version of HA Boss are you running?
+      placeholder: "e.g., 0.3.0, latest, main branch"
+
+  - type: textarea
+    id: network
+    attributes:
+      label: Network Configuration
+      description: |
+        Describe your network setup (especially if HA Boss and HA are on different machines/networks)
+      placeholder: |
+        - HA Boss running in Docker on machine A (192.168.1.100)
+        - Home Assistant running on machine B (192.168.1.50)
+        - Connected via LAN
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Troubleshooting Checklist
+      description: Please confirm you've tried these steps
+      options:
+        - label: I can access Home Assistant from the HA Boss machine (e.g., `curl http://ha-url:8123`)
+        - label: My long-lived access token is valid (tested in Home Assistant UI)
+        - label: I have checked the [Troubleshooting Guide](https://github.com/jasonthagerty/ha_boss/wiki/Troubleshooting)
+        - label: I have checked Home Assistant logs for related errors
+
+  - type: checkboxes
+    id: claude-assignable
+    attributes:
+      label: Claude Assignment
+      description: Should this be assigned to Claude for investigation?
+      options:
+        - label: Assign to Claude (@claude)

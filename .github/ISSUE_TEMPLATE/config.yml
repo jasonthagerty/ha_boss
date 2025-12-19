@@ -1,0 +1,21 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 Documentation & Wiki
+    url: https://github.com/jasonthagerty/ha_boss/wiki
+    about: Browse comprehensive documentation, guides, and troubleshooting tips
+
+  - name: 💬 GitHub Discussions
+    url: https://github.com/jasonthagerty/ha_boss/discussions
+    about: Ask questions, share ideas, and discuss features with the community
+
+  - name: 🔧 Troubleshooting Guide
+    url: https://github.com/jasonthagerty/ha_boss/wiki/Troubleshooting
+    about: Common issues and solutions - check here first before opening an issue
+
+  - name: 🚀 Quick Start Guide
+    url: https://github.com/jasonthagerty/ha_boss/wiki/Installation
+    about: Installation and setup instructions for Docker and local deployment
+
+  - name: ⚙️ Configuration Reference
+    url: https://github.com/jasonthagerty/ha_boss/wiki/Configuration
+    about: Complete reference for all configuration options
