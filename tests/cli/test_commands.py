@@ -545,7 +545,14 @@ class TestAutomationCommands:
                 },
             }
         )
-        mock_client.return_value = mock_ha_client
+        # Set up async context manager
+        mock_ha_client.__aenter__ = AsyncMock(return_value=mock_ha_client)
+        mock_ha_client.__aexit__ = AsyncMock(return_value=None)
+
+        async def mock_create_client(config):
+            return mock_ha_client
+
+        mock_client.side_effect = mock_create_client
 
         result = runner.invoke(app, ["automation", "analyze", "automation.test"])
 
@@ -570,16 +577,29 @@ class TestAutomationCommands:
                 },
             }
         )
-        mock_client.return_value = mock_ha_client
+        # Set up async context manager
+        mock_ha_client.__aenter__ = AsyncMock(return_value=mock_ha_client)
+        mock_ha_client.__aexit__ = AsyncMock(return_value=None)
+
+        async def mock_create_client(config):
+            return mock_ha_client
+
+        mock_client.side_effect = mock_create_client
 
         # Mock analyzer
+        from ha_boss.automation.analyzer import AnalysisResult
+
         mock_analyzer = AsyncMock()
         mock_analyzer.analyze_automation = AsyncMock(
-            return_value=type(
-                "obj",
-                (object,),
-                {"automation_id": "automation.test", "issues": [], "suggestions": [], "score": 85},
-            )()
+            return_value=AnalysisResult(
+                automation_id="automation.test",
+                friendly_name="Test Automation",
+                state="on",
+                trigger_count=1,
+                condition_count=0,
+                action_count=1,
+                suggestions=[],
+            )
         )
         mock_analyzer_class.return_value = mock_analyzer
 

@@ -138,8 +138,19 @@ def test_load_config_invalid_yaml(tmp_path):
         load_config(config_file)
 
 
-def test_load_config_missing_required_fields(tmp_path):
+def test_load_config_missing_required_fields(tmp_path, monkeypatch):
     """Test error when required fields are missing."""
+    # Clear environment variables that might provide defaults
+    monkeypatch.delenv("HOME_ASSISTANT__URL", raising=False)
+    monkeypatch.delenv("HOME_ASSISTANT__TOKEN", raising=False)
+
+    # Create empty .env file in tmp_path to prevent loading from project root
+    env_file = tmp_path / ".env"
+    env_file.write_text("")
+
+    # Change to tmp directory so BaseSettings loads the empty .env
+    monkeypatch.chdir(tmp_path)
+
     config_file = tmp_path / "config.yaml"
     config_data = {"mode": "production"}  # Missing home_assistant
 
