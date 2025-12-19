@@ -68,8 +68,10 @@ Thumbs.db
 .env
 .env.local
 
-# Claude MCP configuration (contains secrets)
+# Claude Code local configuration (contains secrets and local settings)
 .claude/mcp.json
+.claude/settings.local.json
+.claude/*.local.json
 
 # Logs
 *.log
