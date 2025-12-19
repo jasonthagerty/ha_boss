@@ -795,12 +795,18 @@ Once configured, Claude Code can automatically:
 
 **Security Notes:**
 
-- **Never commit** the actual `mcp.json` with real tokens to the repository
+⚠️ **CRITICAL - Token Security**:
+- **NEVER commit `.claude/mcp.json`** to the repository - it contains your GitHub PAT
+- `.claude/mcp.json` is now protected by `.gitignore` to prevent accidental commits
+- If you accidentally commit a token, it will be automatically revoked by GitHub
+- Store your actual MCP configuration in the user-level config directory (recommended):
+  - Linux/Mac: `~/.config/claude/mcp.json`
+  - Windows: `%APPDATA%\Claude\mcp.json`
 - The `.claude/mcp.json.example` file is for reference only (contains placeholder)
-- Store your actual token in the user-level config directory (not tracked by git)
 - GitHub tokens grant significant repository access - protect them like passwords
 - Consider using a separate GitHub account or bot account for CI/CD automation
 - Rotate tokens periodically and revoke unused tokens
+- If a token is ever exposed, revoke it immediately in GitHub settings
 
 **Troubleshooting:**
 
@@ -824,10 +830,24 @@ For complete step-by-step instructions, troubleshooting, and testing procedures,
 
 ## Security Considerations
 
-- Never commit `.env` files or secrets
-- Use GitHub Secrets for sensitive values in CI
+### Protected Files (Never Commit)
+
+The following files are protected by `.gitignore` and must NEVER be committed:
+- `.env`, `.env.local` - Environment variables and secrets
+- `.claude/mcp.json` - Contains GitHub Personal Access Tokens
+- `.claude/settings.local.json` - Local Claude Code settings
+- `.claude/*.local.json` - Any local configuration files
+- `data/*.db*` - SQLite database files with runtime data
+- `secrets.yaml` - Home Assistant secrets
+
+### Best Practices
+
+- Use GitHub Secrets for sensitive values in CI/CD workflows
 - Keep dependencies updated (security workflow runs weekly)
 - Review bandit security scan results before merging
+- Rotate API tokens and PATs periodically
+- If a secret is accidentally committed, revoke it immediately and rotate
+- Use `.example` files to document required configuration without exposing values
 
 ## Common Workflows
 
