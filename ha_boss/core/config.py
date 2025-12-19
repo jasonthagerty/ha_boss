@@ -270,6 +270,7 @@ class Config(BaseSettings):
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         case_sensitive=False,
+        extra="ignore",  # Ignore unknown environment variables
     )
 
     home_assistant: HomeAssistantConfig
