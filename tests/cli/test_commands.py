@@ -535,14 +535,16 @@ class TestAutomationCommands:
         """Test automation analysis by automation ID."""
         mock_load.return_value = mock_config
         mock_ha_client = AsyncMock()
-        mock_ha_client.get_state = AsyncMock(return_value={
-            "entity_id": "automation.test",
-            "state": "on",
-            "attributes": {
-                "trigger": [{"platform": "state"}],
-                "action": [{"service": "light.turn_on"}]
+        mock_ha_client.get_state = AsyncMock(
+            return_value={
+                "entity_id": "automation.test",
+                "state": "on",
+                "attributes": {
+                    "trigger": [{"platform": "state"}],
+                    "action": [{"service": "light.turn_on"}],
+                },
             }
-        })
+        )
         mock_client.return_value = mock_ha_client
 
         result = runner.invoke(app, ["automation", "analyze", "automation.test"])
@@ -552,28 +554,33 @@ class TestAutomationCommands:
     @patch("ha_boss.cli.commands.load_config")
     @patch("ha_boss.cli.commands.create_ha_client")
     @patch("ha_boss.automation.analyzer.AutomationAnalyzer")
-    def test_analyze_automation_no_ai(self, mock_analyzer_class, mock_client, mock_load, mock_config):
+    def test_analyze_automation_no_ai(
+        self, mock_analyzer_class, mock_client, mock_load, mock_config
+    ):
         """Test automation analysis without AI."""
         mock_load.return_value = mock_config
         mock_ha_client = AsyncMock()
-        mock_ha_client.get_state = AsyncMock(return_value={
-            "entity_id": "automation.test",
-            "state": "on",
-            "attributes": {
-                "trigger": [{"platform": "state"}],
-                "action": [{"service": "light.turn_on"}]
+        mock_ha_client.get_state = AsyncMock(
+            return_value={
+                "entity_id": "automation.test",
+                "state": "on",
+                "attributes": {
+                    "trigger": [{"platform": "state"}],
+                    "action": [{"service": "light.turn_on"}],
+                },
             }
-        })
+        )
         mock_client.return_value = mock_ha_client
 
         # Mock analyzer
         mock_analyzer = AsyncMock()
-        mock_analyzer.analyze_automation = AsyncMock(return_value=type('obj', (object,), {
-            'automation_id': 'automation.test',
-            'issues': [],
-            'suggestions': [],
-            'score': 85
-        })())
+        mock_analyzer.analyze_automation = AsyncMock(
+            return_value=type(
+                "obj",
+                (object,),
+                {"automation_id": "automation.test", "issues": [], "suggestions": [], "score": 85},
+            )()
+        )
         mock_analyzer_class.return_value = mock_analyzer
 
         result = runner.invoke(app, ["automation", "analyze", "automation.test", "--no-ai"])
@@ -604,11 +611,9 @@ class TestAutomationCommands:
 
         # Mock generator
         mock_generator = AsyncMock()
-        mock_generator.generate_automation = AsyncMock(return_value={
-            "alias": "Generated Automation",
-            "trigger": [],
-            "action": []
-        })
+        mock_generator.generate_automation = AsyncMock(
+            return_value={"alias": "Generated Automation", "trigger": [], "action": []}
+        )
         mock_generator_class.return_value = mock_generator
 
         prompt = "Turn on lights when motion detected"
@@ -620,7 +625,9 @@ class TestAutomationCommands:
     @patch("ha_boss.cli.commands.load_config")
     @patch("ha_boss.cli.commands.create_ha_client")
     @patch("ha_boss.automation.generator.AutomationGenerator")
-    def test_generate_automation_dry_run(self, mock_generator_class, mock_client, mock_load, mock_config):
+    def test_generate_automation_dry_run(
+        self, mock_generator_class, mock_client, mock_load, mock_config
+    ):
         """Test automation generation in dry-run mode."""
         mock_load.return_value = mock_config
         mock_ha_client = AsyncMock()
@@ -628,11 +635,9 @@ class TestAutomationCommands:
 
         # Mock generator
         mock_generator = AsyncMock()
-        mock_generator.generate_automation = AsyncMock(return_value={
-            "alias": "Test Automation",
-            "trigger": [],
-            "action": []
-        })
+        mock_generator.generate_automation = AsyncMock(
+            return_value={"alias": "Test Automation", "trigger": [], "action": []}
+        )
         mock_generator_class.return_value = mock_generator
 
         prompt = "Test automation"
