@@ -1793,6 +1793,85 @@ def _display_analysis_summary(results: list[AnalysisResult]) -> None:
     )
 
 
+@app.command()
+def api(
+    host: str = typer.Option(
+        "0.0.0.0",
+        "--host",
+        "-h",
+        help="Host to bind to",
+    ),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        "-p",
+        help="Port to bind to",
+    ),
+    reload: bool = typer.Option(
+        False,
+        "--reload",
+        help="Enable auto-reload for development",
+    ),
+) -> None:
+    """Start the REST API server.
+
+    Starts a FastAPI server with OpenAPI documentation for dashboard/UI integration.
+
+    The API provides endpoints for:
+    - Service status and health monitoring
+    - Entity state monitoring and history
+    - Pattern analysis and reliability statistics
+    - Automation management (analyze, generate, create)
+    - Manual healing triggers
+
+    API documentation is available at:
+    - http://localhost:8000/docs (Swagger UI)
+    - http://localhost:8000/redoc (ReDoc)
+    """
+    console.print(
+        Panel.fit(
+            "[bold cyan]HA Boss API Server[/bold cyan]",
+            subtitle=f"Starting on {host}:{port}",
+        )
+    )
+
+    try:
+        import uvicorn
+
+        from ha_boss.api import create_app
+
+        console.print("\n[green]✓[/green] API server starting...")
+        console.print(f"[dim]  Swagger UI: http://{host}:{port}/docs[/dim]")
+        console.print(f"[dim]  ReDoc:      http://{host}:{port}/redoc[/dim]")
+        console.print()
+
+        # Create FastAPI app
+        app_instance = create_app()
+
+        # Start uvicorn server
+        uvicorn.run(
+            app_instance,
+            host=host,
+            port=port,
+            reload=reload,
+            log_level="info",
+        )
+
+    except ImportError as e:
+        console.print(
+            "\n[bold red]Error:[/bold red] FastAPI or uvicorn not installed",
+            style="red",
+        )
+        console.print(
+            "\n[yellow]Hint:[/yellow] Install with: pip install 'ha-boss[api]'",
+            style="dim",
+        )
+        raise typer.Exit(code=1) from e
+    except Exception as e:
+        console.print(f"\n[bold red]Error starting API server:[/bold red] {e}", style="red")
+        raise typer.Exit(code=1) from e
+
+
 # Register subcommands
 app.add_typer(config_app, name="config")
 app.add_typer(db_app, name="db")
