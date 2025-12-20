@@ -290,19 +290,18 @@ Output the complete automation as valid YAML only (no markdown, no explanations)
         self,
         automation: GeneratedAutomation,
     ) -> bool:
-        """Create automation in Home Assistant.
+        """Log automation YAML for manual creation in Home Assistant.
 
-        Note: This uses the automation.reload service after writing to the
-        config file. In a production setup, you would want to integrate with
-        HA's automation storage system or use the UI's automation editor API.
-
-        For MVP, this logs the automation and provides instructions.
+        Note: This method logs the automation and provides manual creation
+        instructions. For programmatic creation via the HA API, use
+        HomeAssistantClient.create_automation() instead (see CLI implementation
+        in commands.py with --create flag for reference).
 
         Args:
-            automation: Generated automation to create
+            automation: Generated automation to log
 
         Returns:
-            True if creation successful, False otherwise
+            True if logging successful, False otherwise
         """
         if not automation.is_valid:
             logger.error("Cannot create invalid automation")
@@ -328,11 +327,9 @@ Output the complete automation as valid YAML only (no markdown, no explanations)
                 "5. Save"
             )
 
-            # TODO: Implement actual creation via HA API
-            # This would require either:
-            # 1. Writing to .storage/automations file (requires file access)
-            # 2. Using automation editor API (if available)
-            # 3. Using a custom integration that exposes automation.create service
+            # Note: For programmatic creation via HA API, use
+            # HomeAssistantClient.create_automation() instead
+            # (see CLI implementation in commands.py for reference)
 
             return True
 
