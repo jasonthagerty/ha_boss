@@ -39,7 +39,9 @@ async def trigger_healing(
             raise HTTPException(status_code=500, detail="Healing manager not initialized") from None
 
         if not service.integration_discovery:
-            raise HTTPException(status_code=500, detail="Integration discovery not initialized") from None
+            raise HTTPException(
+                status_code=500, detail="Integration discovery not initialized"
+            ) from None
 
         # Get entity state
         if not service.state_tracker:

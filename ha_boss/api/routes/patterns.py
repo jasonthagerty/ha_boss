@@ -108,7 +108,9 @@ async def get_reliability_stats() -> list[IntegrationReliabilityResponse]:
         raise HTTPException(status_code=500, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error retrieving reliability stats: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve reliability statistics") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve reliability statistics"
+        ) from None
 
 
 @router.get("/patterns/failures", response_model=list[FailureEventResponse])

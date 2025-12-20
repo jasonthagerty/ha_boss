@@ -95,8 +95,20 @@ A RESTful API for monitoring, managing, and analyzing Home Assistant instances.
 
 ### Authentication
 
-**Note:** Authentication is not yet implemented. This API is intended for
-internal network use only. Do not expose to the public internet.
+Optional API key authentication can be enabled via configuration:
+- Set `api.auth_enabled=true` in config.yaml
+- Provide API keys in `api.api_keys` list
+- Send requests with `X-API-Key` header
+
+When disabled (default), no authentication is required. Only enable on
+trusted networks or with HTTPS.
+
+### CORS
+
+Cross-Origin Resource Sharing (CORS) is configurable:
+- Enable/disable via `api.cors_enabled` (default: enabled)
+- Configure allowed origins via `api.cors_origins` (default: all)
+- Restrict origins in production for security
 
 ### Rate Limiting
 
@@ -118,15 +130,19 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
         lifespan=lifespan,
     )
 
-    # CORS middleware - allow all origins for development
-    # TODO: Restrict origins in production
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # In production, specify allowed origins
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS middleware - configurable via settings
+    config = load_config()
+    if config.api.cors_enabled:
+        logger.info(f"CORS enabled with origins: {config.api.cors_origins}")
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=config.api.cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        logger.info("CORS disabled")
 
     # Global exception handler
     @app.exception_handler(Exception)
@@ -149,14 +165,31 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
             },
         )
 
-    # Register routes
+    # Register routes with optional authentication
+    from ha_boss.api.dependencies import verify_api_key
     from ha_boss.api.routes import automations, healing, monitoring, patterns, status
 
-    app.include_router(status.router, prefix="/api", tags=["Status"])
-    app.include_router(monitoring.router, prefix="/api", tags=["Monitoring"])
-    app.include_router(patterns.router, prefix="/api", tags=["Pattern Analysis"])
-    app.include_router(automations.router, prefix="/api", tags=["Automations"])
-    app.include_router(healing.router, prefix="/api", tags=["Healing"])
+    # Add authentication dependency if enabled
+    dependencies = []
+    if config.api.auth_enabled:
+        from fastapi import Depends
+
+        dependencies = [Depends(verify_api_key)]
+        logger.info("API authentication enabled")
+    else:
+        logger.info("API authentication disabled")
+
+    app.include_router(status.router, prefix="/api", tags=["Status"], dependencies=dependencies)
+    app.include_router(
+        monitoring.router, prefix="/api", tags=["Monitoring"], dependencies=dependencies
+    )
+    app.include_router(
+        patterns.router, prefix="/api", tags=["Pattern Analysis"], dependencies=dependencies
+    )
+    app.include_router(
+        automations.router, prefix="/api", tags=["Automations"], dependencies=dependencies
+    )
+    app.include_router(healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies)
 
     # Root endpoint
     @app.get("/", include_in_schema=False)

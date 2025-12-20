@@ -46,7 +46,9 @@ async def analyze_automation(request: AutomationAnalysisRequest) -> AutomationAn
         service = get_service()
 
         if not service.ha_client:
-            raise HTTPException(status_code=500, detail="Home Assistant client not initialized") from None
+            raise HTTPException(
+                status_code=500, detail="Home Assistant client not initialized"
+            ) from None
 
         # Check if LLM features are configured
         if not hasattr(service.config, "intelligence"):
@@ -100,8 +102,7 @@ async def analyze_automation(request: AutomationAnalysisRequest) -> AutomationAn
 
         # Convert suggestions to strings for API response
         suggestion_strings = [
-            f"{s.severity.value.upper()}: {s.title} - {s.description}"
-            for s in analysis.suggestions
+            f"{s.severity.value.upper()}: {s.title} - {s.description}" for s in analysis.suggestions
         ]
 
         return AutomationAnalysisResponse(
@@ -143,7 +144,9 @@ async def generate_automation(request: AutomationGenerateRequest) -> AutomationG
         service = get_service()
 
         if not service.ha_client:
-            raise HTTPException(status_code=500, detail="Home Assistant client not initialized") from None
+            raise HTTPException(
+                status_code=500, detail="Home Assistant client not initialized"
+            ) from None
 
         # Check if LLM features are configured
         if not hasattr(service.config, "intelligence"):
@@ -237,7 +240,9 @@ async def create_automation(request: AutomationCreateRequest) -> AutomationCreat
         service = get_service()
 
         if not service.ha_client:
-            raise HTTPException(status_code=500, detail="Home Assistant client not initialized") from None
+            raise HTTPException(
+                status_code=500, detail="Home Assistant client not initialized"
+            ) from None
 
         # Parse and create automation
         import yaml
