@@ -334,3 +334,116 @@ async def test_create_ha_client_failure(mock_config):
         with patch.object(HomeAssistantClient, "close"):
             with pytest.raises(HomeAssistantConnectionError):
                 await create_ha_client(mock_config)
+
+
+@pytest.mark.asyncio
+async def test_create_automation_success(client):
+    """Test successful automation creation."""
+    automation_config = {
+        "alias": "Test Automation",
+        "trigger": [{"platform": "state", "entity_id": "binary_sensor.motion"}],
+        "action": [{"service": "light.turn_on", "target": {"entity_id": "light.living_room"}}],
+    }
+
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"alias": "Test Automation"})
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.closed = False
+    mock_session.post = MagicMock(return_value=mock_response)
+
+    client._session = mock_session
+
+    result = await client.create_automation(automation_config)
+
+    assert "id" in result
+    assert result["alias"] == "Test Automation"
+
+
+@pytest.mark.asyncio
+async def test_create_automation_missing_alias(client):
+    """Test automation creation with missing alias."""
+    automation_config = {
+        "trigger": [{"platform": "state"}],
+        "action": [{"service": "light.turn_on"}],
+    }
+
+    with pytest.raises(ValueError, match="alias"):
+        await client.create_automation(automation_config)
+
+
+@pytest.mark.asyncio
+async def test_create_automation_missing_trigger(client):
+    """Test automation creation with missing trigger."""
+    automation_config = {
+        "alias": "Test",
+        "action": [{"service": "light.turn_on"}],
+    }
+
+    with pytest.raises(ValueError, match="trigger"):
+        await client.create_automation(automation_config)
+
+
+@pytest.mark.asyncio
+async def test_create_automation_missing_action(client):
+    """Test automation creation with missing action."""
+    automation_config = {
+        "alias": "Test",
+        "trigger": [{"platform": "state"}],
+    }
+
+    with pytest.raises(ValueError, match="action"):
+        await client.create_automation(automation_config)
+
+
+@pytest.mark.asyncio
+async def test_create_automation_invalid_config(client):
+    """Test automation creation with invalid configuration."""
+    automation_config = {
+        "alias": "Test Automation",
+        "trigger": [{"platform": "state"}],
+        "action": [{"service": "light.turn_on"}],
+    }
+
+    mock_response = AsyncMock()
+    mock_response.status = 400
+    mock_response.text = AsyncMock(return_value="Invalid automation configuration")
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.closed = False
+    mock_session.post = MagicMock(return_value=mock_response)
+
+    client._session = mock_session
+
+    with pytest.raises(HomeAssistantAPIError, match="Invalid automation configuration"):
+        await client.create_automation(automation_config)
+
+
+@pytest.mark.asyncio
+async def test_create_automation_api_error(client):
+    """Test automation creation with API error."""
+    automation_config = {
+        "alias": "Test Automation",
+        "trigger": [{"platform": "state"}],
+        "action": [{"service": "light.turn_on"}],
+    }
+
+    mock_response = AsyncMock()
+    mock_response.status = 500
+    mock_response.text = AsyncMock(return_value="Internal server error")
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.closed = False
+    mock_session.post = MagicMock(return_value=mock_response)
+
+    client._session = mock_session
+
+    with pytest.raises(HomeAssistantAPIError, match="Failed to create automation"):
+        await client.create_automation(automation_config)

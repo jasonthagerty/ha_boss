@@ -637,7 +637,7 @@ class TestAutomationCommands:
         mock_generator_class.return_value = mock_generator
 
         prompt = "Turn on lights when motion detected"
-        result = runner.invoke(app, ["automation", "generate", prompt, "--preview"])
+        result = runner.invoke(app, ["automation", "generate", prompt])
 
         # Just check it doesn't crash - actual generation is complex
         assert result.exit_code in [0, 1]  # May fail due to missing config but shouldn't crash

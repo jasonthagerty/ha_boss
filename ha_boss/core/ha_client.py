@@ -364,6 +364,73 @@ class HomeAssistantClient:
 
         await self.call_service("persistent_notification", "create", data)
 
+    async def create_automation(
+        self,
+        automation_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create a new automation in Home Assistant.
+
+        Uses the automation editor API to create a new automation.
+
+        Args:
+            automation_config: Automation configuration dict containing:
+                - alias: Automation name (required)
+                - trigger: List of triggers (required)
+                - action: List of actions (required)
+                - condition: List of conditions (optional)
+                - mode: Execution mode (optional, default: single)
+                - description: Automation description (optional)
+
+        Returns:
+            Created automation data with ID
+
+        Raises:
+            HomeAssistantAPIError: If creation fails
+            ValueError: If automation_config is invalid
+
+        Example:
+            >>> config = {
+            ...     "alias": "Turn on lights",
+            ...     "trigger": [{"platform": "state", "entity_id": "binary_sensor.motion"}],
+            ...     "action": [{"service": "light.turn_on", "target": {"entity_id": "light.living_room"}}]
+            ... }
+            >>> result = await client.create_automation(config)
+            >>> print(result["id"])  # Automation ID
+        """
+        # Validate required fields
+        if "alias" not in automation_config:
+            raise ValueError("Automation must have an 'alias' field")
+        if "trigger" not in automation_config:
+            raise ValueError("Automation must have a 'trigger' field")
+        if "action" not in automation_config:
+            raise ValueError("Automation must have an 'action' field")
+
+        # Generate a unique ID for the automation
+        import time
+        automation_id = str(int(time.time() * 1000))
+
+        # Use the config/automation/config API to create the automation
+        await self._ensure_session()
+        assert self._session is not None
+
+        url = f"{self.base_url}/api/config/automation/config/{automation_id}"
+        async with self._session.post(url, json=automation_config) as response:
+            if response.status == 200:
+                result = await response.json()
+                # Add the ID to the result
+                result["id"] = automation_id
+                return result
+            elif response.status == 400:
+                error_text = await response.text()
+                raise HomeAssistantAPIError(
+                    f"Invalid automation configuration: {error_text}"
+                )
+            else:
+                error_text = await response.text()
+                raise HomeAssistantAPIError(
+                    f"Failed to create automation (HTTP {response.status}): {error_text}"
+                )
+
 
 async def create_ha_client(config: Config) -> HomeAssistantClient:
     """Create and initialize Home Assistant client.

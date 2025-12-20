@@ -1482,11 +1482,10 @@ def generate_automation(
         "-m",
         help="Automation mode (single, restart, queued, parallel)",
     ),
-    preview_only: bool = typer.Option(
+    create: bool = typer.Option(
         False,
-        "--preview",
-        "-p",
-        help="Only preview the automation, don't create it",
+        "--create",
+        help="Create the automation in Home Assistant (default: preview only)",
     ),
     config_path: Path | None = typer.Option(
         None,
@@ -1498,12 +1497,20 @@ def generate_automation(
     """Generate Home Assistant automation from natural language.
 
     Uses Claude API to translate your description into a valid Home Assistant
-    automation YAML. Requires Claude API to be configured in config.yaml.
+    automation YAML. By default, shows preview only. Use --create to actually
+    create the automation in Home Assistant.
+
+    Requires Claude API to be configured in config.yaml.
 
     Examples:
+        # Preview automation (default)
         haboss automation generate "Turn on lights when motion detected after sunset"
-        haboss automation generate "Send notification if garage door open > 10 minutes" --mode restart
-        haboss automation generate "Turn off all lights at 11pm" --preview
+
+        # Create automation in Home Assistant
+        haboss automation generate "Turn off all lights at 11pm" --create
+
+        # Create with custom mode
+        haboss automation generate "Send notification if garage door open > 10 minutes" --mode restart --create
     """
     console.print(
         Panel.fit(
@@ -1529,7 +1536,7 @@ def generate_automation(
             )
             raise typer.Exit(code=1)
 
-        asyncio.run(_generate_automation(config, prompt, mode, preview_only))
+        asyncio.run(_generate_automation(config, prompt, mode, create))
 
     except Exception as e:
         handle_error(e)
@@ -1539,7 +1546,7 @@ async def _generate_automation(
     config: Config,
     prompt: str,
     mode: str,
-    preview_only: bool,
+    create: bool,
 ) -> None:
     """Generate automation using Claude API.
 
@@ -1547,7 +1554,7 @@ async def _generate_automation(
         config: HA Boss configuration
         prompt: Natural language description
         mode: Automation mode
-        preview_only: Only show preview, don't create
+        create: Whether to create automation in HA (default: preview only)
     """
     from ha_boss.automation.generator import AutomationGenerator
     from ha_boss.intelligence.claude_client import ClaudeClient
@@ -1614,18 +1621,53 @@ async def _generate_automation(
                 "\n[red]Warning:[/red] Generated automation has validation errors. Review carefully before using."
             )
 
-        # Offer to create if not preview-only
-        if not preview_only:
-            console.print("\n[bold]Instructions to create this automation:[/bold]")
+        # Create in HA if requested
+        if create:
+            # Don't create if validation failed
+            if not automation.is_valid:
+                console.print(
+                    "\n[red]Error:[/red] Cannot create automation with validation errors. "
+                    "Review and fix the issues first."
+                )
+                return
+
+            try:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Creating automation in Home Assistant...", total=None)
+                    result = await ha_client.create_automation(automation.yaml_config)
+                    progress.remove_task(task)
+
+                automation_id = result.get("id", "unknown")
+                console.print(
+                    f"\n[green]✓[/green] Automation created successfully!"
+                )
+                console.print(f"  [dim]ID:[/dim] {automation_id}")
+                console.print(f"  [dim]Alias:[/dim] {automation.yaml_config.get('alias', 'Unknown')}")
+                console.print(
+                    f"\n[cyan]View in Home Assistant:[/cyan] Configuration → Automations → {automation.yaml_config.get('alias')}"
+                )
+
+            except Exception as e:
+                console.print(f"\n[red]Error:[/red] Failed to create automation: {e}")
+                console.print("\n[bold]Manual Creation Instructions:[/bold]")
+                console.print("1. Go to Home Assistant → Configuration → Automations")
+                console.print("2. Click '+ Add Automation' → '...' menu → 'Edit in YAML'")
+                console.print("3. Copy and paste the YAML above")
+                console.print("4. Save the automation\n")
+        else:
+            # Preview only mode
+            console.print("\n[dim](Preview only - use --create to create in Home Assistant)[/dim]")
+            console.print("\n[bold]To create this automation:[/bold]")
+            console.print("  Run again with: --create")
+            console.print("\n[bold]Or create manually:[/bold]")
             console.print("1. Go to Home Assistant → Configuration → Automations")
             console.print("2. Click '+ Add Automation' → '...' menu → 'Edit in YAML'")
             console.print("3. Copy and paste the YAML above")
-            console.print("4. Save the automation\n")
-
-            # For future: could implement direct creation via HA API
-            # For now, provide YAML for manual creation
-        else:
-            console.print("\n[dim](Preview only - not creating automation)[/dim]")
+            console.print("4. Save the automation")
 
 
 def _display_analysis_result(result: AnalysisResult, compact: bool = False) -> None:
