@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import HealingActionResponse, HealingHistoryResponse
+from ha_boss.monitoring.health_monitor import HealthIssue
 
 logger = logging.getLogger(__name__)
 
@@ -44,21 +45,25 @@ async def trigger_healing(
         if not service.state_tracker:
             raise HTTPException(status_code=500, detail="State tracker not initialized") from None
 
-        entity_state = service.state_tracker.get_entity_state(entity_id)
+        entity_state = service.state_tracker.get_state(entity_id)
         if not entity_state:
             raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
 
         # Get integration for entity
-        integration_name = None
-        integration = service.integration_discovery.get_integration_for_entity(entity_id)
-        if integration:
-            integration_name = integration.name
+        integration_name = service.integration_discovery.get_integration_for_entity(entity_id)
 
         # Attempt healing
         logger.info(f"Manual healing requested for entity: {entity_id}")
 
         try:
-            success = await service.healing_manager.heal_entity(entity_id)
+            # Create a health issue for manual healing
+            health_issue = HealthIssue(
+                entity_id=entity_id,
+                issue_type="manual_heal",
+                detected_at=datetime.now(UTC),
+                details={"source": "api_manual_trigger"},
+            )
+            success = await service.healing_manager.heal(health_issue)
 
             return HealingActionResponse(
                 entity_id=entity_id,
@@ -123,24 +128,24 @@ async def get_healing_history(
         start_time = end_time - timedelta(hours=hours)
 
         # Query database for healing actions
-        async with service.database.session() as session:
+        async with service.database.async_session() as session:
             from sqlalchemy import func, select
 
-            from ha_boss.core.database import HealingActionModel, IntegrationModel
+            from ha_boss.core.database import HealingAction, Integration
 
             # Get healing actions with integration names
             stmt = (
-                select(HealingActionModel, IntegrationModel.name)
+                select(HealingAction, Integration.name)
                 .join(
-                    IntegrationModel,
-                    HealingActionModel.integration_id == IntegrationModel.id,
+                    Integration,
+                    HealingAction.integration_id == Integration.id,
                     isouter=True,
                 )
                 .where(
-                    HealingActionModel.timestamp >= start_time,
-                    HealingActionModel.timestamp <= end_time,
+                    HealingAction.timestamp >= start_time,
+                    HealingAction.timestamp <= end_time,
                 )
-                .order_by(HealingActionModel.timestamp.desc())
+                .order_by(HealingAction.timestamp.desc())
                 .limit(limit)
             )
 
@@ -149,11 +154,11 @@ async def get_healing_history(
 
             # Get summary statistics
             stats_stmt = select(
-                func.count(HealingActionModel.id).label("total"),
-                func.sum(func.cast(HealingActionModel.success, func.Integer)).label("success"),
+                func.count(HealingAction.id).label("total"),
+                func.sum(func.cast(HealingAction.success, func.Integer)).label("success"),
             ).where(
-                HealingActionModel.timestamp >= start_time,
-                HealingActionModel.timestamp <= end_time,
+                HealingAction.timestamp >= start_time,
+                HealingAction.timestamp <= end_time,
             )
 
             stats_result = await session.execute(stats_stmt)

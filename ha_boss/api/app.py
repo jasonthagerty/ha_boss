@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ha_boss.core.config import Config
+from ha_boss.core.config import load_config
 from ha_boss.service.main import HABossService
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     try:
         # Load configuration
-        config = Config.load()
+        config = load_config()
 
         # Create and start service
         _service = HABossService(config)

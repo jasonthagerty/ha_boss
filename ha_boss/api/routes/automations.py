@@ -15,7 +15,9 @@ from ha_boss.api.models import (
 )
 from ha_boss.automation.analyzer import AutomationAnalyzer
 from ha_boss.automation.generator import AutomationGenerator
+from ha_boss.intelligence.claude_client import ClaudeClient
 from ha_boss.intelligence.llm_router import LLMRouter
+from ha_boss.intelligence.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +48,41 @@ async def analyze_automation(request: AutomationAnalysisRequest) -> AutomationAn
         if not service.ha_client:
             raise HTTPException(status_code=500, detail="Home Assistant client not initialized") from None
 
-        # Check if LLM router is configured
-        if not hasattr(service.config, "ai") or not service.config.ai:
+        # Check if LLM features are configured
+        if not hasattr(service.config, "intelligence"):
             raise HTTPException(
                 status_code=503,
                 detail="AI features not configured. Set up Ollama or Claude API in configuration.",
+            ) from None
+
+        # Create LLM clients
+        ollama_client = None
+        claude_client = None
+
+        if service.config.intelligence.ollama_enabled:
+            ollama_client = OllamaClient(
+                url=service.config.intelligence.ollama_url,
+                model=service.config.intelligence.ollama_model,
+                timeout=service.config.intelligence.ollama_timeout_seconds,
             )
 
-        # Create LLM router and analyzer
-        llm_router = LLMRouter(service.config)
+        if (
+            service.config.intelligence.claude_enabled
+            and service.config.intelligence.claude_api_key
+        ):
+            claude_client = ClaudeClient(
+                api_key=service.config.intelligence.claude_api_key,
+                model=service.config.intelligence.claude_model,
+            )
+
+        # Create LLM router
+        llm_router = LLMRouter(
+            ollama_client=ollama_client,
+            claude_client=claude_client,
+            local_only=not service.config.intelligence.claude_enabled,
+        )
+
+        # Create analyzer
         analyzer = AutomationAnalyzer(
             ha_client=service.ha_client,
             config=service.config,
@@ -68,14 +96,20 @@ async def analyze_automation(request: AutomationAnalysisRequest) -> AutomationAn
             raise HTTPException(
                 status_code=404,
                 detail=f"Automation '{request.automation_id}' not found or analysis failed",
-            )
+            ) from None
+
+        # Convert suggestions to strings for API response
+        suggestion_strings = [
+            f"{s.severity.value.upper()}: {s.title} - {s.description}"
+            for s in analysis.suggestions
+        ]
 
         return AutomationAnalysisResponse(
             automation_id=analysis.automation_id,
-            alias=analysis.alias,
-            analysis=analysis.analysis,
-            suggestions=analysis.suggestions,
-            complexity_score=analysis.complexity_score,
+            alias=analysis.friendly_name,
+            analysis=analysis.ai_analysis or "No AI analysis available",
+            suggestions=suggestion_strings,
+            complexity_score=None,  # Not available in AnalysisResult
         )
 
     except HTTPException:
@@ -111,15 +145,41 @@ async def generate_automation(request: AutomationGenerateRequest) -> AutomationG
         if not service.ha_client:
             raise HTTPException(status_code=500, detail="Home Assistant client not initialized") from None
 
-        # Check if LLM router is configured
-        if not hasattr(service.config, "ai") or not service.config.ai:
+        # Check if LLM features are configured
+        if not hasattr(service.config, "intelligence"):
             raise HTTPException(
                 status_code=503,
                 detail="AI features not configured. Set up Ollama or Claude API in configuration.",
+            ) from None
+
+        # Create LLM clients
+        ollama_client = None
+        claude_client = None
+
+        if service.config.intelligence.ollama_enabled:
+            ollama_client = OllamaClient(
+                url=service.config.intelligence.ollama_url,
+                model=service.config.intelligence.ollama_model,
+                timeout=service.config.intelligence.ollama_timeout_seconds,
             )
 
-        # Create LLM router and generator
-        llm_router = LLMRouter(service.config)
+        if (
+            service.config.intelligence.claude_enabled
+            and service.config.intelligence.claude_api_key
+        ):
+            claude_client = ClaudeClient(
+                api_key=service.config.intelligence.claude_api_key,
+                model=service.config.intelligence.claude_model,
+            )
+
+        # Create LLM router
+        llm_router = LLMRouter(
+            ollama_client=ollama_client,
+            claude_client=claude_client,
+            local_only=not service.config.intelligence.claude_enabled,
+        )
+
+        # Create generator
         generator = AutomationGenerator(
             ha_client=service.ha_client,
             config=service.config,

@@ -63,23 +63,23 @@ async def get_reliability_stats() -> list[IntegrationReliabilityResponse]:
             return reliability_list
 
         # Fallback: query database directly if analyzer not available
-        async with service.database.session() as session:
+        async with service.database.async_session() as session:
             from sqlalchemy import func, select
 
-            from ha_boss.core.database import HealthEventModel, IntegrationModel
+            from ha_boss.core.database import HealthEvent, Integration
 
             stmt = (
                 select(
-                    IntegrationModel.name,
-                    func.count(HealthEventModel.id).label("failure_count"),
-                    func.max(HealthEventModel.detected_at).label("last_failure"),
+                    Integration.name,
+                    func.count(HealthEvent.id).label("failure_count"),
+                    func.max(HealthEvent.detected_at).label("last_failure"),
                 )
                 .join(
-                    HealthEventModel,
-                    HealthEventModel.integration_id == IntegrationModel.id,
+                    HealthEvent,
+                    HealthEvent.integration_id == Integration.id,
                     isouter=True,
                 )
-                .group_by(IntegrationModel.name)
+                .group_by(Integration.name)
             )
 
             result = await session.execute(stmt)
@@ -144,23 +144,23 @@ async def get_failure_events(
         start_time = end_time - timedelta(hours=hours)
 
         # Query database for failure events
-        async with service.database.session() as session:
+        async with service.database.async_session() as session:
             from sqlalchemy import select
 
-            from ha_boss.core.database import HealthEventModel, IntegrationModel
+            from ha_boss.core.database import HealthEvent, Integration
 
             stmt = (
-                select(HealthEventModel, IntegrationModel.name)
+                select(HealthEvent, Integration.name)
                 .join(
-                    IntegrationModel,
-                    HealthEventModel.integration_id == IntegrationModel.id,
+                    Integration,
+                    HealthEvent.integration_id == Integration.id,
                     isouter=True,
                 )
                 .where(
-                    HealthEventModel.detected_at >= start_time,
-                    HealthEventModel.detected_at <= end_time,
+                    HealthEvent.detected_at >= start_time,
+                    HealthEvent.detected_at <= end_time,
                 )
-                .order_by(HealthEventModel.detected_at.desc())
+                .order_by(HealthEvent.detected_at.desc())
                 .limit(limit)
             )
 
@@ -226,28 +226,28 @@ async def get_weekly_summary(
         start_date = end_date - timedelta(days=days)
 
         # Query database for summary stats
-        async with service.database.session() as session:
+        async with service.database.async_session() as session:
             from sqlalchemy import func, select
 
-            from ha_boss.core.database import HealingActionModel, HealthEventModel, IntegrationModel
+            from ha_boss.core.database import HealingAction, HealthEvent, Integration
 
             # Total failures
-            failure_stmt = select(func.count(HealthEventModel.id)).where(
-                HealthEventModel.detected_at >= start_date,
-                HealthEventModel.detected_at <= end_date,
+            failure_stmt = select(func.count(HealthEvent.id)).where(
+                HealthEvent.detected_at >= start_date,
+                HealthEvent.detected_at <= end_date,
             )
             failure_result = await session.execute(failure_stmt)
             total_failures = failure_result.scalar() or 0
 
             # Healing stats
             healing_stmt = select(
-                func.count(HealingActionModel.id).label("total_healings"),
-                func.sum(func.cast(HealingActionModel.success, func.Integer)).label(
+                func.count(HealingAction.id).label("total_healings"),
+                func.sum(func.cast(HealingAction.success, func.Integer)).label(
                     "successful_healings"
                 ),
             ).where(
-                HealingActionModel.timestamp >= start_date,
-                HealingActionModel.timestamp <= end_date,
+                HealingAction.timestamp >= start_date,
+                HealingAction.timestamp <= end_date,
             )
             healing_result = await session.execute(healing_stmt)
             healing_row = healing_result.first()
@@ -260,17 +260,17 @@ async def get_weekly_summary(
 
             # Top failing integrations
             top_failing_stmt = (
-                select(IntegrationModel.name, func.count(HealthEventModel.id).label("count"))
+                select(Integration.name, func.count(HealthEvent.id).label("count"))
                 .join(
-                    HealthEventModel,
-                    HealthEventModel.integration_id == IntegrationModel.id,
+                    HealthEvent,
+                    HealthEvent.integration_id == Integration.id,
                 )
                 .where(
-                    HealthEventModel.detected_at >= start_date,
-                    HealthEventModel.detected_at <= end_date,
+                    HealthEvent.detected_at >= start_date,
+                    HealthEvent.detected_at <= end_date,
                 )
-                .group_by(IntegrationModel.name)
-                .order_by(func.count(HealthEventModel.id).desc())
+                .group_by(Integration.name)
+                .order_by(func.count(HealthEvent.id).desc())
                 .limit(5)
             )
             top_failing_result = await session.execute(top_failing_stmt)

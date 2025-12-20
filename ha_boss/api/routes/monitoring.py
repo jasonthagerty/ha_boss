@@ -40,7 +40,8 @@ async def list_entities(
             raise HTTPException(status_code=500, detail="State tracker not initialized") from None
 
         # Get all entities from state tracker
-        all_states = list(service.state_tracker._states.values())
+        all_states_dict = await service.state_tracker.get_all_states()
+        all_states = list(all_states_dict.values())
 
         # Apply pagination
         paginated_states = all_states[offset : offset + limit]
@@ -53,7 +54,7 @@ async def list_entities(
                     entity_id=state.entity_id,
                     state=state.state,
                     attributes=state.attributes,
-                    last_changed=state.last_changed,
+                    last_changed=None,  # EntityState doesn't track last_changed
                     last_updated=state.last_updated,
                     monitored=True,  # All entities in state tracker are monitored
                 )
@@ -86,16 +87,16 @@ async def get_entity(entity_id: str) -> EntityStateResponse:
             raise HTTPException(status_code=500, detail="State tracker not initialized") from None
 
         # Get entity state
-        state = service.state_tracker.get_entity_state(entity_id)
+        state = await service.state_tracker.get_state(entity_id)
 
         if not state:
-            raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+            raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found") from None
 
         return EntityStateResponse(
             entity_id=state.entity_id,
             state=state.state,
             attributes=state.attributes,
-            last_changed=state.last_changed,
+            last_changed=None,  # EntityState doesn't track last_changed
             last_updated=state.last_updated,
             monitored=True,
         )
@@ -135,19 +136,19 @@ async def get_entity_history(
         start_time = end_time - timedelta(hours=hours)
 
         # Query database for entity history
-        async with service.database.session() as session:
+        async with service.database.async_session() as session:
             from sqlalchemy import select
 
-            from ha_boss.core.database import EntityStateModel
+            from ha_boss.core.database import StateHistory
 
             stmt = (
-                select(EntityStateModel)
+                select(StateHistory)
                 .where(
-                    EntityStateModel.entity_id == entity_id,
-                    EntityStateModel.timestamp >= start_time,
-                    EntityStateModel.timestamp <= end_time,
+                    StateHistory.entity_id == entity_id,
+                    StateHistory.timestamp >= start_time,
+                    StateHistory.timestamp <= end_time,
                 )
-                .order_by(EntityStateModel.timestamp.desc())
+                .order_by(StateHistory.timestamp.desc())
             )
 
             result = await session.execute(stmt)
@@ -164,9 +165,9 @@ async def get_entity_history(
         # Convert to response format
         history = [
             {
-                "state": record.state,
+                "state": record.new_state,
                 "timestamp": record.timestamp,
-                "attributes": record.attributes or {},
+                "attributes": {},  # StateHistory doesn't store attributes
             }
             for record in history_records
         ]

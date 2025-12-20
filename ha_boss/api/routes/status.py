@@ -40,7 +40,8 @@ async def get_status() -> ServiceStatusResponse:
         # Count monitored entities
         monitored_count = 0
         if service.state_tracker:
-            monitored_count = len(service.state_tracker._states)
+            all_states = await service.state_tracker.get_all_states()
+            monitored_count = len(all_states)
 
         return ServiceStatusResponse(
             state=service.state,
@@ -82,7 +83,7 @@ async def health_check() -> HealthCheckResponse:
         service_running = service.state == "running"
         ha_connected = service.ha_client is not None
         websocket_connected = (
-            service.websocket_client is not None and service.websocket_client.is_connected
+            service.websocket_client is not None and service.websocket_client.is_connected()
         )
         database_accessible = service.database is not None
 
