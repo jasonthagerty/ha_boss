@@ -137,17 +137,17 @@ async def get_healing_history(
 
             # Get healing actions with integration names
             stmt = (
-                select(HealingAction, Integration.name)
-                .join(
+                select(HealingAction, Integration.name)  # type: ignore[attr-defined]
+                .join(  # type: ignore[attr-defined]
                     Integration,
-                    HealingAction.integration_id == Integration.id,
+                    HealingAction.integration_id == Integration.id,  # type: ignore[attr-defined]
                     isouter=True,
                 )
-                .where(
-                    HealingAction.timestamp >= start_time,
-                    HealingAction.timestamp <= end_time,
+                .where(  # type: ignore[attr-defined]
+                    HealingAction.timestamp >= start_time,  # type: ignore[attr-defined]
+                    HealingAction.timestamp <= end_time,  # type: ignore[attr-defined]
                 )
-                .order_by(HealingAction.timestamp.desc())
+                .order_by(HealingAction.timestamp.desc())  # type: ignore[attr-defined]
                 .limit(limit)
             )
 
@@ -155,12 +155,12 @@ async def get_healing_history(
             rows = result.all()
 
             # Get summary statistics
-            stats_stmt = select(
-                func.count(HealingAction.id).label("total"),
-                func.sum(func.cast(HealingAction.success, func.Integer)).label("success"),
-            ).where(
-                HealingAction.timestamp >= start_time,
-                HealingAction.timestamp <= end_time,
+            stats_stmt = select(  # type: ignore[attr-defined]
+                func.count(HealingAction.id).label("total"),  # type: ignore[attr-defined]
+                func.sum(func.cast(HealingAction.success, func.Integer)).label("success"),  # type: ignore[attr-defined, arg-type]
+            ).where(  # type: ignore[attr-defined]
+                HealingAction.timestamp >= start_time,  # type: ignore[attr-defined]
+                HealingAction.timestamp <= end_time,  # type: ignore[attr-defined]
             )
 
             stats_result = await session.execute(stats_stmt)

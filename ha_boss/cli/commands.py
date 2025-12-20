@@ -1638,17 +1638,15 @@ async def _generate_automation(
                     console=console,
                 ) as progress:
                     task = progress.add_task("Creating automation in Home Assistant...", total=None)
-                    result = await ha_client.create_automation(automation.yaml_config)
+                    result = await ha_client.create_automation(automation.to_dict())
                     progress.remove_task(task)
 
                 automation_id = result.get("id", "unknown")
                 console.print("\n[green]✓[/green] Automation created successfully!")
                 console.print(f"  [dim]ID:[/dim] {automation_id}")
+                console.print(f"  [dim]Alias:[/dim] {automation.alias}")
                 console.print(
-                    f"  [dim]Alias:[/dim] {automation.yaml_config.get('alias', 'Unknown')}"
-                )
-                console.print(
-                    f"\n[cyan]View in Home Assistant:[/cyan] Configuration → Automations → {automation.yaml_config.get('alias')}"
+                    f"\n[cyan]View in Home Assistant:[/cyan] Configuration → Automations → {automation.alias}"
                 )
 
             except Exception as e:

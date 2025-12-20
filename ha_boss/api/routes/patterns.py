@@ -69,17 +69,17 @@ async def get_reliability_stats() -> list[IntegrationReliabilityResponse]:
             from ha_boss.core.database import HealthEvent, Integration
 
             stmt = (
-                select(
-                    Integration.name,
-                    func.count(HealthEvent.id).label("failure_count"),
-                    func.max(HealthEvent.detected_at).label("last_failure"),
+                select(  # type: ignore[attr-defined]
+                    Integration.name,  # type: ignore[attr-defined]
+                    func.count(HealthEvent.id).label("failure_count"),  # type: ignore[attr-defined]
+                    func.max(HealthEvent.detected_at).label("last_failure"),  # type: ignore[attr-defined]
                 )
-                .join(
+                .join(  # type: ignore[attr-defined]
                     HealthEvent,
-                    HealthEvent.integration_id == Integration.id,
+                    HealthEvent.integration_id == Integration.id,  # type: ignore[attr-defined]
                     isouter=True,
                 )
-                .group_by(Integration.name)
+                .group_by(Integration.name)  # type: ignore[attr-defined]
             )
 
             result = await session.execute(stmt)
@@ -152,17 +152,17 @@ async def get_failure_events(
             from ha_boss.core.database import HealthEvent, Integration
 
             stmt = (
-                select(HealthEvent, Integration.name)
-                .join(
+                select(HealthEvent, Integration.name)  # type: ignore[attr-defined]
+                .join(  # type: ignore[attr-defined]
                     Integration,
-                    HealthEvent.integration_id == Integration.id,
+                    HealthEvent.integration_id == Integration.id,  # type: ignore[attr-defined]
                     isouter=True,
                 )
-                .where(
-                    HealthEvent.detected_at >= start_time,
-                    HealthEvent.detected_at <= end_time,
+                .where(  # type: ignore[attr-defined]
+                    HealthEvent.detected_at >= start_time,  # type: ignore[attr-defined]
+                    HealthEvent.detected_at <= end_time,  # type: ignore[attr-defined]
                 )
-                .order_by(HealthEvent.detected_at.desc())
+                .order_by(HealthEvent.detected_at.desc())  # type: ignore[attr-defined]
                 .limit(limit)
             )
 
@@ -234,22 +234,22 @@ async def get_weekly_summary(
             from ha_boss.core.database import HealingAction, HealthEvent, Integration
 
             # Total failures
-            failure_stmt = select(func.count(HealthEvent.id)).where(
-                HealthEvent.detected_at >= start_date,
-                HealthEvent.detected_at <= end_date,
+            failure_stmt = select(func.count(HealthEvent.id)).where(  # type: ignore[attr-defined]
+                HealthEvent.detected_at >= start_date,  # type: ignore[attr-defined]
+                HealthEvent.detected_at <= end_date,  # type: ignore[attr-defined]
             )
             failure_result = await session.execute(failure_stmt)
             total_failures = failure_result.scalar() or 0
 
             # Healing stats
-            healing_stmt = select(
-                func.count(HealingAction.id).label("total_healings"),
-                func.sum(func.cast(HealingAction.success, func.Integer)).label(
+            healing_stmt = select(  # type: ignore[attr-defined]
+                func.count(HealingAction.id).label("total_healings"),  # type: ignore[attr-defined]
+                func.sum(func.cast(HealingAction.success, func.Integer)).label(  # type: ignore[attr-defined, arg-type]
                     "successful_healings"
                 ),
-            ).where(
-                HealingAction.timestamp >= start_date,
-                HealingAction.timestamp <= end_date,
+            ).where(  # type: ignore[attr-defined]
+                HealingAction.timestamp >= start_date,  # type: ignore[attr-defined]
+                HealingAction.timestamp <= end_date,  # type: ignore[attr-defined]
             )
             healing_result = await session.execute(healing_stmt)
             healing_row = healing_result.first()
@@ -262,17 +262,17 @@ async def get_weekly_summary(
 
             # Top failing integrations
             top_failing_stmt = (
-                select(Integration.name, func.count(HealthEvent.id).label("count"))
-                .join(
+                select(Integration.name, func.count(HealthEvent.id).label("count"))  # type: ignore[attr-defined]
+                .join(  # type: ignore[attr-defined]
                     HealthEvent,
-                    HealthEvent.integration_id == Integration.id,
+                    HealthEvent.integration_id == Integration.id,  # type: ignore[attr-defined]
                 )
-                .where(
-                    HealthEvent.detected_at >= start_date,
-                    HealthEvent.detected_at <= end_date,
+                .where(  # type: ignore[attr-defined]
+                    HealthEvent.detected_at >= start_date,  # type: ignore[attr-defined]
+                    HealthEvent.detected_at <= end_date,  # type: ignore[attr-defined]
                 )
-                .group_by(Integration.name)
-                .order_by(func.count(HealthEvent.id).desc())
+                .group_by(Integration.name)  # type: ignore[attr-defined]
+                .order_by(func.count(HealthEvent.id).desc())  # type: ignore[attr-defined]
                 .limit(5)
             )
             top_failing_result = await session.execute(top_failing_stmt)

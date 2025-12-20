@@ -1,8 +1,8 @@
 """Tests for API authentication."""
 
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ha_boss.api.app import create_app
@@ -15,8 +15,9 @@ def mock_service_with_auth():
     service.state = "running"
     service.ha_client = MagicMock()
     service.state_tracker = MagicMock()
-    service.state_tracker.get_all_states = MagicMock(return_value={})
+    service.state_tracker.get_all_states = AsyncMock(return_value={})
     service.websocket_client = MagicMock()
+    service.websocket_client.is_connected = MagicMock(return_value=True)
     service.database = MagicMock()
 
     # Enable auth
@@ -33,10 +34,15 @@ def mock_service_with_auth():
 def client_with_auth(mock_service_with_auth):
     """Create test client with authentication enabled."""
     with patch("ha_boss.api.app._service", mock_service_with_auth):
-        with patch("ha_boss.api.app.load_config") as mock_load_config:
-            mock_load_config.return_value = mock_service_with_auth.config
-            app = create_app()
-            return TestClient(app)
+        with patch("ha_boss.api.app.get_service", return_value=mock_service_with_auth):
+            with patch("ha_boss.api.dependencies.get_service", return_value=mock_service_with_auth):
+                with patch(
+                    "ha_boss.api.routes.status.get_service", return_value=mock_service_with_auth
+                ):
+                    with patch("ha_boss.api.app.load_config") as mock_load_config:
+                        mock_load_config.return_value = mock_service_with_auth.config
+                        app = create_app()
+                        yield TestClient(app)
 
 
 def test_auth_required_no_key(client_with_auth):
@@ -48,19 +54,13 @@ def test_auth_required_no_key(client_with_auth):
 
 def test_auth_valid_key(client_with_auth):
     """Test that requests with valid API key are accepted."""
-    response = client_with_auth.get(
-        "/api/status",
-        headers={"X-API-Key": "test-key-123"}
-    )
+    response = client_with_auth.get("/api/status", headers={"X-API-Key": "test-key-123"})
     assert response.status_code == 200
 
 
 def test_auth_invalid_key(client_with_auth):
     """Test that requests with invalid API key are rejected."""
-    response = client_with_auth.get(
-        "/api/status",
-        headers={"X-API-Key": "invalid-key"}
-    )
+    response = client_with_auth.get("/api/status", headers={"X-API-Key": "invalid-key"})
     assert response.status_code == 401
     assert "Invalid API key" in response.json()["detail"]
 
@@ -71,8 +71,9 @@ def test_auth_disabled():
     mock_service.state = "running"
     mock_service.ha_client = MagicMock()
     mock_service.state_tracker = MagicMock()
-    mock_service.state_tracker.get_all_states = MagicMock(return_value={})
+    mock_service.state_tracker.get_all_states = AsyncMock(return_value={})
     mock_service.websocket_client = MagicMock()
+    mock_service.websocket_client.is_connected = MagicMock(return_value=True)
     mock_service.database = MagicMock()
 
     # Disable auth
@@ -82,11 +83,14 @@ def test_auth_disabled():
     mock_service.config.api.cors_origins = ["*"]
 
     with patch("ha_boss.api.app._service", mock_service):
-        with patch("ha_boss.api.app.load_config") as mock_load_config:
-            mock_load_config.return_value = mock_service.config
-            app = create_app()
-            client = TestClient(app)
+        with patch("ha_boss.api.app.get_service", return_value=mock_service):
+            with patch("ha_boss.api.dependencies.get_service", return_value=mock_service):
+                with patch("ha_boss.api.routes.status.get_service", return_value=mock_service):
+                    with patch("ha_boss.api.app.load_config") as mock_load_config:
+                        mock_load_config.return_value = mock_service.config
+                        app = create_app()
+                        client = TestClient(app)
 
-            # Request without auth should succeed
-            response = client.get("/api/status")
-            assert response.status_code == 200
+                        # Request without auth should succeed
+                        response = client.get("/api/status")
+                        assert response.status_code == 200

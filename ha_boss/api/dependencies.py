@@ -3,7 +3,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import HTTPException, Security, status
+from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
 from ha_boss.api.app import get_service
@@ -59,7 +59,7 @@ async def verify_api_key(
         ) from e
 
 
-async def require_https(request: any) -> None:
+async def require_https(request: Request) -> None:
     """Require HTTPS if configured.
 
     Args:

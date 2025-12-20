@@ -1,9 +1,9 @@
 """Tests for API status and health endpoints."""
 
-import pytest
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ha_boss.api.app import create_app
@@ -42,11 +42,15 @@ def mock_service():
 @pytest.fixture
 def client(mock_service):
     """Create test client with mocked service."""
+    # Patch both the module-level _service and get_service function
     with patch("ha_boss.api.app._service", mock_service):
-        with patch("ha_boss.api.app.load_config") as mock_load_config:
-            mock_load_config.return_value = mock_service.config
-            app = create_app()
-            return TestClient(app)
+        with patch("ha_boss.api.app.get_service", return_value=mock_service):
+            with patch("ha_boss.api.dependencies.get_service", return_value=mock_service):
+                with patch("ha_boss.api.routes.status.get_service", return_value=mock_service):
+                    with patch("ha_boss.api.app.load_config") as mock_load_config:
+                        mock_load_config.return_value = mock_service.config
+                        app = create_app()
+                        yield TestClient(app)
 
 
 def test_root_endpoint(client):
