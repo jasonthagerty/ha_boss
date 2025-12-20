@@ -3,11 +3,13 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from ha_boss.core.config import load_config
 from ha_boss.service.main import HABossService
@@ -191,15 +193,39 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
     )
     app.include_router(healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies)
 
+    # Static file serving for dashboard
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        logger.info(f"Serving static files from: {static_dir}")
+
+        @app.get("/dashboard", include_in_schema=False)
+        async def dashboard() -> FileResponse:
+            """Serve the API dashboard."""
+            dashboard_file = static_dir / "index.html"
+            if dashboard_file.exists():
+                return FileResponse(dashboard_file)
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+
+        logger.info("Dashboard available at: http://localhost:8000/dashboard")
+    else:
+        logger.warning("Static files directory not found, dashboard unavailable")
+
     # Root endpoint
     @app.get("/", include_in_schema=False)
     async def root() -> dict[str, str]:
-        """Root endpoint - redirect to docs."""
-        return {
+        """Root endpoint with links to docs and dashboard."""
+        response = {
             "message": "HA Boss API",
             "docs": "/docs",
             "redoc": "/redoc",
             "openapi": "/openapi.json",
         }
+
+        # Include dashboard link if static files exist
+        if static_dir.exists():
+            response["dashboard"] = "/dashboard"
+
+        return response
 
     return app

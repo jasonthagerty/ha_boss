@@ -1,0 +1,382 @@
+/**
+ * HA Boss Dashboard - Custom CSS
+ * Animations and styles beyond Tailwind utilities
+ */
+
+/* ==================== Animations ==================== */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Status indicator pulse animation */
+.status-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Fade in animation for content */
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* ==================== Chart Containers ==================== */
+
+.chart-container {
+  position: relative;
+  width: 100%;
+}
+
+.chart-container canvas {
+  max-height: 100%;
+}
+
+/* ==================== Custom Scrollbars ==================== */
+
+/* For Webkit browsers (Chrome, Safari, Edge) */
+.entity-list::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.entity-list::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.entity-list::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.entity-list::-webkit-scrollbar-thumb:hover,
+.overflow-x-auto::-webkit-scrollbar-thumb:hover,
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ==================== Loading States ==================== */
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.spinner {
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: #3b82f6;
+  width: 40px;
+  height: 40px;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ==================== Tab Styles ==================== */
+
+.tab-btn {
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover:not(.tab-active) {
+  color: #1f2937;
+  border-bottom-color: #d1d5db;
+}
+
+.tab-active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+/* ==================== Modal Animations ==================== */
+
+#settingsModal,
+#entityModal {
+  transition: opacity 0.3s ease-out;
+}
+
+#settingsModal.flex,
+#entityModal.flex {
+  animation: fadeIn 0.3s ease-out;
+}
+
+#settingsModal > div,
+#entityModal > div {
+  animation: fadeIn 0.3s ease-out 0.1s both;
+}
+
+/* ==================== Cards ==================== */
+
+.card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
+              0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* ==================== Buttons ==================== */
+
+button {
+  transition: all 0.2s ease;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==================== Form Inputs ==================== */
+
+input[type="text"],
+input[type="password"],
+textarea,
+select {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* ==================== Tables ==================== */
+
+table {
+  border-collapse: collapse;
+}
+
+table tr {
+  transition: background-color 0.15s ease;
+}
+
+/* ==================== Toast Notifications ==================== */
+
+#toastContainer {
+  pointer-events: none;
+}
+
+#toastContainer > * {
+  pointer-events: auto;
+}
+
+/* ==================== Status Indicators ==================== */
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.status-dot.connected {
+  background-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.status-dot.disconnected {
+  background-color: #6b7280;
+}
+
+.status-dot.error {
+  background-color: #ef4444;
+}
+
+/* ==================== Code Blocks ==================== */
+
+pre {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+pre code {
+  display: block;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+/* ==================== Responsive Utilities ==================== */
+
+@media (max-width: 640px) {
+  /* Stack cards vertically on mobile */
+  .grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+
+  /* Reduce padding on mobile */
+  .px-4 {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  /* Smaller font sizes */
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  /* Hide less important columns in tables */
+  table td:nth-child(3),
+  table th:nth-child(3) {
+    display: none;
+  }
+
+  /* Make charts taller on mobile */
+  .chart-container {
+    min-height: 250px;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  /* Tablet optimizations */
+  .chart-container {
+    min-height: 300px;
+  }
+}
+
+/* ==================== Print Styles ==================== */
+
+@media print {
+  /* Hide navigation and interactive elements */
+  header,
+  nav,
+  button,
+  #settingsModal,
+  #entityModal,
+  #toastContainer {
+    display: none !important;
+  }
+
+  /* Expand all content */
+  .tab-content.hidden {
+    display: block !important;
+  }
+
+  /* Adjust layout for print */
+  .max-w-7xl {
+    max-width: 100%;
+  }
+
+  /* Page breaks */
+  .bg-white.rounded-lg.shadow {
+    page-break-inside: avoid;
+  }
+
+  /* Remove shadows for print */
+  .shadow,
+  .shadow-sm,
+  .shadow-lg {
+    box-shadow: none !important;
+  }
+}
+
+/* ==================== Accessibility ==================== */
+
+/* Focus visible for keyboard navigation */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Screen reader only text */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .bg-gray-50 {
+    background-color: #ffffff;
+  }
+
+  .text-gray-600 {
+    color: #000000;
+  }
+
+  button {
+    border: 2px solid currentColor;
+  }
+}
+
+/* Reduced motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==================== Dark Mode Support (Future) ==================== */
+
+@media (prefers-color-scheme: dark) {
+  /* Dark mode styles can be added here in the future */
+  /* For now, we'll keep the light theme */
+}
