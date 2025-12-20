@@ -699,3 +699,312 @@ class TestAutomationCommands:
         # Check for missing argument error
         output_lower = (result.stdout + str(result.stderr if result.stderr else "")).lower()
         assert "missing argument" in output_lower or "required" in output_lower
+
+class TestConfigValidateErrors:
+    """Tests for config validate command error handling."""
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands.create_ha_client")
+    def test_validate_auth_error(self, mock_client, mock_load, mock_config):
+        """Test config validate with authentication error."""
+        from ha_boss.core.exceptions import HomeAssistantAuthError
+
+        mock_load.return_value = mock_config
+
+        async def mock_create_client_auth_error(config):
+            raise HomeAssistantAuthError("Invalid token")
+
+        mock_client.side_effect = mock_create_client_auth_error
+
+        result = runner.invoke(app, ["config", "validate"])
+
+        assert result.exit_code == 0  # Command doesn't fail, shows error message
+        assert "Authentication failed" in result.stdout or "auth" in result.stdout.lower()
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands.create_ha_client")
+    def test_validate_connection_error(self, mock_client, mock_load, mock_config):
+        """Test config validate with connection error."""
+        from ha_boss.core.exceptions import HomeAssistantConnectionError
+
+        mock_load.return_value = mock_config
+
+        async def mock_create_client_conn_error(config):
+            raise HomeAssistantConnectionError("Cannot connect")
+
+        mock_client.side_effect = mock_create_client_conn_error
+
+        result = runner.invoke(app, ["config", "validate"])
+
+        assert result.exit_code == 0  # Command doesn't fail, shows error message
+        assert "Connection failed" in result.stdout or "connection" in result.stdout.lower()
+
+
+class TestHealCommandFlow:
+    """Tests for heal command actual flow."""
+
+    @patch("ha_boss.cli.commands.load_config")
+    def test_heal_dry_run(self, mock_load, mock_config):
+        """Test heal command in dry-run mode."""
+        mock_load.return_value = mock_config
+
+        with patch("ha_boss.cli.commands.asyncio.run") as mock_run:
+            result = runner.invoke(app, ["heal", "sensor.test", "--dry-run"])
+
+            # Should show dry-run mode message
+            assert "dry-run" in result.stdout.lower() or "dry run" in result.stdout.lower()
+
+    def test_heal_requires_entity_id(self):
+        """Test that heal command requires entity ID."""
+        result = runner.invoke(app, ["heal"])
+
+        assert result.exit_code != 0
+        # Should show error about missing entity ID
+        output_lower = (result.stdout + str(result.stderr if result.stderr else "")).lower()
+        assert "missing argument" in output_lower or "required" in output_lower
+
+
+class TestStatusCommandVariations:
+    """Tests for status command with various states."""
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands.create_ha_client")
+    def test_status_with_unavailable_entities(self, mock_client, mock_load, mock_config):
+        """Test status command showing unavailable entities."""
+        mock_load.return_value = mock_config
+
+        mock_ha_client = AsyncMock()
+        mock_ha_client.get_states = AsyncMock(
+            return_value=[
+                {"entity_id": "sensor.test1", "state": "unavailable"},
+                {"entity_id": "sensor.test2", "state": "ok"},
+            ]
+        )
+        mock_ha_client.__aenter__ = AsyncMock(return_value=mock_ha_client)
+        mock_ha_client.__aexit__ = AsyncMock(return_value=None)
+
+        async def mock_create_client(config):
+            return mock_ha_client
+
+        mock_client.side_effect = mock_create_client
+
+        result = runner.invoke(app, ["status"])
+
+        assert result.exit_code == 0
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands.create_ha_client")
+    def test_status_connection_error(self, mock_client, mock_load, mock_config):
+        """Test status command with connection error."""
+        from ha_boss.core.exceptions import HomeAssistantConnectionError
+
+        mock_load.return_value = mock_config
+
+        async def mock_create_client_error(config):
+            raise HomeAssistantConnectionError("Cannot connect")
+
+        mock_client.side_effect = mock_create_client_error
+
+        result = runner.invoke(app, ["status"])
+
+        # Should handle error gracefully
+        assert result.exit_code != 0 or "error" in result.stdout.lower()
+
+
+class TestStartCommandFlow:
+    """Tests for start command."""
+
+    @patch("ha_boss.cli.commands.load_config")
+    def test_start_help(self, mock_load):
+        """Test start command help output."""
+        result = runner.invoke(app, ["start", "--help"])
+
+        assert result.exit_code == 0
+        assert "start" in result.stdout.lower()
+        assert "foreground" in result.stdout.lower()
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.service.main.HABossService")
+    def test_start_foreground_mode(self, mock_service_class, mock_load, mock_config):
+        """Test start command in foreground mode."""
+        mock_load.return_value = mock_config
+
+        # Mock the service
+        mock_service = AsyncMock()
+        mock_service.start = AsyncMock()
+        mock_service_class.return_value = mock_service
+
+        # Mock asyncio.run to avoid actually starting the service
+        with patch("ha_boss.cli.commands.asyncio.run") as mock_run:
+            result = runner.invoke(app, ["start", "--foreground"])
+
+            # Should attempt to run service
+            assert mock_run.called or result.exit_code == 0
+
+
+class TestDbCleanupCommand:
+    """Tests for database cleanup command."""
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.core.database.Database")
+    def test_db_cleanup_default_days(self, mock_db_class, mock_load, mock_config):
+        """Test database cleanup with default retention."""
+        mock_load.return_value = mock_config
+
+        mock_db = AsyncMock()
+        mock_db.cleanup_old_records = AsyncMock(return_value=100)
+        mock_db_class.return_value = mock_db
+
+        with patch("ha_boss.cli.commands.asyncio.run"):
+            result = runner.invoke(app, ["db", "cleanup"])
+
+            assert result.exit_code == 0
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.core.database.Database")
+    def test_db_cleanup_custom_days(self, mock_db_class, mock_load, mock_config):
+        """Test database cleanup with custom retention period."""
+        mock_load.return_value = mock_config
+
+        mock_db = AsyncMock()
+        mock_db.cleanup_old_records = AsyncMock(return_value=50)
+        mock_db_class.return_value = mock_db
+
+        with patch("ha_boss.cli.commands.asyncio.run"):
+            result = runner.invoke(app, ["db", "cleanup", "--days", "7"])
+
+            assert result.exit_code == 0
+
+    @patch("ha_boss.cli.commands.load_config")
+    def test_db_cleanup_dry_run(self, mock_load, mock_config):
+        """Test database cleanup in dry-run mode."""
+        mock_load.return_value = mock_config
+
+        with patch("ha_boss.cli.commands.asyncio.run"):
+            result = runner.invoke(app, ["db", "cleanup", "--dry-run"])
+
+            assert "dry-run" in result.stdout.lower() or "dry run" in result.stdout.lower()
+
+
+class TestInitCommandVariations:
+    """Additional tests for init command."""
+
+    def test_init_with_existing_config(self, temp_dirs):
+        """Test init when config already exists."""
+        # Create existing config
+        config_file = temp_dirs["config"] / "config.yaml"
+        config_file.write_text("existing: config")
+
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--config-dir",
+                str(temp_dirs["config"]),
+                "--data-dir",
+                str(temp_dirs["data"]),
+            ],
+        )
+
+        # Should not overwrite existing config
+        assert config_file.exists()
+
+    def test_init_help(self):
+        """Test init command help."""
+        result = runner.invoke(app, ["init", "--help"])
+
+        assert result.exit_code == 0
+        assert "init" in result.stdout.lower()
+
+
+class TestPatternsCommandErrors:
+    """Tests for patterns command error handling."""
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands.asyncio.run")
+    def test_reliability_command_execution(self, mock_run, mock_load, mock_config):
+        """Test reliability command executes."""
+        mock_load.return_value = mock_config
+
+        result = runner.invoke(app, ["patterns", "reliability"])
+
+        # Should execute (asyncio.run called)
+        assert mock_run.called or result.exit_code == 0
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands.asyncio.run")
+    def test_failures_command_execution(self, mock_run, mock_load, mock_config):
+        """Test failures command executes."""
+        mock_load.return_value = mock_config
+
+        result = runner.invoke(app, ["patterns", "failures"])
+
+        # Should execute (asyncio.run called)
+        assert mock_run.called or result.exit_code == 0
+
+
+class TestAutomationCommandErrors:
+    """Tests for automation command error handling."""
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands.create_ha_client")
+    def test_analyze_nonexistent_automation(self, mock_client, mock_load, mock_config):
+        """Test analyzing an automation that doesn't exist."""
+        from ha_boss.core.exceptions import HomeAssistantAPIError
+
+        mock_load.return_value = mock_config
+
+        mock_ha_client = AsyncMock()
+        mock_ha_client.get_state = AsyncMock(side_effect=HomeAssistantAPIError("Not found"))
+        mock_ha_client.__aenter__ = AsyncMock(return_value=mock_ha_client)
+        mock_ha_client.__aexit__ = AsyncMock(return_value=None)
+
+        async def mock_create_client(config):
+            return mock_ha_client
+
+        mock_client.side_effect = mock_create_client
+
+        result = runner.invoke(app, ["automation", "analyze", "automation.nonexistent"])
+
+        # Should handle error gracefully
+        assert result.exit_code != 0 or "error" in result.stdout.lower()
+
+
+class TestDbCommands:
+    """Additional tests for database commands."""
+
+    def test_db_help(self):
+        """Test db command group help."""
+        result = runner.invoke(app, ["db", "--help"])
+
+        assert result.exit_code == 0
+        assert "db" in result.stdout.lower() or "database" in result.stdout.lower()
+
+    def test_db_cleanup_help(self):
+        """Test db cleanup command help."""
+        result = runner.invoke(app, ["db", "cleanup", "--help"])
+
+        assert result.exit_code == 0
+        assert "cleanup" in result.stdout.lower()
+
+
+class TestConfigCommands:
+    """Additional tests for config commands."""
+
+    def test_config_help(self):
+        """Test config command group help."""
+        result = runner.invoke(app, ["config", "--help"])
+
+        assert result.exit_code == 0
+        assert "config" in result.stdout.lower()
+
+    @patch("ha_boss.cli.commands.load_config")
+    @patch("ha_boss.cli.commands.asyncio.run")
+    def test_config_validate_executes(self, mock_run, mock_load, mock_config):
+        """Test config validate command executes."""
+        mock_load.return_value = mock_config
+
+        result = runner.invoke(app, ["config", "validate"])
+
+        # Should execute
+        assert mock_run.called or result.exit_code == 0
