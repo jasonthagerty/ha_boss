@@ -6,6 +6,11 @@ Welcome to the HA Boss documentation! This wiki provides comprehensive guides fo
 
 **Recent Updates:**
 
+- **REST API & Dashboard** - Full REST API with interactive web dashboard
+  - 13 endpoints covering all HA Boss features (status, entities, patterns, healing, automations)
+  - Real-time dashboard with charts, monitoring, and API testing
+  - See [REST API](REST-API) and [Dashboard](Dashboard) for complete documentation
+
 - **Automation Creation** - Generate and create automations directly in Home Assistant via API
   - Preview-first workflow: review generated YAML before creating
   - Use `haboss automation generate "description" --create` to create in HA
@@ -33,6 +38,10 @@ Welcome to the HA Boss documentation! This wiki provides comprehensive guides fo
 - **[AI Features](AI-Features)** - LLM integration, automation generation, and intelligent analysis
 - **[Pattern Analysis](CLI-Commands#pattern-analysis-commands)** - Reliability tracking and failure analysis
 
+### API & Dashboard
+- **[REST API](REST-API)** - Complete REST API reference with all endpoints and client examples
+- **[Dashboard](Dashboard)** - Interactive web dashboard for monitoring, analysis, and control
+
 ### Technical Documentation
 - **[Architecture](Architecture)** - System design, components, and data flow
 - **[Development](Development)** - Contributing, testing, and code quality standards
@@ -44,6 +53,8 @@ Welcome to the HA Boss documentation! This wiki provides comprehensive guides fo
 |-------------|----------|
 | Install HA Boss with Docker | [Docker Installation](Installation#docker-installation) |
 | Set up local development | [Local Development](Installation#local-development) |
+| Access the web dashboard | [Dashboard Guide](Dashboard#getting-started) |
+| Use the REST API | [API Reference](REST-API#api-reference) |
 | Configure monitoring options | [Monitoring Configuration](Configuration#monitoring-configuration) |
 | Use the CLI commands | [CLI Reference](CLI-Commands) |
 | Set up AI features | [AI Features Setup](AI-Features) |
