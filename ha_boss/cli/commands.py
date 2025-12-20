@@ -1642,7 +1642,7 @@ async def _generate_automation(
                     progress.remove_task(task)
 
                 automation_id = result.get("id", "unknown")
-                console.print(f"\n[green]✓[/green] Automation created successfully!")
+                console.print("\n[green]✓[/green] Automation created successfully!")
                 console.print(f"  [dim]ID:[/dim] {automation_id}")
                 console.print(
                     f"  [dim]Alias:[/dim] {automation.yaml_config.get('alias', 'Unknown')}"

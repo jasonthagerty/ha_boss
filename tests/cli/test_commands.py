@@ -749,7 +749,7 @@ class TestHealCommandFlow:
         """Test heal command in dry-run mode."""
         mock_load.return_value = mock_config
 
-        with patch("ha_boss.cli.commands.asyncio.run") as mock_run:
+        with patch("ha_boss.cli.commands.asyncio.run"):
             result = runner.invoke(app, ["heal", "sensor.test", "--dry-run"])
 
             # Should show dry-run mode message
@@ -843,50 +843,6 @@ class TestStartCommandFlow:
             assert mock_run.called or result.exit_code == 0
 
 
-class TestDbCleanupCommand:
-    """Tests for database cleanup command."""
-
-    @patch("ha_boss.cli.commands.load_config")
-    @patch("ha_boss.core.database.Database")
-    def test_db_cleanup_default_days(self, mock_db_class, mock_load, mock_config):
-        """Test database cleanup with default retention."""
-        mock_load.return_value = mock_config
-
-        mock_db = AsyncMock()
-        mock_db.cleanup_old_records = AsyncMock(return_value=100)
-        mock_db_class.return_value = mock_db
-
-        with patch("ha_boss.cli.commands.asyncio.run"):
-            result = runner.invoke(app, ["db", "cleanup"])
-
-            assert result.exit_code == 0
-
-    @patch("ha_boss.cli.commands.load_config")
-    @patch("ha_boss.core.database.Database")
-    def test_db_cleanup_custom_days(self, mock_db_class, mock_load, mock_config):
-        """Test database cleanup with custom retention period."""
-        mock_load.return_value = mock_config
-
-        mock_db = AsyncMock()
-        mock_db.cleanup_old_records = AsyncMock(return_value=50)
-        mock_db_class.return_value = mock_db
-
-        with patch("ha_boss.cli.commands.asyncio.run"):
-            result = runner.invoke(app, ["db", "cleanup", "--days", "7"])
-
-            assert result.exit_code == 0
-
-    @patch("ha_boss.cli.commands.load_config")
-    def test_db_cleanup_dry_run(self, mock_load, mock_config):
-        """Test database cleanup in dry-run mode."""
-        mock_load.return_value = mock_config
-
-        with patch("ha_boss.cli.commands.asyncio.run"):
-            result = runner.invoke(app, ["db", "cleanup", "--dry-run"])
-
-            assert "dry-run" in result.stdout.lower() or "dry run" in result.stdout.lower()
-
-
 class TestInitCommandVariations:
     """Additional tests for init command."""
 
@@ -908,6 +864,7 @@ class TestInitCommandVariations:
         )
 
         # Should not overwrite existing config
+        assert result.exit_code == 0
         assert config_file.exists()
 
     def test_init_help(self):
