@@ -840,7 +840,7 @@ Generate Home Assistant automation from natural language.
 
 **Description:**
 
-Uses Claude API to translate your natural language description into a valid Home Assistant automation YAML. Requires Claude API to be configured.
+Uses Claude API to translate your natural language description into a valid Home Assistant automation YAML. By default, generates a preview for review. Use `--create` to create the automation directly in Home Assistant. Requires Claude API to be configured.
 
 **Syntax:**
 ```bash
@@ -856,7 +856,7 @@ haboss automation generate PROMPT [OPTIONS]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--mode` | `-m` | `single` | Automation mode (single/restart/queued/parallel) |
-| `--preview` | `-p` | `false` | Only preview, don't create |
+| `--create` | | `false` | Create automation in Home Assistant (default: preview only) |
 | `--config` | `-c` | Auto-detect | Path to configuration file |
 
 **Automation Modes:**
@@ -865,19 +865,29 @@ haboss automation generate PROMPT [OPTIONS]
 - **queued**: Queue triggers and run sequentially
 - **parallel**: Multiple instances can run simultaneously
 
+**Workflow:**
+1. **Preview First (Recommended)**: Run without `--create` to review the generated YAML
+2. **Review & Validate**: Check the automation logic, entities, and conditions
+3. **Create**: Run again with `--create` flag to create in Home Assistant
+4. **Test**: Test the automation in Home Assistant UI
+
 **Examples:**
 ```bash
-# Simple automation
+# Preview automation (default - recommended first step)
 haboss automation generate "Turn on lights when motion detected after sunset"
 
-# With specific mode
+# Create automation directly in Home Assistant
+haboss automation generate "Turn on lights when motion detected after sunset" --create
+
+# Preview with specific mode
 haboss automation generate "Send notification if garage door open > 10 minutes" --mode restart
 
-# Preview only (don't create)
-haboss automation generate "Turn off all lights at 11pm" --preview
+# Create complex automation
+haboss automation generate "When I arrive home between 5-8pm, turn on living room lights to 50% and play welcome announcement" --create
 
-# Complex automation
-haboss automation generate "When I arrive home between 5-8pm, turn on living room lights to 50% and play welcome announcement"
+# Typical workflow: preview then create
+haboss automation generate "Turn off all lights at 11pm"  # Review output
+haboss automation generate "Turn off all lights at 11pm" --create  # Create if looks good
 ```
 
 **Output Example:**
@@ -914,11 +924,27 @@ Generating automation with Claude API...
 │                                                                 │
 ╰─────────────────────────────────────────────────────────────────╯
 
-Instructions to create this automation:
+(Preview only - use --create to create in Home Assistant)
+
+To create this automation:
+  Run again with: --create
+
+Or create manually:
 1. Go to Home Assistant → Configuration → Automations
 2. Click '+ Add Automation' → '...' menu → 'Edit in YAML'
 3. Copy and paste the YAML above
 4. Save the automation
+```
+
+**Output Example (with --create):**
+```
+Creating automation in Home Assistant...
+
+✓ Automation created successfully!
+  ID: 1734670542123
+  Alias: Motion Activated Evening Lights
+
+View in Home Assistant: Configuration → Automations → Motion Activated Evening Lights
 ```
 
 **Requirements:**
@@ -1036,7 +1062,8 @@ haboss automation analyze --all
 haboss automation analyze bedroom_lights
 
 # 3. Generate improved version (if needed)
-haboss automation generate "Improved version of bedroom lights: ..." --preview
+haboss automation generate "Improved version of bedroom lights: ..."  # Preview first
+haboss automation generate "Improved version of bedroom lights: ..." --create  # Then create
 
 # 4. Re-analyze after changes
 haboss automation analyze bedroom_lights --no-ai  # Quick check
@@ -1136,8 +1163,8 @@ haboss config validate
 # Verify API key is set
 grep claude_api_key config/config.yaml
 
-# Test with a simple command
-haboss automation generate "turn on lights" --preview
+# Test with a simple command (preview mode - default)
+haboss automation generate "turn on lights"
 
 # Check API key has correct permissions
 ```

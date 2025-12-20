@@ -301,39 +301,49 @@ haboss automation recommend automation.bedroom_lights
 **Example**:
 
 ```bash
-# Generate automation from description
+# Preview automation (default behavior)
 $ haboss automation generate "Turn on bedroom light when motion detected, only at night"
 
-Generated Automation: bedroom_motion_light.yaml
+Generating automation with Claude API...
 
-alias: Bedroom Motion Light (Night Only)
-description: Turn on bedroom light when motion detected after sunset
-trigger:
-  - platform: state
-    entity_id: binary_sensor.motion_bedroom
-    to: "on"
-condition:
-  - condition: sun
-    after: sunset
-    before: sunrise
-action:
-  - service: light.turn_on
-    target:
-      entity_id: light.bedroom
-    data:
-      brightness_pct: 30  # Dimmed for night
-mode: single
+╭─────────────────────── Generated Automation ───────────────────╮
+│                                                                 │
+│ alias: Bedroom Motion Light (Night Only)                       │
+│ description: Turn on bedroom light when motion detected at night│
+│ mode: single                                                    │
+│                                                                 │
+│ trigger:                                                        │
+│   - platform: state                                            │
+│     entity_id: binary_sensor.motion_bedroom                    │
+│     to: 'on'                                                   │
+│                                                                 │
+│ condition:                                                      │
+│   - condition: sun                                             │
+│     after: sunset                                              │
+│     before: sunrise                                            │
+│                                                                 │
+│ action:                                                         │
+│   - service: light.turn_on                                     │
+│     target:                                                     │
+│       entity_id: light.bedroom                                 │
+│     data:                                                       │
+│       brightness_pct: 30                                       │
+│                                                                 │
+╰─────────────────────────────────────────────────────────────────╯
 
-AI Explanation:
-This automation uses a state trigger on your motion sensor, combined with
-a sun condition to only activate at night. The light is set to 30% brightness
-to avoid being too bright at night. Mode is 'single' to prevent multiple
-triggers while motion is active.
+(Preview only - use --create to create in Home Assistant)
 
-Would you like to:
-1. Apply to Home Assistant
-2. Save to file
-3. Regenerate with changes
+To create this automation:
+  Run again with: --create
+
+# Then create the automation
+$ haboss automation generate "Turn on bedroom light when motion detected, only at night" --create
+
+✓ Automation created successfully!
+  ID: 1734670542123
+  Alias: Bedroom Motion Light (Night Only)
+
+View in Home Assistant: Configuration → Automations → Bedroom Motion Light (Night Only)
 ```
 
 **Configuration**:
@@ -345,18 +355,25 @@ intelligence:
 
 **CLI Commands**:
 ```bash
-# Generate automation
+# Preview automation (default - recommended first step)
 haboss automation generate "description"
 
-# Generate with specific mode
-haboss automation generate "description" --mode restart
+# Create automation in Home Assistant
+haboss automation generate "description" --create
 
-# Save to file
-haboss automation generate "description" --output bedroom_lights.yaml
+# Generate with specific mode and create
+haboss automation generate "description" --mode restart --create
 
-# Apply directly to Home Assistant
-haboss automation generate "description" --apply
+# Typical workflow: preview then create
+haboss automation generate "description"  # Review output first
+haboss automation generate "description" --create  # Create if approved
 ```
+
+**Workflow**:
+1. **Preview**: Generate and review the automation YAML (default behavior)
+2. **Validate**: Check that entities, triggers, and conditions are correct
+3. **Create**: Use `--create` flag to create the automation in Home Assistant
+4. **Test**: Test the automation in the Home Assistant UI
 
 **LLM Used**: Claude API (complex reasoning required for correct YAML structure)
 

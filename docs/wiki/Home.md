@@ -2,6 +2,25 @@
 
 Welcome to the HA Boss documentation! This wiki provides comprehensive guides for installation, configuration, and usage of HA Boss.
 
+## ✨ What's New
+
+**Recent Updates:**
+
+- **Automation Creation** - Generate and create automations directly in Home Assistant via API
+  - Preview-first workflow: review generated YAML before creating
+  - Use `haboss automation generate "description" --create` to create in HA
+  - See [AI Features - Automation Generation](AI-Features#automation-generation) for details
+
+- **Enhanced CLI** - Improved automation commands with safer defaults
+  - Preview by default, opt-in creation with `--create` flag
+  - Rich terminal UI with formatted output
+  - See [CLI Commands - Automation Commands](CLI-Commands#automation-commands) for full reference
+
+- **Comprehensive Test Suite** - 528 tests with 81% coverage
+  - Full test coverage for core monitoring and healing features
+  - Pattern analysis and AI features thoroughly tested
+  - See [Development - Testing](Development#testing) for contribution guidelines
+
 ## 📖 Documentation Sections
 
 ### Getting Started
