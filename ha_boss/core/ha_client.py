@@ -407,6 +407,7 @@ class HomeAssistantClient:
 
         # Generate a unique ID for the automation
         import time
+
         automation_id = str(int(time.time() * 1000))
 
         # Use the config/automation/config API to create the automation
@@ -422,9 +423,7 @@ class HomeAssistantClient:
                 return result
             elif response.status == 400:
                 error_text = await response.text()
-                raise HomeAssistantAPIError(
-                    f"Invalid automation configuration: {error_text}"
-                )
+                raise HomeAssistantAPIError(f"Invalid automation configuration: {error_text}")
             else:
                 error_text = await response.text()
                 raise HomeAssistantAPIError(

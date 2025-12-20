@@ -700,6 +700,7 @@ class TestAutomationCommands:
         output_lower = (result.stdout + str(result.stderr if result.stderr else "")).lower()
         assert "missing argument" in output_lower or "required" in output_lower
 
+
 class TestConfigValidateErrors:
     """Tests for config validate command error handling."""
 
