@@ -10,11 +10,30 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from ha_boss.core.exceptions import DatabaseError
 
+# Current database schema version
+CURRENT_DB_VERSION = 1
+
 
 class Base(DeclarativeBase):
     """Base class for all database models."""
 
     pass
+
+
+class DatabaseVersion(Base):
+    """Track database schema version for migrations."""
+
+    __tablename__ = "schema_version"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    description: Mapped[str | None] = mapped_column(String(255))
+
+    def __repr__(self) -> str:
+        return f"<DatabaseVersion(v{self.version}, {self.applied_at})>"
 
 
 class Entity(Base):
@@ -224,10 +243,69 @@ class Database:
     async def init_db(self) -> None:
         """Initialize database (create tables if they don't exist)."""
         try:
+            # Create parent directory if it doesn't exist
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Create all tables
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+
+            # Set initial version if this is a new database
+            await self._ensure_version()
         except Exception as e:
             raise DatabaseError(f"Failed to initialize database: {e}") from e
+
+    async def _ensure_version(self) -> None:
+        """Ensure database version is set (initialize if new database)."""
+        async with self.async_session() as session:
+            # Check if version table has any records
+            result = await session.execute(select(DatabaseVersion))
+            version_record = result.scalars().first()
+
+            if version_record is None:
+                # New database - set current version
+                new_version = DatabaseVersion(
+                    version=CURRENT_DB_VERSION,
+                    description=f"Initial schema v{CURRENT_DB_VERSION}",
+                )
+                session.add(new_version)
+                await session.commit()
+
+    async def get_version(self) -> int | None:
+        """Get current database schema version.
+
+        Returns:
+            Current version number or None if not initialized
+        """
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(DatabaseVersion).order_by(DatabaseVersion.version.desc())
+                )
+                version_record = result.scalars().first()
+                return version_record.version if version_record else None
+        except Exception:
+            # Table doesn't exist yet
+            return None
+
+    async def validate_version(self) -> tuple[bool, str]:
+        """Validate database schema version.
+
+        Returns:
+            Tuple of (is_valid, message)
+        """
+        current_version = await self.get_version()
+
+        if current_version is None:
+            return False, "Database not initialized"
+
+        if current_version < CURRENT_DB_VERSION:
+            return False, f"Database outdated (v{current_version}, need v{CURRENT_DB_VERSION}). Run migrations."
+
+        if current_version > CURRENT_DB_VERSION:
+            return False, f"Database too new (v{current_version}, app supports v{CURRENT_DB_VERSION}). Update HA Boss."
+
+        return True, f"Database version v{current_version} is current"
 
     async def close(self) -> None:
         """Close database connections."""

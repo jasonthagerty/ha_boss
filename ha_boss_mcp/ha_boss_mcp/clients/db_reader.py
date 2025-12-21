@@ -1,6 +1,7 @@
 """Read-only SQLite database client for HA Boss data."""
 
 import aiosqlite
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -20,17 +21,65 @@ class DBReader:
 
     Attributes:
         db_path: Path to SQLite database file
+        max_retries: Maximum connection retry attempts
+        retry_delay: Delay between retries in seconds
     """
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        max_retries: int = 30,
+        retry_delay: float = 2.0,
+    ) -> None:
         """Initialize database reader.
 
         Args:
             db_path: Path to HA Boss SQLite database
+            max_retries: Max retries to wait for DB (default: 30 = 60s)
+            retry_delay: Seconds between retries (default: 2.0)
         """
         self.db_path = Path(db_path)
-        if not self.db_path.exists():
-            raise DBReaderError(f"Database file not found: {self.db_path}")
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self._db_ready = False
+
+    async def wait_for_database(self) -> None:
+        """Wait for database to be created by main HA Boss service.
+
+        Retries for max_retries attempts with retry_delay between attempts.
+
+        Raises:
+            DBReaderError: If database not available after all retries
+        """
+        for attempt in range(self.max_retries):
+            if self.db_path.exists():
+                # Verify it's a valid SQLite database
+                try:
+        await self.ensure_ready()
+                    async with aiosqlite.connect(self.db_path) as db:
+                        # Check if schema_version table exists
+                        async with db.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+                        ) as cursor:
+                            result = await cursor.fetchone()
+                            if result:
+                                self._db_ready = True
+                                return
+                except Exception:
+                    pass  # Not ready yet
+
+            if attempt < self.max_retries - 1:
+                await asyncio.sleep(self.retry_delay)
+
+        raise DBReaderError(
+            f"Database not available at {self.db_path} after {self.max_retries * self.retry_delay}s. "
+            "Ensure HA Boss main service is running and has initialized the database."
+        )
+
+    async def ensure_ready(self) -> None:
+        """Ensure database is ready (wait if not)."""
+        if not self._db_ready:
+            await self.wait_for_database()
 
     async def get_entity(self, entity_id: str) -> dict[str, Any] | None:
         """Get entity by ID.
@@ -41,6 +90,7 @@ class DBReader:
         Returns:
             Entity data dict or None if not found
         """
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -68,8 +118,10 @@ class DBReader:
         Returns:
             List of entity dicts
         """
+        await self.ensure_ready()
         where_clause = "WHERE is_monitored = 1" if monitored_only else ""
 
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             query = f"""
@@ -99,6 +151,7 @@ class DBReader:
         """
         since = datetime.utcnow() - timedelta(hours=hours)
 
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -136,6 +189,7 @@ class DBReader:
             where_clause += " AND entity_id = ?"
             params = (since.isoformat(), entity_id)
 
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             query = f"""
@@ -171,6 +225,7 @@ class DBReader:
             where_clause += " AND entity_id = ?"
             params = (since.isoformat(), entity_id)
 
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             query = f"""
@@ -196,6 +251,7 @@ class DBReader:
         """
         since = datetime.utcnow() - timedelta(days=days)
 
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             # Get total count and success count
             async with db.execute(
@@ -231,6 +287,7 @@ class DBReader:
         Returns:
             Integration data dict or None if not found
         """
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -272,6 +329,7 @@ class DBReader:
         if where_clause:
             where_clause = f"WHERE {where_clause}"
 
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             query = f"""
@@ -308,6 +366,7 @@ class DBReader:
             where_clause += " AND integration_domain = ?"
             params = (since.isoformat(), integration_domain)
 
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             query = f"""
@@ -333,6 +392,7 @@ class DBReader:
         """
         where_clause = "WHERE is_monitored = 1" if monitored_only else ""
 
+        await self.ensure_ready()
         async with aiosqlite.connect(self.db_path) as db:
             query = f"SELECT COUNT(*) FROM entities {where_clause}"
             async with db.execute(query) as cursor:

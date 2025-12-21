@@ -81,14 +81,15 @@ async def create_server(config: MCPConfig | None = None) -> FastMCP:
         raise
 
     # Initialize database reader
-    print(f"Opening database at {config.haboss.database_path}...", file=sys.stderr)
+    print(f"Waiting for database at {config.haboss.database_path}...", file=sys.stderr)
     try:
         db_reader = DBReader(config.haboss.database_path)
+        await db_reader.wait_for_database()
         entity_count = await db_reader.count_entities()
-        print(f"✓ Database opened ({entity_count} entities)", file=sys.stderr)
+        print(f"✓ Database ready ({entity_count} entities)", file=sys.stderr)
     except DBReaderError as e:
-        print(f"✗ Failed to open database: {e}", file=sys.stderr)
-        print("  Ensure HA Boss is running and database exists", file=sys.stderr)
+        print(f"✗ Failed to connect to database: {e}", file=sys.stderr)
+        print("  Ensure HA Boss main service is running.", file=sys.stderr)
         raise
 
     # Register tools based on enabled categories
