@@ -152,11 +152,18 @@ haboss automation generate "Turn on lights when motion detected"
 
 ## 📦 Docker Images
 
-Published to GitHub Container Registry with multi-arch support (amd64, arm64):
+Published to GitHub Container Registry with multi-arch support:
 - `ghcr.io/jasonthagerty/ha-boss:latest` - Main service
 - `ghcr.io/jasonthagerty/ha-boss-mcp:latest` - MCP server (optional)
 
+**Supported Architectures:**
+- `amd64` - Intel/AMD 64-bit (NUCs, x86_64 servers)
+- `arm64` - ARM 64-bit (Raspberry Pi 4/5, newer ARM boards)
+- `armv7` - ARM 32-bit (Raspberry Pi 3/4, older ARM boards)
+
 Images are automatically built and published on every push to main.
+
+> **Future:** HA Boss will be available as a Home Assistant addon for one-click installation from the addon store.
 
 ## 📝 Example Configuration
 
