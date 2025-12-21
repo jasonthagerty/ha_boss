@@ -10,11 +10,11 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 ## ✨ Key Features
 
 - **🔍 Real-time Monitoring** - WebSocket connection for instant state updates
-- **🔧 Auto-Healing** - Automatically reloads failed integrations with circuit breakers and cooldowns
+- **🔧 Auto-Healing** - Automatically reloads failed integrations with circuit breakers
 - **🛡️ Safety First** - Dry-run mode, graceful degradation, automatic reconnection
 - **📊 Pattern Analysis** - Tracks reliability metrics and failure patterns
-- **🤖 AI Intelligence** - Local LLM (Ollama) + optional Claude API for automation analysis and generation
-- **📈 Weekly Reports** - AI-generated health summaries delivered as notifications
+- **🤖 AI Intelligence** - Local LLM (Ollama) + Claude API for automation generation
+- **🔌 MCP Server** - Exposes capabilities to AI agents via Model Context Protocol
 - **🐳 Docker-First** - Production-ready with multi-stage builds and health checks
 - **💻 Rich CLI** - Beautiful terminal UI for management and analysis
 
@@ -23,111 +23,126 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 ### Docker (Recommended)
 
 ```bash
-# 1. Clone and configure
+# Clone and configure
 git clone https://github.com/jasonthagerty/ha_boss.git
 cd ha_boss
 cp .env.example .env
 
-# 2. Edit .env with your Home Assistant URL and token
-#    HOME_ASSISTANT__URL=http://homeassistant.local:8123
-#    HOME_ASSISTANT__TOKEN=your_long_lived_token_here
-
-# 3. Start the service
+# Edit .env with your Home Assistant URL and token
+# Then start the service
 docker-compose up -d
 
-# 4. Check status
+# Check status
 docker-compose exec haboss haboss status
 ```
 
 ### Local Development
 
 ```bash
-# Install with uv (recommended)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv --python 3.12 && source .venv/bin/activate
 uv pip install -e ".[dev]"
-
-# Initialize and run
-haboss init
-haboss start --foreground
+haboss init && haboss start --foreground
 ```
 
-## 📚 Documentation
+## 🔌 MCP Server (Model Context Protocol)
 
-Comprehensive documentation is available in the [GitHub Wiki](https://github.com/jasonthagerty/ha_boss/wiki):
+**NEW:** HA Boss includes an optional MCP server that exposes 12 tools to AI agents like Claude Desktop.
 
-- **[Installation Guide](https://github.com/jasonthagerty/ha_boss/wiki/Installation)** - Docker, local, and configuration setup
-- **[CLI Reference](https://github.com/jasonthagerty/ha_boss/wiki/CLI-Commands)** - Complete command documentation
-- **[Configuration Guide](https://github.com/jasonthagerty/ha_boss/wiki/Configuration)** - All configuration options explained
-- **[Architecture](https://github.com/jasonthagerty/ha_boss/wiki/Architecture)** - Technical design and component overview
-- **[AI Features](https://github.com/jasonthagerty/ha_boss/wiki/AI-Features)** - LLM integration and capabilities
-- **[Development](https://github.com/jasonthagerty/ha_boss/wiki/Development)** - Contributing, testing, and code quality
-- **[Troubleshooting](https://github.com/jasonthagerty/ha_boss/wiki/Troubleshooting)** - Common issues and solutions
+```bash
+# Start with MCP server enabled
+docker-compose --profile mcp up -d
+```
+
+**Available Tools:** Monitoring (4), Healing (3), Pattern Analysis (3), Service Management (2)
+
+**Claude Desktop Integration:**
+```json
+{
+  "mcpServers": {
+    "ha-boss": {
+      "command": "docker",
+      "args": ["exec", "-i", "ha-boss-mcp", "python", "-m", "ha_boss_mcp.server"]
+    }
+  }
+}
+```
+
+See [ha_boss_mcp/README.md](ha_boss_mcp/README.md) for complete documentation.
 
 ## 🎮 Common Commands
 
 ```bash
-# Monitor and heal
-haboss start --foreground          # Run service in foreground
-haboss status                      # Show health status
-haboss heal sensor.temperature     # Manually heal specific entity
+# Monitoring & Healing
+haboss start --foreground          # Run service
+haboss status                      # Health status
+haboss heal sensor.temperature     # Manual heal
 
-# Pattern analysis
-haboss patterns reliability        # Show integration reliability
-haboss patterns failures           # View failure timeline
-haboss patterns weekly-summary     # Generate AI weekly report
+# Pattern Analysis
+haboss patterns reliability        # Integration reliability
+haboss patterns failures           # Failure timeline
+haboss patterns weekly-summary     # AI weekly report
 
-# Automation management
-haboss automation analyze bedroom_lights    # Analyze existing automation
+# Automation
+haboss automation analyze bedroom_lights
 haboss automation generate "Turn on lights when motion detected"
 ```
+
+## 📚 Documentation
+
+- **[Installation](https://github.com/jasonthagerty/ha_boss/wiki/Installation)** - Setup and configuration
+- **[CLI Reference](https://github.com/jasonthagerty/ha_boss/wiki/CLI-Commands)** - All commands
+- **[Configuration](https://github.com/jasonthagerty/ha_boss/wiki/Configuration)** - Settings explained
+- **[Architecture](https://github.com/jasonthagerty/ha_boss/wiki/Architecture)** - Technical design
+- **[AI Features](https://github.com/jasonthagerty/ha_boss/wiki/AI-Features)** - LLM integration
+- **[MCP Server](https://github.com/jasonthagerty/ha_boss/wiki/MCP-Server)** - Model Context Protocol
+- **[Development](https://github.com/jasonthagerty/ha_boss/wiki/Development)** - Contributing guide
 
 ## 🎯 Project Status
 
 **All phases complete and production-ready!**
 
-- ✅ **Phase 1 (MVP)** - Real-time monitoring, auto-healing, Docker deployment
-- ✅ **Phase 2 (Pattern Analysis)** - Reliability tracking, CLI reports, database schema
-- ✅ **Phase 3 (AI Intelligence)** - Local LLM, Claude integration, automation generation
+- ✅ **Phase 1** - Real-time monitoring, auto-healing, Docker deployment
+- ✅ **Phase 2** - Reliability tracking, CLI reports, database schema
+- ✅ **Phase 3** - Local LLM, Claude integration, automation generation
+- ✅ **MCP Server** - Model Context Protocol interface for AI agents
 
-**Test Coverage:** 81% (528 tests passing)
+**Test Coverage:** 81% (528 tests) | **Docker Images:** Multi-arch (amd64, arm64)
+
+## 🏗️ Architecture
+
+```
+┌────────────────────────────────────┐
+│      HA Boss Service + MCP         │
+├────────────────────────────────────┤
+│  WebSocket Monitor ──▶ State      │
+│  Health Monitor ──▶ Healing Mgr    │
+│  Pattern Collector ──▶ AI Analyzer │
+│  MCP Server ──▶ 12 AI Agent Tools  │
+└────────────────────────────────────┘
+         │              │
+         │ WebSocket    │ SQLite
+         ▼              ▼
+   ┌─────────┐    ┌──────────┐
+   │  Home   │    │ Pattern  │
+   │Assistant│    │ Database │
+   └─────────┘    └──────────┘
+```
 
 ## 🔐 Security
 
-- Tokens stored securely in `.env` (never committed)
-- Non-root Docker user
-- No external API calls required (works fully offline with local LLM)
-- Optional Claude API for advanced features only
+- Tokens stored in `.env` (never committed)
+- Non-root Docker user (haboss:1000, mcpuser:1001)
+- Works fully offline with local LLM
+- Optional Claude API for advanced features
 
-## 🏗️ Architecture Overview
+## 📦 Docker Images
 
-```
-┌──────────────────────────────────────┐
-│      HA Boss Service                 │
-├──────────────────────────────────────┤
-│  WebSocket Monitor ──▶ State Tracker│
-│  Health Monitor ──▶ Healing Manager  │
-│  Pattern Collector ──▶ AI Analyzer   │
-│  Notification Manager ◀── Escalation │
-└──────────────────────────────────────┘
-         │                    │
-         │ REST + WebSocket   │ SQLite
-         ▼                    ▼
-   ┌─────────────┐      ┌──────────┐
-   │ Home        │      │ Pattern  │
-   │ Assistant   │      │ Database │
-   └─────────────┘      └──────────┘
-```
+Published to GitHub Container Registry:
+- `ghcr.io/jasonthagerty/ha_boss-ha-boss:latest` - Main service
+- `ghcr.io/jasonthagerty/ha_boss-ha-boss-mcp:latest` - MCP server
 
-See [Architecture Wiki](https://github.com/jasonthagerty/ha_boss/wiki/Architecture) for detailed component interactions.
-
-## 🤝 Contributing
-
-Contributions welcome! Please see:
-- [Contributing Guide](CONTRIBUTING.md) - Guidelines and workflow
-- [Development Wiki](https://github.com/jasonthagerty/ha_boss/wiki/Development) - Setup and testing
-
-## 📝 Example Use Cases
+## 📝 Example Configuration
 
 **Monitor critical sensors:**
 ```yaml
@@ -137,29 +152,28 @@ monitoring:
     - "binary_sensor.door_*"
 ```
 
-**Conservative healing with long grace periods:**
+**Conservative healing:**
 ```yaml
 monitoring:
-  grace_period_seconds: 600  # 10 minutes
+  grace_period_seconds: 600
 healing:
   max_attempts: 2
   cooldown_seconds: 600
 ```
 
-**Weekly AI reports:**
-```bash
-haboss patterns weekly-summary --ai
-```
+## 🤝 Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) and [Development Wiki](https://github.com/jasonthagerty/ha_boss/wiki/Development).
 
 ## 📜 License
 
-[MIT License](LICENSE) - See LICENSE file for details
+[MIT License](LICENSE)
 
 ## 📞 Support
 
 - **Issues:** [GitHub Issues](https://github.com/jasonthagerty/ha_boss/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/jasonthagerty/ha_boss/discussions)
-- **Documentation:** [GitHub Wiki](https://github.com/jasonthagerty/ha_boss/wiki)
+- **Wiki:** [Documentation](https://github.com/jasonthagerty/ha_boss/wiki)
 
 ---
 

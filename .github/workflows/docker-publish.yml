@@ -38,6 +38,16 @@ jobs:
       id-token: write
       attestations: write
 
+    strategy:
+      matrix:
+        include:
+          - component: ha-boss
+            dockerfile: Dockerfile
+            context: .
+          - component: ha-boss-mcp
+            dockerfile: Dockerfile.mcp
+            context: .
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,11 +63,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
+      - name: Extract metadata (tags, labels) for ${{ matrix.component }}
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.component }}
           tags: |
             # Tag with "latest" on main branch pushes
             type=raw,value=latest,enable={{is_default_branch}}
@@ -72,22 +82,23 @@ jobs:
             # Tag with PR number for pull requests
             type=ref,event=pr,prefix=pr-
 
-      - name: Build and push Docker image
+      - name: Build and push ${{ matrix.component }} Docker image
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
 
-      - name: Generate artifact attestation
+      - name: Generate artifact attestation for ${{ matrix.component }}
         if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@v1
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.component }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true

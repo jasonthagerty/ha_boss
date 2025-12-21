@@ -51,6 +51,64 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  haboss-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    image: ha-boss-mcp:latest
+    container_name: ha-boss-mcp
+
+    # Optional: Enable with --profile mcp
+    profiles:
+      - mcp
+
+    # Restart policy for reliability
+    restart: unless-stopped
+
+    # Environment variables
+    environment:
+      - HABOSS_API_URL=http://haboss:8000
+      - HABOSS_API_KEY=${HABOSS_API_KEY:-}
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-stdio}
+      - MCP_AUTH_ENABLED=${MCP_AUTH_ENABLED:-false}
+      - TZ=${TZ:-UTC}
+
+    # Volume mounts (shared with HA Boss)
+    volumes:
+      # Shared database (read-only for MCP)
+      - ./data:/app/data:ro
+      # Config directory (read-only)
+      - ./config:/app/config:ro
+
+    # Network configuration
+    networks:
+      - haboss-network
+
+    # Dependency on main HA Boss service
+    depends_on:
+      - haboss
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Resource limits (lighter than main service)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+    # Logging configuration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   haboss-network:
     driver: bridge

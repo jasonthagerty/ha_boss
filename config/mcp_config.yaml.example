@@ -1,0 +1,48 @@
+# HA Boss MCP Server Configuration
+# Copy this file to mcp_config.yaml and customize for your deployment
+
+# MCP Server Transport Settings
+mcp:
+  # Transport mode: stdio (local AI agents), http, or sse (remote access)
+  transport: stdio
+
+  # Host/port for HTTP/SSE transport (ignored for stdio)
+  host: 0.0.0.0
+  port: 8001
+
+# HA Boss Connection Settings
+haboss:
+  # HA Boss API base URL
+  # Docker: http://haboss:8000 (service name)
+  # Local: http://localhost:8000
+  api_url: http://haboss:8000
+
+  # API key for authentication (optional if HA Boss auth disabled)
+  # Use environment variable: ${HABOSS_API_KEY}
+  api_key: ${HABOSS_API_KEY}
+
+  # Path to HA Boss SQLite database
+  # Docker: /app/data/ha_boss.db (shared volume)
+  # Local: ./data/ha_boss.db
+  database_path: /app/data/ha_boss.db
+
+# Authentication Settings (for MCP server exposure)
+auth:
+  # Enable OAuth authentication for remote access
+  enabled: false
+
+  # OAuth provider: google, github, azure, auth0
+  provider: google
+
+  # OAuth credentials (set via environment variables)
+  client_id: ${MCP_AUTH_CLIENT_ID}
+  client_secret: ${MCP_AUTH_CLIENT_SECRET}
+  base_url: ${MCP_AUTH_BASE_URL}
+
+# Tool Categories to Enable
+tools:
+  enabled:
+    - monitoring    # Entity states, service status (4 tools)
+    - healing       # Integration reloads, healing stats (3 tools)
+    - patterns      # Reliability, failures, anomalies (3 tools)
+    - service       # Health checks, configuration (2 tools)
