@@ -66,6 +66,7 @@ async def test_service_full_startup_and_shutdown(integration_config: Config) -> 
         # Set up Database mock
         mock_db = AsyncMock()
         mock_db.init_db = AsyncMock()
+        mock_db.validate_version = AsyncMock(return_value=(True, "Database version v1 is current"))
         mock_db.close = AsyncMock()
         mock_db_class.return_value = mock_db
         # Set up HA client mock
@@ -192,6 +193,7 @@ async def test_service_state_update_flow(integration_config: Config) -> None:
         # Set up Database mock
         mock_db = AsyncMock()
         mock_db.init_db = AsyncMock()
+        mock_db.validate_version = AsyncMock(return_value=(True, "Database version v1 is current"))
         mock_db.close = AsyncMock()
         mock_db_class.return_value = mock_db
 
@@ -284,6 +286,7 @@ async def test_service_healing_flow(integration_config: Config) -> None:
         # Set up Database mock
         mock_db = AsyncMock()
         mock_db.init_db = AsyncMock()
+        mock_db.validate_version = AsyncMock(return_value=(True, "Database version v1 is current"))
         mock_db.close = AsyncMock()
         mock_db_class.return_value = mock_db
 
@@ -369,6 +372,7 @@ async def test_service_graceful_shutdown_on_signal(integration_config: Config) -
         # Set up Database mock
         mock_db = AsyncMock()
         mock_db.init_db = AsyncMock()
+        mock_db.validate_version = AsyncMock(return_value=(True, "Database version v1 is current"))
         mock_db.close = AsyncMock()
         mock_db_class.return_value = mock_db
 
