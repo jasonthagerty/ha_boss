@@ -10,9 +10,7 @@ from ha_boss_mcp.clients.haboss_api import HABossAPIClient
 from ha_boss_mcp.models import Anomaly, FailureEvent, IntegrationReliability
 
 
-async def register_tools(
-    mcp: FastMCP, api_client: HABossAPIClient, db_reader: DBReader
-) -> None:
+async def register_tools(mcp: FastMCP, api_client: HABossAPIClient, db_reader: DBReader) -> None:
     """Register pattern analysis tools with FastMCP server.
 
     Args:
@@ -25,9 +23,7 @@ async def register_tools(
     async def get_reliability_stats(
         integration_domain: Annotated[
             str | None,
-            Field(
-                description="Optional integration domain filter (e.g., 'hue', 'zwave', 'mqtt')"
-            ),
+            Field(description="Optional integration domain filter (e.g., 'hue', 'zwave', 'mqtt')"),
         ] = None,
         days: Annotated[
             int,
@@ -96,9 +92,7 @@ async def register_tools(
     async def get_failure_patterns(
         integration_domain: Annotated[
             str | None,
-            Field(
-                description="Optional integration domain filter (e.g., 'hue', 'zwave')"
-            ),
+            Field(description="Optional integration domain filter (e.g., 'hue', 'zwave')"),
         ] = None,
         days: Annotated[
             int,
@@ -170,9 +164,7 @@ async def register_tools(
     async def get_anomalies(
         include_ai_insights: Annotated[
             bool,
-            Field(
-                description="Include AI-generated insights about anomalies (requires LLM)"
-            ),
+            Field(description="Include AI-generated insights about anomalies (requires LLM)"),
         ] = False,
         days: Annotated[
             int,
@@ -222,9 +214,7 @@ async def register_tools(
         """
         # Use API for anomaly detection (includes AI processing if enabled)
         # Note: This endpoint may not exist in current HA Boss - using weekly_summary as proxy
-        summary_data = await api_client.get_weekly_summary(
-            include_ai_insights=include_ai_insights
-        )
+        summary_data = await api_client.get_weekly_summary(include_ai_insights=include_ai_insights)
 
         # Extract anomalies from summary
         anomalies = summary_data.get("anomalies", [])

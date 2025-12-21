@@ -10,9 +10,7 @@ from ha_boss_mcp.clients.haboss_api import HABossAPIClient
 from ha_boss_mcp.models import EntityHistoryEntry, EntityState, ServiceStatus
 
 
-async def register_tools(
-    mcp: FastMCP, api_client: HABossAPIClient, db_reader: DBReader
-) -> None:
+async def register_tools(mcp: FastMCP, api_client: HABossAPIClient, db_reader: DBReader) -> None:
     """Register monitoring tools with FastMCP server.
 
     Args:
@@ -99,7 +97,7 @@ async def register_tools(
             Field(
                 description="Entity ID to query (e.g., 'sensor.living_room_temperature', 'light.bedroom')"
             ),
-        ]
+        ],
     ) -> EntityState:
         """Get current state and metadata for a specific Home Assistant entity.
 
@@ -146,9 +144,7 @@ async def register_tools(
 
     @mcp.tool()
     async def get_entity_history(
-        entity_id: Annotated[
-            str, Field(description="Entity ID to get history for")
-        ],
+        entity_id: Annotated[str, Field(description="Entity ID to get history for")],
         hours: Annotated[
             int,
             Field(
@@ -184,9 +180,7 @@ async def register_tools(
             get_entity_history("light.bedroom", hours=168)
         """
         # Use database for performance (read-only query)
-        history_data = await db_reader.get_entity_history(
-            entity_id, hours=hours, limit=1000
-        )
+        history_data = await db_reader.get_entity_history(entity_id, hours=hours, limit=1000)
 
         return [
             EntityHistoryEntry(

@@ -1,15 +1,13 @@
 """Shared test fixtures for HA Boss MCP server tests."""
 
 import asyncio
-from pathlib import Path
-from typing import AsyncGenerator
+from unittest.mock import AsyncMock
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from ha_boss_mcp.clients.db_reader import DBReader
 from ha_boss_mcp.clients.haboss_api import HABossAPIClient
-from ha_boss_mcp.config import MCPConfig, HABossSettings, MCPSettings, AuthSettings, ToolsSettings
+from ha_boss_mcp.config import AuthSettings, HABossSettings, MCPConfig, MCPSettings, ToolsSettings
 
 
 @pytest.fixture

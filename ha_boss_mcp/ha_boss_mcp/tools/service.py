@@ -1,18 +1,14 @@
 """Service management tools for HA Boss MCP server."""
 
-from typing import Annotated
 
 from fastmcp import FastMCP
-from pydantic import Field
 
 from ha_boss_mcp.clients.db_reader import DBReader
 from ha_boss_mcp.clients.haboss_api import HABossAPIClient
 from ha_boss_mcp.models import ComponentHealth, ConfigSummary, HealthCheck
 
 
-async def register_tools(
-    mcp: FastMCP, api_client: HABossAPIClient, db_reader: DBReader
-) -> None:
+async def register_tools(mcp: FastMCP, api_client: HABossAPIClient, db_reader: DBReader) -> None:
     """Register service management tools with FastMCP server.
 
     Args:

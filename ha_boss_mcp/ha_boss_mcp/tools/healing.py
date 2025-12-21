@@ -10,9 +10,7 @@ from ha_boss_mcp.clients.haboss_api import HABossAPIClient
 from ha_boss_mcp.models import HealingAction, HealingResult, HealingStats
 
 
-async def register_tools(
-    mcp: FastMCP, api_client: HABossAPIClient, db_reader: DBReader
-) -> None:
+async def register_tools(mcp: FastMCP, api_client: HABossAPIClient, db_reader: DBReader) -> None:
     """Register healing tools with FastMCP server.
 
     Args:
@@ -25,9 +23,7 @@ async def register_tools(
     async def trigger_healing(
         entity_id: Annotated[
             str,
-            Field(
-                description="Entity ID to heal (e.g., 'sensor.temperature', 'light.bedroom')"
-            ),
+            Field(description="Entity ID to heal (e.g., 'sensor.temperature', 'light.bedroom')"),
         ],
         dry_run: Annotated[
             bool,
@@ -90,9 +86,7 @@ async def register_tools(
         ] = None,
         days: Annotated[
             int,
-            Field(
-                description="Days of history to retrieve (1-90)", ge=1, le=90
-            ),
+            Field(description="Days of history to retrieve (1-90)", ge=1, le=90),
         ] = 7,
         limit: Annotated[
             int,
@@ -159,10 +153,8 @@ async def register_tools(
     async def get_healing_stats(
         days: Annotated[
             int,
-            Field(
-                description="Days of data to analyze (1-90)", ge=1, le=90
-            ),
-        ] = 7
+            Field(description="Days of data to analyze (1-90)", ge=1, le=90),
+        ] = 7,
     ) -> HealingStats:
         """Get healing statistics and success/failure metrics.
 

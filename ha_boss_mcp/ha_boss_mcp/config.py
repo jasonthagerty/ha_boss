@@ -1,6 +1,5 @@
 """Configuration management for HA Boss MCP Server."""
 
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -24,12 +23,8 @@ class MCPSettings(BaseSettings):
 class HABossSettings(BaseSettings):
     """HA Boss API connection settings."""
 
-    api_url: str = Field(
-        default="http://haboss:8000", description="HA Boss API base URL"
-    )
-    api_key: str | None = Field(
-        default=None, description="API key for HA Boss authentication"
-    )
+    api_url: str = Field(default="http://haboss:8000", description="HA Boss API base URL")
+    api_key: str | None = Field(default=None, description="API key for HA Boss authentication")
     database_path: str = Field(
         default="/app/data/ha_boss.db", description="Path to HA Boss SQLite database"
     )
@@ -114,7 +109,7 @@ def load_config(config_path: str | Path | None = None) -> MCPConfig:
 
     # Load from YAML if file exists
     if config_path and Path(config_path).exists():
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             yaml_data = yaml.safe_load(f) or {}
             config_data = yaml_data
 
@@ -148,16 +143,12 @@ def validate_config(config: MCPConfig) -> None:
     if config.haboss.database_path != "/app/data/ha_boss.db":
         db_path = Path(config.haboss.database_path)
         if not db_path.parent.exists():
-            raise ValueError(
-                f"Database directory does not exist: {db_path.parent}"
-            )
+            raise ValueError(f"Database directory does not exist: {db_path.parent}")
 
     # Validate OAuth settings if enabled
     if config.auth.enabled:
         if not config.auth.client_id or not config.auth.client_secret:
-            raise ValueError(
-                "OAuth is enabled but client_id or client_secret is missing"
-            )
+            raise ValueError("OAuth is enabled but client_id or client_secret is missing")
         if not config.auth.base_url:
             raise ValueError("OAuth is enabled but base_url is missing")
 

@@ -1,10 +1,11 @@
 """Read-only SQLite database client for HA Boss data."""
 
-import aiosqlite
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+import aiosqlite
 
 
 class DBReaderError(Exception):

@@ -300,10 +300,16 @@ class Database:
             return False, "Database not initialized"
 
         if current_version < CURRENT_DB_VERSION:
-            return False, f"Database outdated (v{current_version}, need v{CURRENT_DB_VERSION}). Run migrations."
+            return (
+                False,
+                f"Database outdated (v{current_version}, need v{CURRENT_DB_VERSION}). Run migrations.",
+            )
 
         if current_version > CURRENT_DB_VERSION:
-            return False, f"Database too new (v{current_version}, app supports v{CURRENT_DB_VERSION}). Update HA Boss."
+            return (
+                False,
+                f"Database too new (v{current_version}, app supports v{CURRENT_DB_VERSION}). Update HA Boss.",
+            )
 
         return True, f"Database version v{current_version} is current"
 

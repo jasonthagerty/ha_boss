@@ -1,7 +1,8 @@
 """HTTP client for HA Boss REST API."""
 
-import httpx
 from typing import Any
+
+import httpx
 
 
 class HABossAPIError(Exception):
@@ -114,9 +115,7 @@ class HABossAPIClient:
                 f"API request failed: {e.response.status_code} - {e.response.text}"
             ) from e
         except httpx.TimeoutException as e:
-            raise HABossConnectionError(
-                f"Request timeout after {self.timeout}s"
-            ) from e
+            raise HABossConnectionError(f"Request timeout after {self.timeout}s") from e
         except Exception as e:
             raise HABossAPIError(f"Unexpected error: {e}") from e
 
@@ -138,9 +137,7 @@ class HABossAPIClient:
         return await self._request("GET", "/api/health")
 
     # Entity Monitoring
-    async def get_entities(
-        self, limit: int = 100, offset: int = 0
-    ) -> list[dict[str, Any]]:
+    async def get_entities(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         """Get list of monitored entities.
 
         Args:
@@ -166,9 +163,7 @@ class HABossAPIClient:
         """
         return await self._request("GET", f"/api/entities/{entity_id}")
 
-    async def get_entity_history(
-        self, entity_id: str, hours: int = 24
-    ) -> list[dict[str, Any]]:
+    async def get_entity_history(self, entity_id: str, hours: int = 24) -> list[dict[str, Any]]:
         """Get state change history for an entity.
 
         Args:
@@ -184,9 +179,7 @@ class HABossAPIClient:
         return response.get("history", [])
 
     # Healing Operations
-    async def trigger_healing(
-        self, entity_id: str, dry_run: bool = True
-    ) -> dict[str, Any]:
+    async def trigger_healing(self, entity_id: str, dry_run: bool = True) -> dict[str, Any]:
         """Trigger healing for an entity (reloads associated integration).
 
         Args:
@@ -202,9 +195,7 @@ class HABossAPIClient:
             json={"dry_run": dry_run},
         )
 
-    async def get_healing_history(
-        self, limit: int = 50
-    ) -> list[dict[str, Any]]:
+    async def get_healing_history(self, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent healing actions.
 
         Args:
@@ -213,9 +204,7 @@ class HABossAPIClient:
         Returns:
             List of healing actions with results
         """
-        response = await self._request(
-            "GET", "/api/healing/history", params={"limit": limit}
-        )
+        response = await self._request("GET", "/api/healing/history", params={"limit": limit})
         return response.get("actions", [])
 
     # Pattern Analysis
@@ -255,9 +244,7 @@ class HABossAPIClient:
         response = await self._request("GET", "/api/patterns/failures", params=params)
         return response.get("failures", [])
 
-    async def get_weekly_summary(
-        self, include_ai_insights: bool = False
-    ) -> dict[str, Any]:
+    async def get_weekly_summary(self, include_ai_insights: bool = False) -> dict[str, Any]:
         """Get weekly pattern summary.
 
         Args:
@@ -284,7 +271,10 @@ class HABossAPIClient:
         """
         params = {"include_ai": include_ai}
         return await self._request(
-            "POST", f"/api/automations/analyze", json={"automation_id": automation_id}, params=params
+            "POST",
+            "/api/automations/analyze",
+            json={"automation_id": automation_id},
+            params=params,
         )
 
     async def generate_automation(

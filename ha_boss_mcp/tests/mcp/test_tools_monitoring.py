@@ -1,11 +1,12 @@
 """Tests for monitoring MCP tools."""
 
-import pytest
-from fastmcp import FastMCP
 from unittest.mock import AsyncMock
 
-from ha_boss_mcp.tools import monitoring
+import pytest
+from fastmcp import FastMCP
+
 from ha_boss_mcp.models import EntityState, ServiceStatus
+from ha_boss_mcp.tools import monitoring
 
 
 @pytest.mark.asyncio
@@ -65,9 +66,7 @@ async def test_list_entities(mock_api_client: AsyncMock, mock_db_reader: AsyncMo
     assert result[1].entity_id == "sensor.test2"
 
     # Verify DB reader was called
-    mock_db_reader.list_entities.assert_called_once_with(
-        limit=100, offset=0, monitored_only=True
-    )
+    mock_db_reader.list_entities.assert_called_once_with(limit=100, offset=0, monitored_only=True)
 
 
 @pytest.mark.asyncio
@@ -87,12 +86,10 @@ async def test_list_entities_with_pagination(
     assert tool_func is not None
 
     # Call with custom parameters
-    result = await tool_func(limit=50, offset=10)
+    await tool_func(limit=50, offset=10)
 
     # Verify DB reader was called with correct parameters
-    mock_db_reader.list_entities.assert_called_once_with(
-        limit=50, offset=10, monitored_only=True
-    )
+    mock_db_reader.list_entities.assert_called_once_with(limit=50, offset=10, monitored_only=True)
 
 
 @pytest.mark.asyncio
@@ -186,6 +183,4 @@ async def test_get_entity_history(mock_api_client: AsyncMock, mock_db_reader: As
     assert result[1].new_state == "25.0"
 
     # Verify DB reader was called
-    mock_db_reader.get_entity_history.assert_called_once_with(
-        "sensor.test", hours=24, limit=1000
-    )
+    mock_db_reader.get_entity_history.assert_called_once_with("sensor.test", hours=24, limit=1000)
