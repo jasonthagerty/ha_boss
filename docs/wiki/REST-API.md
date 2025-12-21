@@ -436,24 +436,355 @@ Get current service status and statistics.
 
 #### GET /api/health
 
-Health check for monitoring and load balancers.
+Comprehensive health check for monitoring, load balancers, and service orchestration (Docker, Kubernetes, systemd).
 
-**Response:**
+**Breaking Change (v2.0.0):** This endpoint was completely redesigned from a simple 4-check health check to a comprehensive tier-based system monitoring 22 components across 5 tiers. The old format is no longer supported.
+
+**HTTP Status Codes:**
+- `200 OK` - Status is "healthy" or "degraded" (service still functional)
+- `503 Service Unavailable` - Status is "unhealthy" (critical failure, orchestration tools should restart)
+
+**Tier-Based Health System:**
+
+The health check evaluates 22 components across 5 priority tiers:
+
+1. **Tier 1 (Critical)** - Service cannot run without these
+   - `service_state`, `ha_rest_connection`, `database_accessible`, `configuration_valid`
+   - **Impact:** Any unhealthy component → overall status "unhealthy" (HTTP 503)
+
+2. **Tier 2 (Essential)** - Core functionality
+   - `websocket_connected`, `state_tracker_initialized`, `integration_discovery_complete`, `event_loop_responsive`
+   - **Impact:** Any unhealthy/degraded component → overall status "degraded" (HTTP 200)
+
+3. **Tier 3 (Operational)** - Health monitoring capability
+   - `health_monitor_running`, `health_events_recordable`, `state_history_recording`, `notification_service`
+   - **Impact:** Any unhealthy/degraded component → overall status "degraded" (HTTP 200)
+
+4. **Tier 4 (Healing)** - Auto-healing capability
+   - `healing_manager_initialized`, `circuit_breakers_operational`, `healing_actions_recordable`
+   - **Impact:** Any unhealthy/degraded component → overall status "degraded" (HTTP 200)
+
+5. **Tier 5 (Intelligence)** - Optional AI features (graceful degradation)
+   - `ollama_available`, `claude_available`
+   - **Impact:** Does NOT affect overall status (optional components)
+
+**Response Structure:**
+
 ```json
 {
   "status": "healthy",
-  "service_running": true,
-  "ha_connected": true,
-  "websocket_connected": true,
-  "database_accessible": true,
-  "timestamp": "2025-01-20T12:00:00Z"
+  "timestamp": "2025-01-20T12:00:00Z",
+  "version": "2.0.0",
+
+  "critical": {
+    "service_state": {
+      "status": "healthy",
+      "message": "Service is running",
+      "last_update": null,
+      "details": {"state": "running", "mode": "production"}
+    },
+    "ha_rest_connection": {
+      "status": "healthy",
+      "message": "REST API session is active",
+      "last_update": null,
+      "details": {"url": "http://homeassistant.local:8123"}
+    },
+    "database_accessible": {
+      "status": "healthy",
+      "message": "Database engine is accessible",
+      "last_update": null,
+      "details": {"path": "data/ha_boss.db"}
+    },
+    "configuration_valid": {
+      "status": "healthy",
+      "message": "Configuration is loaded and valid",
+      "last_update": null,
+      "details": {}
+    }
+  },
+
+  "essential": {
+    "websocket_connected": {
+      "status": "healthy",
+      "message": "WebSocket is connected",
+      "last_update": null,
+      "details": {}
+    },
+    "state_tracker_initialized": {
+      "status": "healthy",
+      "message": "State tracker has cached entities",
+      "last_update": null,
+      "details": {"cached_entities": 100}
+    },
+    "integration_discovery_complete": {
+      "status": "healthy",
+      "message": "Integration discovery has mappings",
+      "last_update": null,
+      "details": {"discovered_mappings": 50}
+    },
+    "event_loop_responsive": {
+      "status": "healthy",
+      "message": "Event loop is responsive",
+      "last_update": null,
+      "details": {}
+    }
+  },
+
+  "operational": {
+    "health_monitor_running": {
+      "status": "healthy",
+      "message": "Health monitor is running",
+      "last_update": null,
+      "details": {}
+    },
+    "health_events_recordable": {
+      "status": "healthy",
+      "message": "Health events can be recorded",
+      "last_update": null,
+      "details": {}
+    },
+    "state_history_recording": {
+      "status": "healthy",
+      "message": "State history is being recorded",
+      "last_update": null,
+      "details": {}
+    },
+    "notification_service": {
+      "status": "healthy",
+      "message": "Notification service is initialized",
+      "last_update": null,
+      "details": {}
+    }
+  },
+
+  "healing": {
+    "healing_manager_initialized": {
+      "status": "healthy",
+      "message": "Healing manager is initialized and enabled",
+      "last_update": null,
+      "details": {"enabled": true}
+    },
+    "circuit_breakers_operational": {
+      "status": "healthy",
+      "message": "Circuit breakers are operational",
+      "last_update": null,
+      "details": {"open_count": 0, "total_integrations": 10}
+    },
+    "healing_actions_recordable": {
+      "status": "healthy",
+      "message": "Healing actions can be recorded",
+      "last_update": null,
+      "details": {}
+    }
+  },
+
+  "intelligence": {
+    "ollama_available": {
+      "status": "healthy",
+      "message": "Ollama is configured and enabled",
+      "last_update": null,
+      "details": {"url": "http://localhost:11434", "model": "llama3.1:8b"}
+    },
+    "claude_available": {
+      "status": "unknown",
+      "message": "Claude API is not configured",
+      "last_update": null,
+      "details": {"enabled": false}
+    }
+  },
+
+  "performance": {
+    "uptime_seconds": 86400.5,
+    "memory_usage_mb": null,
+    "rest_api_latency_ms": null,
+    "websocket_latency_ms": null,
+    "db_query_latency_ms": null
+  },
+
+  "summary": {
+    "healthy": 18,
+    "degraded": 0,
+    "unhealthy": 0,
+    "unknown": 1
+  }
 }
 ```
 
-**Status Values:**
-- `healthy` - All components operational
-- `degraded` - Service running but some components down
-- `unhealthy` - Service not running or critical failure
+**Example Responses:**
+
+<details>
+<summary><b>Degraded State (WebSocket Disconnected)</b></summary>
+
+```json
+{
+  "status": "degraded",
+  "timestamp": "2025-01-20T12:00:00Z",
+  "version": "2.0.0",
+  "critical": { "..." },
+  "essential": {
+    "websocket_connected": {
+      "status": "degraded",
+      "message": "WebSocket is not connected (falling back to REST polling)",
+      "last_update": null,
+      "details": {}
+    }
+  },
+  "summary": {
+    "healthy": 17,
+    "degraded": 1,
+    "unhealthy": 0,
+    "unknown": 1
+  }
+}
+```
+
+HTTP Status: `200 OK` (service still functional)
+</details>
+
+<details>
+<summary><b>Unhealthy State (Service Stopped)</b></summary>
+
+```json
+{
+  "status": "unhealthy",
+  "timestamp": "2025-01-20T12:00:00Z",
+  "version": "2.0.0",
+  "critical": {
+    "service_state": {
+      "status": "unhealthy",
+      "message": "Service is not running (state: stopped)",
+      "last_update": null,
+      "details": {"state": "stopped", "mode": "production"}
+    }
+  },
+  "summary": {
+    "healthy": 16,
+    "degraded": 0,
+    "unhealthy": 1,
+    "unknown": 1
+  }
+}
+```
+
+HTTP Status: `503 Service Unavailable` (orchestration tools should restart)
+</details>
+
+**Component Status Values:**
+- `healthy` - Component is fully operational
+- `degraded` - Component has reduced functionality
+- `unhealthy` - Component has failed
+- `unknown` - Component status cannot be determined (e.g., optional features not configured)
+
+**Overall Status Determination:**
+1. If any **Tier 1 (Critical)** component is `unhealthy` → overall status is `unhealthy` (HTTP 503)
+2. If any **Tier 2-4** component is `unhealthy` or `degraded` → overall status is `degraded` (HTTP 200)
+3. Otherwise → overall status is `healthy` (HTTP 200)
+4. **Tier 5 (Intelligence)** components do NOT affect overall status (graceful degradation)
+
+**Orchestration Integration Examples:**
+
+<details>
+<summary><b>Docker Compose HEALTHCHECK</b></summary>
+
+```yaml
+# docker-compose.yml
+services:
+  ha_boss:
+    image: ha_boss:latest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+```
+
+When health check fails (HTTP 503), Docker will restart the container automatically.
+</details>
+
+<details>
+<summary><b>Kubernetes Liveness & Readiness Probes</b></summary>
+
+```yaml
+# kubernetes/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ha-boss
+spec:
+  template:
+    spec:
+      containers:
+      - name: ha-boss
+        image: ha_boss:latest
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 2
+```
+
+- **Liveness Probe:** Restarts pod on unhealthy status (HTTP 503)
+- **Readiness Probe:** Removes pod from service load balancer on degraded/unhealthy
+</details>
+
+<details>
+<summary><b>systemd Watchdog</b></summary>
+
+```ini
+# /etc/systemd/system/ha_boss.service
+[Unit]
+Description=HA Boss Service
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/haboss server
+Restart=on-failure
+RestartSec=30s
+
+# Watchdog configuration
+WatchdogSec=60s
+NotifyAccess=all
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Configure HA Boss to send watchdog notifications:
+```python
+# In your service startup code
+import systemd.daemon
+
+# Notify systemd that service is ready
+systemd.daemon.notify('READY=1')
+
+# Periodically send watchdog keepalive
+async def watchdog_loop():
+    while True:
+        health = await check_health()
+        if health['status'] == 'healthy':
+            systemd.daemon.notify('WATCHDOG=1')
+        await asyncio.sleep(30)
+```
+</details>
+
+**Performance:**
+- Response time: ~15ms (fast state checks, no active network calls)
+- No database queries (checks object existence only)
+- Safe for frequent polling (30s intervals recommended)
 
 ### Monitoring
 

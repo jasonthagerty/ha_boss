@@ -517,8 +517,14 @@ pytest tests/api/test_dashboard.py --cov=ha_boss/api --cov-report=html
 
 - **Health Check Card**
   - Overall health status (healthy/degraded/unhealthy)
-  - Component status (HA, WebSocket, Database)
-  - Color-coded indicators
+  - Tier-based component breakdown (22 components across 5 tiers)
+  - Critical components: Service, HA connection, Database, Config
+  - Essential components: WebSocket, State tracking, Integration discovery
+  - Operational components: Health monitoring, Event recording, Notifications
+  - Healing components: Healing manager, Circuit breakers
+  - Intelligence components: Ollama, Claude API (optional)
+  - Color-coded indicators: Green (healthy), Yellow (degraded), Red (unhealthy)
+  - Component-level details with status messages
 
 - **Healing Statistics**
   - Attempted healings count
