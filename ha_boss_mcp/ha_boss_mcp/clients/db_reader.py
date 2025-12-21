@@ -55,7 +55,6 @@ class DBReader:
             if self.db_path.exists():
                 # Verify it's a valid SQLite database
                 try:
-        await self.ensure_ready()
                     async with aiosqlite.connect(self.db_path) as db:
                         # Check if schema_version table exists
                         async with db.execute(
