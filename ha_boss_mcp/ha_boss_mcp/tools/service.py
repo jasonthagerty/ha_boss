@@ -1,6 +1,5 @@
 """Service management tools for HA Boss MCP server."""
 
-
 from fastmcp import FastMCP
 
 from ha_boss_mcp.clients.db_reader import DBReader
