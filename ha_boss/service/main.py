@@ -11,6 +11,7 @@ from ha_boss.core.config import Config
 from ha_boss.core.database import Database
 from ha_boss.core.exceptions import (
     CircuitBreakerOpenError,
+    DatabaseError,
 )
 from ha_boss.core.ha_client import create_ha_client
 from ha_boss.healing.escalation import NotificationEscalator
@@ -109,7 +110,13 @@ class HABossService:
             logger.info("Initializing database...")
             self.database = Database(self.config.database.path)
             await self.database.init_db()
-            logger.info("✓ Database initialized")
+
+            # Validate database schema version
+            is_valid, message = await self.database.validate_version()
+            if not is_valid:
+                logger.error(f"Database schema version error: {message}")
+                raise DatabaseError(message)
+            logger.info(f"✓ Database initialized ({message})")
 
             # 2. Create Home Assistant client
             logger.info(f"Connecting to Home Assistant at {self.config.home_assistant.url}...")

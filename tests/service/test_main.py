@@ -86,6 +86,7 @@ class TestHABossServiceStart:
             # Set up mocks
             mock_db = AsyncMock()
             mock_db.init_db = AsyncMock()
+            mock_db.validate_version = AsyncMock(return_value=(True, "Database version v1 is current"))
             mock_db_class.return_value = mock_db
 
             mock_client = AsyncMock()
@@ -145,6 +146,7 @@ class TestHABossServiceStart:
         ):
             mock_db = AsyncMock()
             mock_db.init_db = AsyncMock()
+            mock_db.validate_version = AsyncMock(return_value=(True, "Database version v1 is current"))
             mock_db_class.return_value = mock_db
 
             mock_client = AsyncMock()
