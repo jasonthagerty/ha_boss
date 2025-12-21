@@ -20,7 +20,9 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 
 ## 🚀 Quick Start
 
-### Docker (Recommended)
+### Docker (Recommended - Production)
+
+Uses pre-built images from GitHub Container Registry:
 
 ```bash
 # Clone and configure
@@ -29,14 +31,26 @@ cd ha_boss
 cp .env.example .env
 
 # Edit .env with your Home Assistant URL and token
-# Then start the service
+# Then start the service (pulls latest images)
 docker-compose up -d
 
 # Check status
 docker-compose exec haboss haboss status
 ```
 
-### Local Development
+### Docker (Local Development)
+
+Build from source for development:
+
+```bash
+# Use dev overlay to build locally
+docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+# Or build specific service
+docker-compose -f docker-compose.yml -f docker-compose.dev.yml build haboss
+```
+
+### Local Development (Python)
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -138,9 +152,11 @@ haboss automation generate "Turn on lights when motion detected"
 
 ## 📦 Docker Images
 
-Published to GitHub Container Registry:
-- `ghcr.io/jasonthagerty/ha_boss-ha-boss:latest` - Main service
-- `ghcr.io/jasonthagerty/ha_boss-ha-boss-mcp:latest` - MCP server
+Published to GitHub Container Registry with multi-arch support (amd64, arm64):
+- `ghcr.io/jasonthagerty/ha-boss:latest` - Main service
+- `ghcr.io/jasonthagerty/ha-boss-mcp:latest` - MCP server (optional)
+
+Images are automatically built and published on every push to main.
 
 ## 📝 Example Configuration
 

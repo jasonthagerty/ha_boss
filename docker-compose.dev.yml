@@ -1,0 +1,32 @@
+# Docker Compose override for local development
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This file overrides the default production configuration to:
+# - Build images locally from source instead of pulling from GHCR
+# - Enable hot-reloading and development features
+# - Use local image tags
+
+services:
+  haboss:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ha-boss:dev
+    pull_policy: build
+    # Override with local source code mount for development (optional)
+    # volumes:
+    #   - ./ha_boss:/app/ha_boss:ro
+    #   - ./config:/app/config:ro
+    #   - ./data:/app/data:rw
+
+  haboss-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    image: ha-boss-mcp:dev
+    pull_policy: build
+    # Override with local source code mount for development (optional)
+    # volumes:
+    #   - ./ha_boss_mcp/ha_boss_mcp:/app/ha_boss_mcp:ro
+    #   - ./config:/app/config:ro
+    #   - ./data:/app/data:ro

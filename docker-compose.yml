@@ -1,10 +1,8 @@
 services:
   haboss:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ha-boss:latest
+    image: ghcr.io/jasonthagerty/ha-boss:latest
     container_name: ha-boss
+    pull_policy: always
 
     # Restart policy for reliability
     restart: unless-stopped
@@ -52,11 +50,9 @@ services:
         max-file: "3"
 
   haboss-mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile.mcp
-    image: ha-boss-mcp:latest
+    image: ghcr.io/jasonthagerty/ha-boss-mcp:latest
     container_name: ha-boss-mcp
+    pull_policy: always
 
     # Optional: Enable with --profile mcp
     profiles:
