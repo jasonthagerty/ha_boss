@@ -1,7 +1,7 @@
 """Pydantic models for API requests and responses."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,7 +20,11 @@ class ServiceStatusResponse(BaseModel):
 
 
 class HealthCheckResponse(BaseModel):
-    """Health check endpoint response."""
+    """Health check endpoint response.
+
+    DEPRECATED: Use EnhancedHealthCheckResponse for comprehensive health checks.
+    This model is kept for backward compatibility reference only.
+    """
 
     status: str = Field(..., description="Health status (healthy/degraded/unhealthy)")
     service_running: bool = Field(..., description="Is service running")
@@ -28,6 +32,83 @@ class HealthCheckResponse(BaseModel):
     websocket_connected: bool = Field(..., description="Is WebSocket connected")
     database_accessible: bool = Field(..., description="Is database accessible")
     timestamp: datetime = Field(..., description="Health check timestamp")
+
+
+class ComponentHealth(BaseModel):
+    """Individual component health status."""
+
+    status: Literal["healthy", "degraded", "unhealthy", "unknown"] = Field(
+        ..., description="Component health status"
+    )
+    message: str | None = Field(None, description="Status message or explanation")
+    last_update: datetime | None = Field(None, description="Last successful update timestamp")
+    details: dict[str, Any] = Field(
+        default_factory=dict, description="Additional component-specific details"
+    )
+
+
+class PerformanceMetrics(BaseModel):
+    """Service performance metrics."""
+
+    uptime_seconds: float = Field(..., description="Service uptime in seconds")
+    memory_usage_mb: float | None = Field(None, description="Memory usage in megabytes")
+    rest_api_latency_ms: float | None = Field(
+        None, description="Last REST API request latency in milliseconds"
+    )
+    websocket_latency_ms: float | None = Field(
+        None, description="Last WebSocket ping latency in milliseconds"
+    )
+    db_query_latency_ms: float | None = Field(
+        None, description="Last database query latency in milliseconds"
+    )
+
+
+class EnhancedHealthCheckResponse(BaseModel):
+    """Comprehensive health check response with tier-based component status.
+
+    This response provides detailed health information across 5 tiers:
+    - Tier 1 (critical): Service cannot run without these components
+    - Tier 2 (essential): Core functionality components
+    - Tier 3 (operational): Health monitoring components
+    - Tier 4 (healing): Auto-healing capability components
+    - Tier 5 (intelligence): Optional AI features (graceful degradation)
+
+    HTTP Status Codes:
+    - 200 OK: Status is "healthy" or "degraded" (service still functional)
+    - 503 Service Unavailable: Status is "unhealthy" (critical failure)
+    """
+
+    status: Literal["healthy", "degraded", "unhealthy"] = Field(
+        ..., description="Overall health status determined by tier priority"
+    )
+    timestamp: datetime = Field(..., description="Health check timestamp")
+    version: str = Field(default="2.0.0", description="Health check schema version")
+
+    # Component status by tier
+    critical: dict[str, ComponentHealth] = Field(
+        ..., description="Tier 1: Critical components (service cannot run without these)"
+    )
+    essential: dict[str, ComponentHealth] = Field(
+        ..., description="Tier 2: Essential components (core functionality)"
+    )
+    operational: dict[str, ComponentHealth] = Field(
+        ..., description="Tier 3: Operational components (health monitoring)"
+    )
+    healing: dict[str, ComponentHealth] = Field(
+        ..., description="Tier 4: Healing components (auto-healing capability)"
+    )
+    intelligence: dict[str, ComponentHealth] = Field(
+        ..., description="Tier 5: Intelligence components (optional AI features)"
+    )
+
+    # Performance metrics
+    performance: PerformanceMetrics = Field(..., description="Service performance metrics")
+
+    # Summary counts
+    summary: dict[str, int] = Field(
+        ...,
+        description='Component count summary by status (e.g., {"healthy": 18, "degraded": 2})',
+    )
 
 
 class EntityStateResponse(BaseModel):
