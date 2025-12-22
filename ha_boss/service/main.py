@@ -221,7 +221,8 @@ class HABossService:
 
             # 11. Start API server if enabled
             if self.config.api.enabled:
-                logger.info(f"Starting API server on {self.config.api.host}:{self.config.api.port}...")
+                api_addr = f"{self.config.api.host}:{self.config.api.port}"
+                logger.info(f"Starting API server on {api_addr}...")
                 self._start_api_server()
 
             self.state = ServiceState.RUNNING
@@ -262,9 +263,8 @@ class HABossService:
         task.set_name("api_server")
         self._tasks.append(task)
 
-        logger.info(
-            f"API server task started - docs available at http://{self.config.api.host}:{self.config.api.port}/docs"
-        )
+        api_addr = f"{self.config.api.host}:{self.config.api.port}"
+        logger.info(f"API server task started - docs at http://{api_addr}/docs")
 
     async def _run_api_server(self) -> None:
         """Run the uvicorn API server."""
@@ -311,9 +311,10 @@ class HABossService:
             server = uvicorn.Server(config)
             self._api_server = server
 
-            logger.info(f"✓ API server running on http://{self.config.api.host}:{self.config.api.port}")
-            logger.info(f"  Health check: http://{self.config.api.host}:{self.config.api.port}/api/health")
-            logger.info(f"  API docs: http://{self.config.api.host}:{self.config.api.port}/docs")
+            api_addr = f"{self.config.api.host}:{self.config.api.port}"
+            logger.info(f"✓ API server running on http://{api_addr}")
+            logger.info(f"  Health check: http://{api_addr}/api/health")
+            logger.info(f"  API docs: http://{api_addr}/docs")
             await server.serve()
 
         except ImportError as e:
