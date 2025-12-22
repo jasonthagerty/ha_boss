@@ -503,9 +503,8 @@ async def _perform_healing(config: Config, entity_id: str) -> None:
                         if integration_id:
                             details = integration_discovery.get_integration_details(integration_id)
                             if details:
-                                console.print(
-                                    f"[dim]Reloaded integration: {details.get('title', integration_id)}[/dim]"
-                                )
+                                title = details.get("title", integration_id)
+                                console.print(f"[dim]Reloaded integration: {title}[/dim]")
                     else:
                         console.print(f"\n[red]✗ Failed to heal {entity_id}[/red]")
 
@@ -1137,10 +1136,17 @@ async def _generate_weekly_summary(config: Config, send_notify: bool) -> None:
         table.add_row("Healing Attempts", str(summary.total_healing_attempts))
         table.add_row("Successful Healings", f"[green]{summary.successful_healings}[/green]")
         table.add_row("Failed Healings", f"[red]{summary.failed_healings}[/red]")
+        # Determine color based on success rate
+        if summary.overall_success_rate >= 0.8:
+            rate_color = "green"
+        elif summary.overall_success_rate >= 0.6:
+            rate_color = "yellow"
+        else:
+            rate_color = "red"
+
         table.add_row(
             "Success Rate",
-            f"[{'green' if summary.overall_success_rate >= 0.8 else 'yellow' if summary.overall_success_rate >= 0.6 else 'red'}]"
-            f"{summary.overall_success_rate:.1%}[/]",
+            f"[{rate_color}]{summary.overall_success_rate:.1%}[/]",
         )
 
         if summary.success_rate_change is not None:
@@ -1474,8 +1480,9 @@ async def _analyze_all_automations(config: Config, include_ai: bool) -> None:
         # Show details for automations with issues
         automations_with_issues = [r for r in results if r.has_issues]
         if automations_with_issues:
+            count = len(automations_with_issues)
             console.print(
-                f"\n[bold yellow]Automations Needing Attention ({len(automations_with_issues)}):[/bold yellow]"
+                f"\n[bold yellow]Automations Needing Attention ({count}):[/bold yellow]"
             )
             for result in automations_with_issues:
                 console.print(f"\n[cyan]{'─' * 60}[/cyan]")
@@ -1519,7 +1526,9 @@ def generate_automation(
         haboss automation generate "Turn off all lights at 11pm" --create
 
         # Create with custom mode
-        haboss automation generate "Send notification if garage door open > 10 minutes" --mode restart --create
+        haboss automation generate \\
+            "Send notification if garage door open > 10 minutes" \\
+            --mode restart --create
     """
     console.print(
         Panel.fit(
@@ -1618,7 +1627,8 @@ async def _generate_automation(
         if not automation:
             console.print("\n[red]Error:[/red] Failed to generate automation")
             console.print(
-                "[yellow]Hint:[/yellow] Try rephrasing your prompt or check Claude API configuration"
+                "[yellow]Hint:[/yellow] Try rephrasing your prompt or "
+                "check Claude API configuration"
             )
             return
 
@@ -1627,7 +1637,8 @@ async def _generate_automation(
 
         if not automation.is_valid:
             console.print(
-                "\n[red]Warning:[/red] Generated automation has validation errors. Review carefully before using."
+                "\n[red]Warning:[/red] Generated automation has validation errors. "
+                "Review carefully before using."
             )
 
         # Create in HA if requested
@@ -1655,7 +1666,8 @@ async def _generate_automation(
                 console.print(f"  [dim]ID:[/dim] {automation_id}")
                 console.print(f"  [dim]Alias:[/dim] {automation.alias}")
                 console.print(
-                    f"\n[cyan]View in Home Assistant:[/cyan] Configuration → Automations → {automation.alias}"
+                    f"\n[cyan]View in Home Assistant:[/cyan] "
+                    f"Configuration → Automations → {automation.alias}"
                 )
 
             except Exception as e:
