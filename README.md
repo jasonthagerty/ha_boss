@@ -158,8 +158,9 @@ Published to GitHub Container Registry with multi-arch support:
 
 **Supported Architectures:**
 - `amd64` - Intel/AMD 64-bit (NUCs, x86_64 servers)
-- `arm64` - ARM 64-bit (Raspberry Pi 4/5, newer ARM boards)
-- `armv7` - ARM 32-bit (Raspberry Pi 3/4, older ARM boards)
+- `arm64` - ARM 64-bit (Raspberry Pi 4/5, Raspberry Pi 3 in 64-bit mode)
+
+> **Note:** armv7 (32-bit ARM) is not supported due to dependency compilation issues. Raspberry Pi 3/4 users should use a 64-bit OS.
 
 Images are automatically built and published on every push to main.
 
