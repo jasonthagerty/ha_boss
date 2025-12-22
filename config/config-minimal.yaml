@@ -2,7 +2,9 @@
 # Minimal configuration with only essential settings
 
 home_assistant:
+  # Home Assistant instance URL (uses HA_URL environment variable)
   url: "${HA_URL}"
+  # Long-lived access token (uses HA_TOKEN environment variable)
   token: "${HA_TOKEN}"
 
 monitoring:

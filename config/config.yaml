@@ -2,10 +2,10 @@
 # Copy to config.yaml and customize for your setup
 
 home_assistant:
-  # Home Assistant instance URL
-  url: "http://homeassistant.local:8123"
+  # Home Assistant instance URL (uses HA_URL environment variable)
+  url: "${HA_URL}"
 
-  # Long-lived access token (can also use HA_TOKEN env var)
+  # Long-lived access token (uses HA_TOKEN environment variable)
   # Create at: http://your-ha/profile -> Long-Lived Access Tokens
   token: "${HA_TOKEN}"
 
