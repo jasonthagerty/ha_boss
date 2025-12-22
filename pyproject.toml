@@ -59,8 +59,9 @@ Homepage = "https://github.com/jasonthagerty/ha_boss"
 Documentation = "https://github.com/jasonthagerty/ha_boss#readme"
 Repository = "https://github.com/jasonthagerty/ha_boss"
 
-[tool.setuptools]
-packages = ["ha_boss"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ha_boss*"]
 
 [project.scripts]
 haboss = "ha_boss.cli.commands:app"
