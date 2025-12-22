@@ -122,8 +122,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD ["python3", "/usr/local/bin/healthcheck.py"]
 
-# Set entrypoint for proper signal handling
-ENTRYPOINT ["python", "-m", "ha_boss.cli.commands"]
+# Set entrypoint to use installed console script (avoids module import warnings)
+ENTRYPOINT ["haboss"]
 
 # Default command (can be overridden)
 CMD ["start", "--foreground"]

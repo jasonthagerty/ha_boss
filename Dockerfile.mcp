@@ -56,8 +56,8 @@ USER mcpuser
 # Expose port (only used for HTTP/SSE transport)
 EXPOSE 8001
 
-# Set entrypoint for MCP server
-ENTRYPOINT ["python", "-m", "ha_boss_mcp.server"]
+# Set entrypoint to use installed console script (avoids module import warnings)
+ENTRYPOINT ["ha-boss-mcp"]
 
 # Default command: stdio transport
 CMD ["--transport", "stdio"]
