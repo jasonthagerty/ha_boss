@@ -73,4 +73,3 @@ def setup_logging(config: Config) -> None:
         f"format={config.logging.format}, "
         f"handlers={len(root_logger.handlers)}"
     )
-
