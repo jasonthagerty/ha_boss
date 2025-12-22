@@ -42,12 +42,12 @@ notifications:
 logging:
   level: "INFO"
   format: "json"  # JSON format for log aggregation
-  file: "/data/ha_boss.log"
+  file: "/app/data/ha_boss.log"
   max_size_mb: 50
   backup_count: 10
 
 database:
-  path: "/data/ha_boss.db"
+  path: "/app/data/ha_boss.db"
   echo: false
   retention_days: 90        # Keep 3 months of history
 

@@ -21,6 +21,6 @@ logging:
   level: "INFO"
 
 database:
-  path: "/data/ha_boss.db"
+  path: "/app/data/ha_boss.db"
 
 mode: "production"
