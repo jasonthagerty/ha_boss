@@ -648,3 +648,4 @@ class HABossService:
                 "healing_success_rate": success_rate,
             },
         }
+
