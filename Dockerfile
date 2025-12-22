@@ -40,12 +40,16 @@ RUN groupadd -r haboss && useradd -r -g haboss -u 1000 haboss
 # Set working directory
 WORKDIR /app
 
-# Copy installed dependencies from builder
-COPY --from=builder /install /usr/local
-
-# Copy application code
+# Copy dependency files and source code
+COPY pyproject.toml ./
 COPY ha_boss/ ./ha_boss/
 COPY config/config.yaml.example ./config/config.yaml.example
+
+# Copy pre-built dependencies from builder (wheels and compiled extensions)
+COPY --from=builder /install /usr/local
+
+# Install the package using pip (creates console scripts and proper site-packages structure)
+RUN pip install --no-cache-dir .
 
 # Create directories for runtime data
 RUN mkdir -p /app/config /app/data && \

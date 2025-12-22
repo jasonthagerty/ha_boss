@@ -40,11 +40,15 @@ RUN groupadd -r mcpuser && useradd -r -g mcpuser -u 1001 mcpuser
 # Set working directory
 WORKDIR /app
 
-# Copy installed dependencies from builder
+# Copy package files
+COPY ha_boss_mcp/pyproject.toml ./
+COPY ha_boss_mcp/ha_boss_mcp/ ./ha_boss_mcp/
+
+# Copy pre-built dependencies from builder (wheels and compiled extensions)
 COPY --from=builder /install /usr/local
 
-# Copy application code
-COPY ha_boss_mcp/ha_boss_mcp/ ./ha_boss_mcp/
+# Install the package using pip (creates console scripts and proper site-packages structure)
+RUN pip install --no-cache-dir .
 
 # Create directories for runtime data (shared with HA Boss)
 RUN mkdir -p /app/config /app/data && \
