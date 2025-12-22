@@ -30,6 +30,10 @@ git clone https://github.com/jasonthagerty/ha_boss.git
 cd ha_boss
 cp .env.example .env
 
+# Create data directory with correct permissions
+mkdir -p data config
+sudo chown -R 1000:1000 data
+
 # Edit .env with your Home Assistant URL and token
 # Then start the service (pulls latest images)
 docker-compose up -d
@@ -43,6 +47,10 @@ docker-compose exec haboss haboss status
 Build from source for development:
 
 ```bash
+# Create data directory with correct permissions
+mkdir -p data config
+sudo chown -R 1000:1000 data
+
 # Use dev overlay to build locally
 docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
