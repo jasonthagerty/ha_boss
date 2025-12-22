@@ -14,6 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from ha_boss.core.config import Config, load_config
+from ha_boss.core.logging_config import setup_logging
 
 if TYPE_CHECKING:
     from ha_boss.automation.analyzer import AnalysisResult
@@ -148,6 +149,11 @@ database:
 intelligence:
   pattern_collection_enabled: true  # Enable pattern collection for reliability analysis
 
+api:
+  enabled: true  # Enable REST API server for health checks
+  host: 0.0.0.0
+  port: 8000
+
 mode: production  # production, dry_run, or testing
 """
         config_file.write_text(config_template)
@@ -237,6 +243,9 @@ def start(
             config = load_config(config_path)
 
         console.print("[green]✓[/green] Configuration loaded")
+
+        # Setup logging
+        setup_logging(config)
 
         # Create and start service
         console.print("\n[cyan]Initializing HA Boss service...[/cyan]")

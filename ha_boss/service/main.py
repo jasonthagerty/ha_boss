@@ -69,6 +69,7 @@ class HABossService:
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
         self._shutdown_event = asyncio.Event()
+        self._api_server: Any = None  # Uvicorn server instance
 
         # Statistics
         self.start_time: datetime | None = None
@@ -218,11 +219,17 @@ class HABossService:
             logger.info("Starting background tasks...")
             self._start_background_tasks()
 
+            # 11. Start API server if enabled
+            if self.config.api.enabled:
+                logger.info(f"Starting API server on {self.config.api.host}:{self.config.api.port}...")
+                self._start_api_server()
+
             self.state = ServiceState.RUNNING
             logger.info("✅ HA Boss service started successfully")
             logger.info(
                 f"Mode: {self.config.mode}, "
-                f"Healing: {'enabled' if self.config.healing.enabled else 'disabled'}"
+                f"Healing: {'enabled' if self.config.healing.enabled else 'disabled'}, "
+                f"API: {'enabled' if self.config.api.enabled else 'disabled'}"
             )
 
         except Exception as e:
@@ -248,6 +255,72 @@ class HABossService:
         self._tasks.append(task)
 
         logger.info(f"Started {len(self._tasks)} background tasks")
+
+    def _start_api_server(self) -> None:
+        """Start the FastAPI server in a background task."""
+        task = asyncio.create_task(self._run_api_server())
+        task.set_name("api_server")
+        self._tasks.append(task)
+
+        logger.info(
+            f"API server task started - docs available at http://{self.config.api.host}:{self.config.api.port}/docs"
+        )
+
+    async def _run_api_server(self) -> None:
+        """Run the uvicorn API server."""
+        try:
+            import uvicorn
+            from fastapi import FastAPI
+            from fastapi.middleware.cors import CORSMiddleware
+
+            # Import and patch the global service getter
+            import ha_boss.api.app as api_app
+            api_app._service = self  # Set global service instance for API routes
+
+            # Create minimal FastAPI app
+            app = FastAPI(
+                title="HA Boss API",
+                description="Home Assistant monitoring and healing service API",
+                version="0.1.0",
+            )
+
+            # Add CORS if enabled
+            if self.config.api.cors_enabled:
+                app.add_middleware(
+                    CORSMiddleware,
+                    allow_origins=self.config.api.cors_origins,
+                    allow_credentials=True,
+                    allow_methods=["*"],
+                    allow_headers=["*"],
+                )
+
+            # Import and mount status router (uses global service instance)
+            from ha_boss.api.routes.status import router as status_router
+            app.include_router(status_router, prefix="/api", tags=["status"])
+
+            # Create uvicorn config
+            config = uvicorn.Config(
+                app,
+                host=self.config.api.host,
+                port=self.config.api.port,
+                log_level="warning",  # Reduce uvicorn noise
+                access_log=False,
+            )
+
+            # Create and run server
+            server = uvicorn.Server(config)
+            self._api_server = server
+
+            logger.info(f"✓ API server running on http://{self.config.api.host}:{self.config.api.port}")
+            logger.info(f"  Health check: http://{self.config.api.host}:{self.config.api.port}/api/health")
+            logger.info(f"  API docs: http://{self.config.api.host}:{self.config.api.port}/docs")
+            await server.serve()
+
+        except ImportError as e:
+            logger.error(f"Failed to start API server - missing dependencies: {e}")
+            logger.info("Install with: pip install 'ha-boss[api]'")
+        except Exception as e:
+            logger.error(f"API server error: {e}", exc_info=True)
 
     async def _periodic_snapshot_validation(self) -> None:
         """Periodically validate state tracker cache against REST API snapshot."""
@@ -481,6 +554,15 @@ class HABossService:
 
     async def _cleanup(self) -> None:
         """Clean up all components."""
+        # Stop API server
+        if self._api_server:
+            try:
+                logger.info("Stopping API server...")
+                self._api_server.should_exit = True
+                await asyncio.sleep(0.1)  # Give it time to shutdown gracefully
+            except Exception as e:
+                logger.error(f"Error stopping API server: {e}")
+
         # Stop health monitor
         if self.health_monitor:
             try:
