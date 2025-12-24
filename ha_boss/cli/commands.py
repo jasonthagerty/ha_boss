@@ -1481,9 +1481,7 @@ async def _analyze_all_automations(config: Config, include_ai: bool) -> None:
         automations_with_issues = [r for r in results if r.has_issues]
         if automations_with_issues:
             count = len(automations_with_issues)
-            console.print(
-                f"\n[bold yellow]Automations Needing Attention ({count}):[/bold yellow]"
-            )
+            console.print(f"\n[bold yellow]Automations Needing Attention ({count}):[/bold yellow]")
             for result in automations_with_issues:
                 console.print(f"\n[cyan]{'─' * 60}[/cyan]")
                 _display_analysis_result(result, compact=True)

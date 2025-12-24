@@ -275,6 +275,7 @@ class HABossService:
 
             # Import and patch the global service getter
             import ha_boss.api.app as api_app
+
             api_app._service = self  # Set global service instance for API routes
 
             # Create minimal FastAPI app
@@ -296,6 +297,7 @@ class HABossService:
 
             # Import and mount status router (uses global service instance)
             from ha_boss.api.routes.status import router as status_router
+
             app.include_router(status_router, prefix="/api", tags=["status"])
 
             # Create uvicorn config
