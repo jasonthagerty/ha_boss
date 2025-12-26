@@ -140,6 +140,7 @@ The project includes custom slash commands in `.claude/commands/`:
 - `/setup-dev` - Guide through development environment setup
 - `/review-pr [number]` - Review a pull request
 - `/add-test [module]` - Generate tests for a module
+- `/uat [--cli-only|--api-only|--full] [--dry-run]` - Run User Acceptance Testing
 
 ## Architecture
 
