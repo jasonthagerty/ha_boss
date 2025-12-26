@@ -268,7 +268,14 @@ class WebSocketClient:
         Returns:
             True if connected, False otherwise
         """
-        return self._ws is not None and not self._ws.closed
+        if self._ws is None:
+            return False
+        # Check if websocket is open (different versions use different attributes)
+        try:
+            return hasattr(self._ws, "open") and self._ws.open
+        except AttributeError:
+            # Fallback: assume connected if _ws exists and no exception
+            return True
 
 
 async def create_websocket_client(
