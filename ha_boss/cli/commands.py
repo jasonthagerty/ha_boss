@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -15,6 +16,9 @@ from rich.table import Table
 
 from ha_boss.core.config import Config, load_config
 from ha_boss.core.logging_config import setup_logging
+
+# Load environment variables from .env file
+load_dotenv()
 
 if TYPE_CHECKING:
     from ha_boss.automation.analyzer import AnalysisResult

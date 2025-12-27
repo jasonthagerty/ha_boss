@@ -358,15 +358,21 @@ class TestExecutor:
         Returns:
             CompletedProcess result
         """
+        # Build environment with venv bin in PATH if it exists
+        env = {**os.environ, "PYTHONPATH": str(self.project_root)}
+
+        venv_bin = self.project_root / ".venv" / "bin"
+        if venv_bin.exists():
+            # Prepend venv bin to PATH
+            current_path = env.get("PATH", "")
+            env["PATH"] = f"{venv_bin}:{current_path}"
+
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self.project_root,
-            env={
-                **os.environ,
-                "PYTHONPATH": str(self.project_root),
-            },
+            env=env,
         )
 
         stdout, stderr = await proc.communicate()
@@ -461,16 +467,29 @@ class TestExecutor:
         """
         status = PrerequisiteStatus()
 
-        # Check CLI availability
+        # Check CLI availability (try venv first, then system)
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "haboss",
-                "--version",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await proc.wait()
-            status.cli_available = proc.returncode == 0
+            venv_haboss = self.project_root / ".venv" / "bin" / "haboss"
+            if venv_haboss.exists():
+                # Try running help instead of --version (which isn't implemented)
+                proc = await asyncio.create_subprocess_exec(
+                    str(venv_haboss),
+                    "--help",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await proc.wait()
+                status.cli_available = proc.returncode == 0
+            else:
+                # Fall back to system haboss
+                proc = await asyncio.create_subprocess_exec(
+                    "haboss",
+                    "--help",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await proc.wait()
+                status.cli_available = proc.returncode == 0
         except FileNotFoundError:
             status.cli_available = False
 

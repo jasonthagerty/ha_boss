@@ -270,19 +270,41 @@ class HABossService:
         """Run the uvicorn API server."""
         try:
             import uvicorn
-            from fastapi import FastAPI
+            from pathlib import Path
+            from fastapi import FastAPI, HTTPException
             from fastapi.middleware.cors import CORSMiddleware
+            from fastapi.responses import FileResponse
+            from fastapi.staticfiles import StaticFiles
 
             # Import and patch the global service getter
             import ha_boss.api.app as api_app
 
             api_app._service = self  # Set global service instance for API routes
 
-            # Create minimal FastAPI app
+            # Create FastAPI app with full configuration
             app = FastAPI(
                 title="HA Boss API",
-                description="Home Assistant monitoring and healing service API",
+                description="""
+## HA Boss REST API
+
+A RESTful API for monitoring, managing, and analyzing Home Assistant instances.
+
+### Features
+
+- **Status Monitoring** - Real-time service status, uptime, and statistics
+- **Entity Monitoring** - Track entity states and history
+- **Pattern Analysis** - Integration reliability and failure analysis
+- **Automation Management** - Analyze and generate automations with AI
+- **Manual Healing** - Trigger integration reloads on demand
+
+### Dashboard
+
+Access the web dashboard at `/dashboard` for a visual interface.
+                """,
                 version="0.1.0",
+                docs_url="/docs",
+                redoc_url="/redoc",
+                openapi_url="/openapi.json",
             )
 
             # Add CORS if enabled
@@ -295,10 +317,83 @@ class HABossService:
                     allow_headers=["*"],
                 )
 
-            # Import and mount status router (uses global service instance)
-            from ha_boss.api.routes.status import router as status_router
+            # Import and mount all routers (use global service instance)
+            from ha_boss.api.routes import (
+                automations,
+                healing,
+                monitoring,
+                patterns,
+                status,
+            )
 
-            app.include_router(status_router, prefix="/api", tags=["status"])
+            # Add authentication dependency if enabled
+            dependencies = []
+            if self.config.api.auth_enabled:
+                from fastapi import Depends
+                from ha_boss.api.dependencies import verify_api_key
+
+                dependencies = [Depends(verify_api_key)]
+                logger.info("API authentication enabled")
+            else:
+                logger.info("API authentication disabled")
+
+            # Register all routers
+            app.include_router(
+                status.router, prefix="/api", tags=["Status"], dependencies=dependencies
+            )
+            app.include_router(
+                monitoring.router, prefix="/api", tags=["Monitoring"], dependencies=dependencies
+            )
+            app.include_router(
+                patterns.router,
+                prefix="/api",
+                tags=["Pattern Analysis"],
+                dependencies=dependencies,
+            )
+            app.include_router(
+                automations.router,
+                prefix="/api",
+                tags=["Automations"],
+                dependencies=dependencies,
+            )
+            app.include_router(
+                healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies
+            )
+
+            # Static file serving for dashboard
+            static_dir = Path(__file__).parent.parent / "api" / "static"
+            if static_dir.exists():
+                app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+                logger.info(f"Serving static files from: {static_dir}")
+
+                @app.get("/dashboard", include_in_schema=False)
+                async def dashboard() -> FileResponse:
+                    """Serve the API dashboard."""
+                    dashboard_file = static_dir / "index.html"
+                    if dashboard_file.exists():
+                        return FileResponse(dashboard_file)
+                    raise HTTPException(status_code=404, detail="Dashboard not found")
+
+                logger.info("Dashboard available at: /dashboard")
+            else:
+                logger.warning(f"Static files directory not found at {static_dir}, dashboard unavailable")
+
+            # Root endpoint
+            @app.get("/", include_in_schema=False)
+            async def root() -> dict[str, str]:
+                """Root endpoint with links to docs and dashboard."""
+                response = {
+                    "message": "HA Boss API",
+                    "docs": "/docs",
+                    "redoc": "/redoc",
+                    "openapi": "/openapi.json",
+                }
+
+                # Include dashboard link if static files exist
+                if static_dir.exists():
+                    response["dashboard"] = "/dashboard"
+
+                return response
 
             # Create uvicorn config
             config = uvicorn.Config(
@@ -317,6 +412,8 @@ class HABossService:
             logger.info(f"✓ API server running on http://{api_addr}")
             logger.info(f"  Health check: http://{api_addr}/api/health")
             logger.info(f"  API docs: http://{api_addr}/docs")
+            if static_dir.exists():
+                logger.info(f"  Dashboard: http://{api_addr}/dashboard")
             await server.serve()
 
         except ImportError as e:
@@ -354,17 +451,13 @@ class HABossService:
         """Handle state_changed events from WebSocket.
 
         Args:
-            event: WebSocket state_changed event
+            event: WebSocket state_changed event data containing entity_id, new_state, old_state
         """
         try:
-            # Extract state data
-            new_state = event.get("data", {}).get("new_state")
-            if not new_state:
-                return
-
-            # Update state tracker
+            # Update state tracker with full event data
+            # event structure: {entity_id: "...", new_state: {...}, old_state: {...}}
             if self.state_tracker:
-                await self.state_tracker.update_state(new_state)
+                await self.state_tracker.update_state(event)
 
         except Exception as e:
             logger.error(f"Error handling WebSocket state change: {e}", exc_info=True)

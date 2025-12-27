@@ -23,6 +23,8 @@ Complete reference guide for the HA Boss command-line interface (CLI).
 - [Automation Commands](#automation-commands)
   - [automation analyze](#automation-analyze)
   - [automation generate](#automation-generate)
+- [Testing Commands](#testing-commands)
+  - [uat](#uat)
 - [Common Workflows](#common-workflows)
 - [Error Handling](#error-handling)
 
@@ -979,6 +981,141 @@ View in Home Assistant: Configuration → Automations → Motion Activated Eveni
 # Complex multi-action
 "When front door unlocks and it's after sunset, turn on entry lights, unlock inner door, and announce 'Welcome home' on speakers"
 ```
+
+---
+
+## Testing Commands
+
+### uat
+
+Run User Acceptance Testing (UAT) to validate CLI and API against documentation.
+
+**Description:**
+
+Executes comprehensive automated tests that validate HA Boss functionality against the official documentation. The UAT agent parses README, SETUP_GUIDE, and CLI source code to generate and execute test cases for CLI commands and API endpoints. Failed tests automatically create GitHub issues for tracking.
+
+**Capabilities:**
+- Automatically generates test cases from documentation
+- Tests CLI commands for expected behavior
+- Validates API endpoints against OpenAPI spec
+- Creates GitHub issues for all failures
+- Generates comprehensive test reports (console + JSON)
+- Safe execution (only runs non-destructive tests)
+
+**Syntax:**
+```bash
+haboss uat [OPTIONS]
+```
+
+**Options:**
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--cli-only` | | `false` | Test CLI commands only |
+| `--api-only` | | `false` | Test API endpoints only |
+| `--full` | | `true` | Run complete test suite (CLI + API) |
+| `--dry-run` | | `false` | Generate test plan without execution |
+
+**Examples:**
+```bash
+# Run full test suite (CLI + API)
+haboss uat
+
+# Test CLI commands only
+haboss uat --cli-only
+
+# Test API endpoints only
+haboss uat --api-only
+
+# Preview test plan without executing
+haboss uat --dry-run
+
+# Dry run for API tests only
+haboss uat --api-only --dry-run
+```
+
+**Output Example:**
+```
+User Acceptance Testing
+Validating CLI and API against documentation
+
+Generating test cases from documentation...
+✓ Parsed README.md - found 5 CLI examples
+✓ Parsed SETUP_GUIDE.md - found 8 setup steps
+✓ Parsed CLI source - found 12 commands
+
+Test Plan: 25 test cases
+- CLI: 15 tests
+- API: 10 tests
+
+Executing tests...
+
+CLI Tests (15/15)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100%
+
+API Tests (10/10)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100%
+
+Results Summary
+┌──────────────┬───────┐
+│ Total Tests  │   25  │
+│ Passed       │   23  │
+│ Failed       │    2  │
+│ Skipped      │    0  │
+│ Pass Rate    │ 92.0% │
+└──────────────┴───────┘
+
+Failed Tests (2):
+• test_cli_heal_invalid_entity - Heal command error handling
+  Issue #142 created: https://github.com/user/repo/issues/142
+
+• test_api_automation_generate_no_claude - API returns 503 when Claude unavailable
+  Issue #143 created: https://github.com/user/repo/issues/143
+
+✓ Test report saved: UAT_TEST_REPORT.md
+✓ GitHub issues created for all failures
+```
+
+**Test Report:**
+
+UAT generates a detailed markdown report (`UAT_TEST_REPORT.md`) containing:
+- Summary statistics and pass rates
+- Detailed failure analysis with stack traces
+- GitHub issue links for all failures
+- Recommendations for fixes
+- Full test execution log
+
+**GitHub Integration:**
+
+Failed tests automatically create GitHub issues with:
+- Descriptive title (e.g., "UAT Failure: test_cli_status")
+- Full error message and stack trace
+- Test case details and expected behavior
+- Labels: `automated`, `ci-failure`, `claude-task`
+- Assignment to appropriate milestone
+
+**Best Practices:**
+
+- Run UAT before major releases to catch regressions
+- Use `--dry-run` to preview test coverage without execution
+- Use `--cli-only` for quick validation during CLI development
+- Use `--api-only` for quick validation during API development
+- Review generated issues and fix high-priority failures first
+- Re-run UAT after fixes to verify resolution
+
+**Requirements:**
+
+- HA Boss installed and configured
+- API server running (for API tests)
+- GitHub PAT with `repo` scope (for issue creation)
+- Network access to Home Assistant instance
+
+**Notes:**
+
+- Only executes safe, non-destructive tests
+- Skips tests that would modify HA configuration
+- Requires API server to be running for API tests
+- Test execution time varies (typically 2-5 minutes)
+- GitHub rate limits apply to issue creation
 
 ---
 

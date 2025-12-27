@@ -354,10 +354,17 @@ class Dashboard {
 
       // Update health check
       document.getElementById('healthStatus').innerHTML = Components.statusBadge(health.status, health.status.toUpperCase());
-      document.getElementById('healthService').innerHTML = Components.booleanIndicator(health.service_running);
-      document.getElementById('healthHA').innerHTML = Components.booleanIndicator(health.ha_connected);
-      document.getElementById('healthWS').innerHTML = Components.booleanIndicator(health.websocket_connected);
-      document.getElementById('healthDB').innerHTML = Components.booleanIndicator(health.database_accessible);
+
+      // Extract health status from nested structure
+      const serviceRunning = health.critical?.service_state?.status === 'healthy';
+      const haConnected = health.critical?.ha_rest_connection?.status === 'healthy';
+      const websocketConnected = health.essential?.websocket_connected?.status === 'healthy';
+      const databaseAccessible = health.critical?.database_accessible?.status === 'healthy';
+
+      document.getElementById('healthService').innerHTML = Components.booleanIndicator(serviceRunning);
+      document.getElementById('healthHA').innerHTML = Components.booleanIndicator(haConnected);
+      document.getElementById('healthWS').innerHTML = Components.booleanIndicator(websocketConnected);
+      document.getElementById('healthDB').innerHTML = Components.booleanIndicator(databaseAccessible);
 
       // Initialize or update status chart
       if (!this.charts.charts.statusChart) {

@@ -1,12 +1,12 @@
 ---
 description: Run User Acceptance Testing - validates CLI and API against documentation
-allowed-tools: [Bash(python*), Bash(pytest*), Read, Glob, Grep]
+allowed-tools: [Bash(.venv/bin/python*), Bash(pytest*), Read, Glob, Grep]
 argument-hint: "[--cli-only | --api-only | --full] [--dry-run]"
 ---
 
 Run User Acceptance Testing (UAT) for HA Boss:
 
-!`python -m ha_boss.testing.uat_agent $ARGUMENTS`
+!`.venv/bin/python -m ha_boss.testing.uat_agent $ARGUMENTS`
 
 The UAT agent will:
 1. Parse project documentation (README, SETUP_GUIDE, CLI source code)

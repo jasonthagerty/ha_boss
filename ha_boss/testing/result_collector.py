@@ -62,7 +62,9 @@ class ResultCollector:
             recommendations=recommendations,
         )
 
-    def _generate_summary(self, results: ExecutionResults, issues_created: list[str]) -> dict:
+    def _generate_summary(
+        self, results: ExecutionResults, issues_created: list[str]
+    ) -> dict[str, str | int]:
         """Generate summary statistics.
 
         Args:
@@ -246,7 +248,7 @@ class ResultCollector:
 
         logger.info(f"Report saved to {output_path}")
 
-    def _serialize_result(self, result: TestResult) -> dict:
+    def _serialize_result(self, result: TestResult) -> dict[str, str | int | None]:
         """Serialize test result to dictionary.
 
         Args:

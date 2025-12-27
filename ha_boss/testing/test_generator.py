@@ -61,10 +61,12 @@ class TestGenerator:
             test_cases.extend(api_tests)
             logger.info(f"Generated {len(api_tests)} API test cases")
 
+        from typing import cast
+
         return TestPlan(
             generated_at=datetime.now(),
             scope=scope,
-            test_cases=test_cases,
+            test_cases=cast(list, test_cases),
             total_count=len(test_cases),
         )
 
@@ -194,10 +196,10 @@ class TestGenerator:
         if isinstance(decorator, ast.Call):
             for keyword in decorator.keywords:
                 if keyword.arg == "name" and isinstance(keyword.value, ast.Constant):
-                    cmd_name = keyword.value.value
+                    cmd_name = str(keyword.value.value)
 
         # Determine if command requires arguments
-        required_args = any(
+        required_args: bool = any(
             arg.arg not in ("self", "config_dir", "data_dir", "force", "foreground")
             and not any(isinstance(d, ast.Name) and d.id == "Option" for d in [])
             for arg in func_node.args.args
@@ -270,7 +272,7 @@ class TestGenerator:
         Returns:
             List of route definitions
         """
-        routes = []
+        routes: list[dict[str, Any]] = []
         api_dir = self.project_root / "ha_boss" / "api"
 
         if not api_dir.exists():

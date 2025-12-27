@@ -268,13 +268,19 @@ class WebSocketClient:
         Returns:
             True if connected, False otherwise
         """
+        # Check if client is running (most reliable indicator)
+        if not self._running:
+            return False
+
+        # Check if websocket object exists
         if self._ws is None:
             return False
-        # Check if websocket is open (different versions use different attributes)
+
+        # websockets library uses .closed attribute (True if connection is closed)
         try:
-            return hasattr(self._ws, "open") and self._ws.open
+            return not self._ws.closed
         except AttributeError:
-            # Fallback: assume connected if _ws exists and no exception
+            # Fallback: if _running is True and _ws exists, assume connected
             return True
 
 

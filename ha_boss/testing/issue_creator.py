@@ -64,7 +64,7 @@ class IssueCreator:
             for result, url in zip(batch, issue_urls, strict=True):
                 if isinstance(url, Exception):
                     logger.error(f"Failed to create issue for {result.test.name}: {url}")
-                elif url:
+                elif isinstance(url, str):
                     logger.info(f"Created issue: {url}")
                     all_issue_urls.append(url)
                 else:
@@ -98,7 +98,7 @@ class IssueCreator:
             logger.error(f"Failed to create issue: {e}")
             return None
 
-    def _generate_issue_data(self, result: TestResult) -> dict:
+    def _generate_issue_data(self, result: TestResult) -> dict[str, str | list[str]]:
         """Generate structured issue data from test result.
 
         Args:
@@ -330,7 +330,7 @@ This issue was automatically created by the UAT agent. The test was generated fr
 
         return sanitized
 
-    def _describe_expected_behavior(self, test) -> str:
+    def _describe_expected_behavior(self, test: CLITestCase | APITestCase) -> str:
         """Describe expected behavior for test.
 
         Args:
