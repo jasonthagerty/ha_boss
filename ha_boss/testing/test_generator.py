@@ -207,21 +207,21 @@ class TestGenerator:
 
         # Map command names to their properties
         command_properties = {
-            "init": {"destructive": True, "expected_keywords": ["Initialization"]},
-            "start": {"destructive": True, "expected_keywords": ["Starting", "service"]},
-            "stop": {"destructive": True, "expected_keywords": ["Stopping"]},
-            "status": {"destructive": False, "expected_keywords": ["Status"]},
-            "config": {"destructive": False, "expected_keywords": []},
-            "heal": {"destructive": True, "expected_keywords": ["Healing"]},
-            "patterns": {"destructive": False, "expected_keywords": []},
-            "automation": {"destructive": False, "expected_keywords": []},
+            "init": {"destructive": True, "requires_args": False, "expected_keywords": ["Initialization"]},
+            "start": {"destructive": True, "requires_args": False, "expected_keywords": ["Starting", "service"]},
+            "stop": {"destructive": True, "requires_args": False, "expected_keywords": ["Stopping"]},
+            "status": {"destructive": False, "requires_args": False, "expected_keywords": ["Status"]},
+            "config": {"destructive": False, "requires_args": False, "expected_keywords": []},
+            "heal": {"destructive": True, "requires_args": True, "expected_keywords": ["Healing"]},
+            "patterns": {"destructive": False, "requires_args": False, "expected_keywords": []},
+            "automation": {"destructive": False, "requires_args": False, "expected_keywords": []},
         }
 
         props = command_properties.get(cmd_name, {})
 
         return {
             "name": cmd_name,
-            "requires_args": required_args,
+            "requires_args": props.get("requires_args", required_args),
             "destructive": props.get("destructive", False),
             "expected_keywords": props.get("expected_keywords", []),
         }
@@ -238,8 +238,21 @@ class TestGenerator:
         api_routes = await self._parse_api_routes()
 
         for route in api_routes:
+            # Skip endpoints with path parameters (require live data)
+            if "{" in route["path"]:
+                test_case = APITestCase(
+                    name=f"test_api{route['path'].replace('/', '_').replace('{', '').replace('}', '').replace(':', '')}",
+                    description=f"Test {route['method']} {route['path']} endpoint",
+                    method=route["method"],
+                    path=route["path"],
+                    expected_status=200,
+                    destructive=False,
+                )
+                test_case.status = TestStatus.SKIPPED
+                test_case.skip_reason = "Requires path parameters - needs live entity data"
+                test_cases.append(test_case)
             # Only generate tests for GET endpoints (non-destructive)
-            if route["method"] == "GET":
+            elif route["method"] == "GET":
                 test_cases.append(
                     APITestCase(
                         name=f"test_api{route['path'].replace('/', '_')}",
@@ -297,6 +310,10 @@ class TestGenerator:
 
             for match in route_patterns:
                 method, path = match.groups()
+                # All API routes are under /api prefix (see app.py)
+                # Add prefix if not already present
+                if not path.startswith("/api"):
+                    path = f"/api{path}"
                 routes.append(
                     {
                         "method": method.upper(),

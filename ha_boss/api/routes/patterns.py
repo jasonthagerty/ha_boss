@@ -63,45 +63,9 @@ async def get_reliability_stats() -> list[IntegrationReliabilityResponse]:
             return reliability_list
 
         # Fallback: query database directly if analyzer not available
-        async with service.database.async_session() as session:
-            from sqlalchemy import func, select
-
-            from ha_boss.core.database import HealthEvent, Integration
-
-            stmt = (
-                select(  # type: ignore[attr-defined]
-                    Integration.name,  # type: ignore[attr-defined]
-                    func.count(HealthEvent.id).label("failure_count"),  # type: ignore[attr-defined]
-                    func.max(HealthEvent.detected_at).label("last_failure"),  # type: ignore[attr-defined]
-                )
-                .join(  # type: ignore[attr-defined]
-                    HealthEvent,
-                    HealthEvent.integration_id == Integration.id,  # type: ignore[attr-defined]
-                    isouter=True,
-                )
-                .group_by(Integration.name)  # type: ignore[attr-defined]
-            )
-
-            result = await session.execute(stmt)
-            rows = result.all()
-
-        # Convert to response models
-        reliability_list = []
-        for row in rows:
-            # Calculate basic stats
-            reliability_list.append(
-                IntegrationReliabilityResponse(
-                    integration=row.name,
-                    total_entities=0,  # Not available in basic query
-                    unavailable_count=0,
-                    failure_count=row.failure_count or 0,
-                    success_count=0,
-                    reliability_percent=0.0,
-                    last_failure=row.last_failure,
-                )
-            )
-
-        return reliability_list
+        # Note: HealthEvent doesn't have integration_id in current schema
+        # Return empty list until data model is updated
+        return []
 
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
@@ -149,38 +113,33 @@ async def get_failure_events(
         async with service.database.async_session() as session:
             from sqlalchemy import select
 
-            from ha_boss.core.database import HealthEvent, Integration
+            from ha_boss.core.database import HealthEvent
 
             stmt = (
-                select(HealthEvent, Integration.name)  # type: ignore[attr-defined]
-                .join(  # type: ignore[attr-defined]
-                    Integration,
-                    HealthEvent.integration_id == Integration.id,  # type: ignore[attr-defined]
-                    isouter=True,
-                )
+                select(HealthEvent)  # type: ignore[attr-defined]
                 .where(  # type: ignore[attr-defined]
-                    HealthEvent.detected_at >= start_time,  # type: ignore[attr-defined]
-                    HealthEvent.detected_at <= end_time,  # type: ignore[attr-defined]
+                    HealthEvent.timestamp >= start_time,  # type: ignore[attr-defined]
+                    HealthEvent.timestamp <= end_time,  # type: ignore[attr-defined]
                 )
-                .order_by(HealthEvent.detected_at.desc())  # type: ignore[attr-defined]
+                .order_by(HealthEvent.timestamp.desc())  # type: ignore[attr-defined]
                 .limit(limit)
             )
 
             result = await session.execute(stmt)
-            rows = result.all()
+            events = result.scalars().all()
 
         # Convert to response models
         failures = []
-        for event, integration_name in rows:
+        for event in events:
             failures.append(
                 FailureEventResponse(
                     id=event.id,
                     entity_id=event.entity_id,
-                    integration=integration_name,
-                    state=event.state,
-                    timestamp=event.detected_at,
-                    resolved=event.resolved_at is not None,
-                    resolution_time=event.resolved_at,
+                    integration="unknown",  # Not available in current schema
+                    state=event.event_type,  # Use event_type as state
+                    timestamp=event.timestamp,
+                    resolved=False,  # Not tracked in current schema
+                    resolution_time=None,
                 )
             )
 
@@ -235,16 +194,18 @@ async def get_weekly_summary(
 
             # Total failures
             failure_stmt = select(func.count(HealthEvent.id)).where(  # type: ignore[attr-defined]
-                HealthEvent.detected_at >= start_date,  # type: ignore[attr-defined]
-                HealthEvent.detected_at <= end_date,  # type: ignore[attr-defined]
+                HealthEvent.timestamp >= start_date,  # type: ignore[attr-defined]
+                HealthEvent.timestamp <= end_date,  # type: ignore[attr-defined]
             )
             failure_result = await session.execute(failure_stmt)
             total_failures = failure_result.scalar() or 0
 
             # Healing stats
+            from sqlalchemy import Integer, cast
+
             healing_stmt = select(  # type: ignore[attr-defined]
                 func.count(HealingAction.id).label("total_healings"),  # type: ignore[attr-defined]
-                func.sum(func.cast(HealingAction.success, func.Integer)).label(  # type: ignore[attr-defined, arg-type]
+                func.sum(cast(HealingAction.success, Integer)).label(  # type: ignore[attr-defined, arg-type]
                     "successful_healings"
                 ),
             ).where(  # type: ignore[attr-defined]
@@ -261,22 +222,9 @@ async def get_weekly_summary(
             )
 
             # Top failing integrations
-            top_failing_stmt = (
-                select(Integration.name, func.count(HealthEvent.id).label("count"))  # type: ignore[attr-defined]
-                .join(  # type: ignore[attr-defined]
-                    HealthEvent,
-                    HealthEvent.integration_id == Integration.id,  # type: ignore[attr-defined]
-                )
-                .where(  # type: ignore[attr-defined]
-                    HealthEvent.detected_at >= start_date,  # type: ignore[attr-defined]
-                    HealthEvent.detected_at <= end_date,  # type: ignore[attr-defined]
-                )
-                .group_by(Integration.name)  # type: ignore[attr-defined]
-                .order_by(func.count(HealthEvent.id).desc())  # type: ignore[attr-defined]
-                .limit(5)
-            )
-            top_failing_result = await session.execute(top_failing_stmt)
-            top_failing_integrations = [row.name for row in top_failing_result]
+            # Note: HealthEvent doesn't have integration_id in current schema
+            # Return empty list until data model is updated
+            top_failing_integrations: list[str] = []
 
         # Generate AI insights if requested
         ai_insights = None

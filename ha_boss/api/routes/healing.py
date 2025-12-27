@@ -135,12 +135,12 @@ async def get_healing_history(
 
             from ha_boss.core.database import HealingAction, Integration
 
-            # Get healing actions with integration names
+            # Get healing actions with integration domains
             stmt = (
-                select(HealingAction, Integration.name)  # type: ignore[attr-defined]
+                select(HealingAction, Integration.domain)  # type: ignore[attr-defined]
                 .join(  # type: ignore[attr-defined]
                     Integration,
-                    HealingAction.integration_id == Integration.id,  # type: ignore[attr-defined]
+                    HealingAction.integration_id == Integration.entry_id,  # type: ignore[attr-defined]
                     isouter=True,
                 )
                 .where(  # type: ignore[attr-defined]
@@ -155,9 +155,11 @@ async def get_healing_history(
             rows = result.all()
 
             # Get summary statistics
+            from sqlalchemy import Integer, cast
+
             stats_stmt = select(  # type: ignore[attr-defined]
                 func.count(HealingAction.id).label("total"),  # type: ignore[attr-defined]
-                func.sum(func.cast(HealingAction.success, func.Integer)).label("success"),  # type: ignore[attr-defined, arg-type]
+                func.sum(cast(HealingAction.success, Integer)).label("success"),  # type: ignore[attr-defined, arg-type]
             ).where(  # type: ignore[attr-defined]
                 HealingAction.timestamp >= start_time,  # type: ignore[attr-defined]
                 HealingAction.timestamp <= end_time,  # type: ignore[attr-defined]
@@ -168,15 +170,15 @@ async def get_healing_history(
 
         # Convert to response models
         actions = []
-        for action, integration_name in rows:
+        for action, integration_domain in rows:
             actions.append(
                 HealingActionResponse(
                     entity_id=action.entity_id,
-                    integration=integration_name,
-                    action_type=action.action_type,
+                    integration=integration_domain or "unknown",
+                    action_type=action.action,  # Use 'action' attribute
                     success=action.success,
                     timestamp=action.timestamp,
-                    message=action.error_message if not action.success else "Success",
+                    message=action.error if not action.success else "Success",  # Use 'error' attribute
                 )
             )
 
