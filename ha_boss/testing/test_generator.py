@@ -207,10 +207,26 @@ class TestGenerator:
 
         # Map command names to their properties
         command_properties = {
-            "init": {"destructive": True, "requires_args": False, "expected_keywords": ["Initialization"]},
-            "start": {"destructive": True, "requires_args": False, "expected_keywords": ["Starting", "service"]},
-            "stop": {"destructive": True, "requires_args": False, "expected_keywords": ["Stopping"]},
-            "status": {"destructive": False, "requires_args": False, "expected_keywords": ["Status"]},
+            "init": {
+                "destructive": True,
+                "requires_args": False,
+                "expected_keywords": ["Initialization"],
+            },
+            "start": {
+                "destructive": True,
+                "requires_args": False,
+                "expected_keywords": ["Starting", "service"],
+            },
+            "stop": {
+                "destructive": True,
+                "requires_args": False,
+                "expected_keywords": ["Stopping"],
+            },
+            "status": {
+                "destructive": False,
+                "requires_args": False,
+                "expected_keywords": ["Status"],
+            },
             "config": {"destructive": False, "requires_args": False, "expected_keywords": []},
             "heal": {"destructive": True, "requires_args": True, "expected_keywords": ["Healing"]},
             "patterns": {"destructive": False, "requires_args": False, "expected_keywords": []},

@@ -190,7 +190,7 @@ async def get_weekly_summary(
         async with service.database.async_session() as session:
             from sqlalchemy import func, select
 
-            from ha_boss.core.database import HealingAction, HealthEvent, Integration
+            from ha_boss.core.database import HealingAction, HealthEvent
 
             # Total failures
             failure_stmt = select(func.count(HealthEvent.id)).where(  # type: ignore[attr-defined]

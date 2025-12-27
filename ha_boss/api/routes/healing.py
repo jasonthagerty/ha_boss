@@ -178,7 +178,9 @@ async def get_healing_history(
                     action_type=action.action,  # Use 'action' attribute
                     success=action.success,
                     timestamp=action.timestamp,
-                    message=action.error if not action.success else "Success",  # Use 'error' attribute
+                    message=(
+                        action.error if not action.success else "Success"
+                    ),  # Use 'error' attribute
                 )
             )
 
