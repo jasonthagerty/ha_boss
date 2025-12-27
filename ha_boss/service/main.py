@@ -269,8 +269,9 @@ class HABossService:
     async def _run_api_server(self) -> None:
         """Run the uvicorn API server."""
         try:
-            import uvicorn
             from pathlib import Path
+
+            import uvicorn
             from fastapi import FastAPI, HTTPException
             from fastapi.middleware.cors import CORSMiddleware
             from fastapi.responses import FileResponse
@@ -330,6 +331,7 @@ Access the web dashboard at `/dashboard` for a visual interface.
             dependencies = []
             if self.config.api.auth_enabled:
                 from fastapi import Depends
+
                 from ha_boss.api.dependencies import verify_api_key
 
                 dependencies = [Depends(verify_api_key)]
@@ -376,7 +378,9 @@ Access the web dashboard at `/dashboard` for a visual interface.
 
                 logger.info("Dashboard available at: /dashboard")
             else:
-                logger.warning(f"Static files directory not found at {static_dir}, dashboard unavailable")
+                logger.warning(
+                    f"Static files directory not found at {static_dir}, dashboard unavailable"
+                )
 
             # Root endpoint
             @app.get("/", include_in_schema=False)

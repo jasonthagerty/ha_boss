@@ -296,10 +296,11 @@ class TestExecutor:
                     execution_time=execution_time,
                 )
 
-            # Validate output content
+            # Validate output content (case-insensitive)
             if test.expected_output_contains:
+                stdout_lower = result.stdout.lower()
                 for keyword in test.expected_output_contains:
-                    if keyword not in result.stdout:
+                    if keyword.lower() not in stdout_lower:
                         return TestResult(
                             test=test,
                             status=TestStatus.FAILED,

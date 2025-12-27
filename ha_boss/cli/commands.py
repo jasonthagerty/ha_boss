@@ -15,13 +15,6 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from ha_boss.core.config import Config, load_config
-from ha_boss.core.logging_config import setup_logging
-
-# Load environment variables from .env file
-load_dotenv()
-
-if TYPE_CHECKING:
-    from ha_boss.automation.analyzer import AnalysisResult
 from ha_boss.core.database import Database
 from ha_boss.core.exceptions import (
     ConfigurationError,
@@ -29,7 +22,14 @@ from ha_boss.core.exceptions import (
     HomeAssistantConnectionError,
 )
 from ha_boss.core.ha_client import create_ha_client
+from ha_boss.core.logging_config import setup_logging
 from ha_boss.service import HABossService
+
+if TYPE_CHECKING:
+    from ha_boss.automation.analyzer import AnalysisResult
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Create Typer app
 app = typer.Typer(
@@ -40,6 +40,28 @@ app = typer.Typer(
 
 # Create Rich console for output
 console = Console()
+
+
+def version_callback(value: bool) -> None:
+    """Print version and exit."""
+    if value:
+        console.print("HA Boss version 0.1.0")
+        raise typer.Exit()
+
+
+@app.callback()
+def common_options(
+    version: bool = typer.Option(
+        None,
+        "--version",
+        "-v",
+        help="Show version and exit",
+        callback=version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """HA Boss CLI."""
+    pass
 
 
 def handle_error(error: Exception, exit_code: int = 1) -> None:
