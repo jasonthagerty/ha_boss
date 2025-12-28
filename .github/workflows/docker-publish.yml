@@ -1,28 +1,18 @@
 name: Docker Build and Publish
 
 on:
-  push:
+  # Only run after CI and Security Scan pass on main branch
+  workflow_run:
+    workflows: ["CI", "Security Scan"]
+    types:
+      - completed
     branches:
       - main
+  # Run on version tags regardless of other checks
+  push:
     tags:
       - 'v*.*.*'
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.github/**'
-      - '!.github/workflows/docker-publish.yml'
-      - 'LICENSE'
-      - '.gitignore'
-  pull_request:
-    branches:
-      - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.github/**'
-      - '!.github/workflows/docker-publish.yml'
-      - 'LICENSE'
-      - '.gitignore'
+  # Allow manual triggering
   workflow_dispatch:
 
 env:
@@ -32,6 +22,8 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # Only run if triggered by successful workflow runs, manual dispatch, or tags
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
       packages: write
@@ -56,7 +48,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -91,14 +82,13 @@ jobs:
           # Note: armv7 removed due to uvloop compilation issues on 32-bit ARM
           # amd64: x86_64 (Intel/AMD), arm64: aarch64 (RPi 4/5 64-bit, RPi 3/4 in 64-bit mode)
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
 
       - name: Generate artifact attestation for ${{ matrix.component }}
-        if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@v1
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.component }}
