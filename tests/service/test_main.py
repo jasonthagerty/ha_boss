@@ -76,6 +76,7 @@ class TestHABossServiceStart:
             patch("ha_boss.service.main.Database") as mock_db_class,
             patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
             patch("ha_boss.service.main.IntegrationDiscovery") as mock_integration_discovery,
+            patch("ha_boss.discovery.entity_discovery.EntityDiscoveryService") as mock_entity_discovery,
             patch("ha_boss.service.main.StateTracker") as mock_state_tracker,
             patch("ha_boss.service.main.HealthMonitor") as mock_health_monitor,
             patch("ha_boss.service.main.HealingManager"),
@@ -103,6 +104,23 @@ class TestHABossServiceStart:
             mock_discovery = AsyncMock()
             mock_discovery.discover_all = AsyncMock(return_value={})
             mock_integration_discovery.return_value = mock_discovery
+
+            # Entity discovery mock that calls get_states during refresh
+            async def mock_discover_and_refresh(trigger_type, trigger_source):
+                # Simulate EntityDiscoveryService calling get_states
+                await mock_client.get_states()
+                return {
+                    "automations_found": 0,
+                    "scenes_found": 0,
+                    "scripts_found": 0,
+                    "entities_discovered": 0,
+                }
+
+            mock_entity_disc = AsyncMock()
+            mock_entity_disc.discover_and_refresh = mock_discover_and_refresh
+            mock_entity_disc._monitored_set = set()
+            mock_entity_disc._auto_discovered_entities = set()
+            mock_entity_discovery.return_value = mock_entity_disc
 
             mock_tracker = AsyncMock()
             mock_tracker.initialize = AsyncMock()
@@ -133,8 +151,8 @@ class TestHABossServiceStart:
 
             # Verify initializations were called
             mock_db.init_db.assert_called_once()
-            # get_states is called twice: once to test connection, once to get initial snapshot
-            assert mock_client.get_states.call_count == 2
+            # get_states is called 3 times: connection test, initial snapshot, entity discovery
+            assert mock_client.get_states.call_count == 3
             mock_tracker.initialize.assert_called_once()
             mock_monitor.start.assert_called_once()
             mock_ws.connect.assert_called_once()
