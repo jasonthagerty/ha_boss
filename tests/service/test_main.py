@@ -76,7 +76,9 @@ class TestHABossServiceStart:
             patch("ha_boss.service.main.Database") as mock_db_class,
             patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
             patch("ha_boss.service.main.IntegrationDiscovery") as mock_integration_discovery,
-            patch("ha_boss.discovery.entity_discovery.EntityDiscoveryService") as mock_entity_discovery,
+            patch(
+                "ha_boss.discovery.entity_discovery.EntityDiscoveryService"
+            ) as mock_entity_discovery,
             patch("ha_boss.service.main.StateTracker") as mock_state_tracker,
             patch("ha_boss.service.main.HealthMonitor") as mock_health_monitor,
             patch("ha_boss.service.main.HealingManager"),
