@@ -10,6 +10,7 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 ## ✨ Key Features
 
 - **🔍 Real-time Monitoring** - WebSocket connection for instant state updates
+- **🎯 Auto-Discovery** - Automatically finds entities from automations/scenes/scripts
 - **🔧 Auto-Healing** - Automatically reloads failed integrations with circuit breakers
 - **🛡️ Safety First** - Dry-run mode, graceful degradation, automatic reconnection
 - **📊 Pattern Analysis** - Tracks reliability metrics and failure patterns
@@ -113,8 +114,10 @@ haboss automation generate "Turn on lights when motion detected"
 ## 📚 Documentation
 
 - **[Installation](https://github.com/jasonthagerty/ha_boss/wiki/Installation)** - Setup and configuration
+- **[Auto-Discovery](https://github.com/jasonthagerty/ha_boss/wiki/Auto-Discovery)** - Automatic entity detection
 - **[CLI Reference](https://github.com/jasonthagerty/ha_boss/wiki/CLI-Commands)** - All commands
 - **[Configuration](https://github.com/jasonthagerty/ha_boss/wiki/Configuration)** - Settings explained
+- **[REST API](https://github.com/jasonthagerty/ha_boss/wiki/REST-API)** - API endpoints reference
 - **[Architecture](https://github.com/jasonthagerty/ha_boss/wiki/Architecture)** - Technical design
 - **[AI Features](https://github.com/jasonthagerty/ha_boss/wiki/AI-Features)** - LLM integration
 - **[MCP Server](https://github.com/jasonthagerty/ha_boss/wiki/MCP-Server)** - Model Context Protocol

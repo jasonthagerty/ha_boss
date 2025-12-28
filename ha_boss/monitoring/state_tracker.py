@@ -4,12 +4,16 @@ import asyncio
 import logging
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
 from ha_boss.core.database import Database, Entity, StateHistory
 from ha_boss.core.exceptions import DatabaseError
+
+if TYPE_CHECKING:
+    from ha_boss.discovery.entity_discovery import EntityDiscoveryService
+    from ha_boss.healing.integration_manager import IntegrationDiscovery
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +60,8 @@ class StateTracker:
     def __init__(
         self,
         database: Database,
+        entity_discovery: "EntityDiscoveryService | None" = None,
+        integration_discovery: "IntegrationDiscovery | None" = None,
         on_state_updated: (
             Callable[[EntityState, EntityState | None], Coroutine[Any, Any, None]] | None
         ) = None,
@@ -64,9 +70,13 @@ class StateTracker:
 
         Args:
             database: Database manager for persistence
+            entity_discovery: Optional entity discovery service for filtering
+            integration_discovery: Optional integration discovery for entity→integration mapping
             on_state_updated: Optional callback for state changes (new_state, old_state)
         """
         self.database = database
+        self.entity_discovery = entity_discovery
+        self.integration_discovery = integration_discovery
         self.on_state_updated = on_state_updated
 
         # In-memory cache: entity_id -> EntityState
@@ -82,9 +92,17 @@ class StateTracker:
             initial_states: List of state dicts from Home Assistant
         """
         async with self._lock:
+            filtered_count = 0
             for state_data in initial_states:
                 entity_id = state_data.get("entity_id")
                 if not entity_id:
+                    continue
+
+                # Filter entities based on discovery service
+                if self.entity_discovery and not self.entity_discovery.is_entity_monitored(
+                    entity_id
+                ):
+                    filtered_count += 1
                     continue
 
                 state = state_data.get("state", "")
@@ -114,7 +132,10 @@ class StateTracker:
                 # Persist to database
                 await self._persist_entity(entity_state)
 
-            logger.info(f"Initialized state tracker with {len(self._cache)} entities")
+            logger.info(
+                f"Initialized state tracker with {len(self._cache)} entities "
+                f"({filtered_count} filtered out by discovery)"
+            )
 
     async def update_state(self, state_data: dict[str, Any]) -> None:
         """Update entity state from WebSocket state_changed event.
@@ -127,10 +148,21 @@ class StateTracker:
             logger.warning("Received state_changed event without entity_id")
             return
 
+        # Filter entities based on discovery service
+        if self.entity_discovery and not self.entity_discovery.is_entity_monitored(entity_id):
+            return
+
         new_state_data = state_data.get("new_state")
+        if new_state_data is None:
+            # Entity was explicitly removed from Home Assistant
+            # Only remove if we have this entity in cache
+            if entity_id in self._cache:
+                await self._remove_entity(entity_id)
+            return
+
+        # If new_state_data is an empty dict or incomplete, skip this event
         if not new_state_data:
-            # Entity was removed
-            await self._remove_entity(entity_id)
+            logger.debug(f"Skipping incomplete state event for {entity_id}")
             return
 
         # Extract state information
@@ -250,10 +282,18 @@ class StateTracker:
                     domain = entity_state.entity_id.split(".")[0]
                     friendly_name = entity_state.attributes.get("friendly_name")
 
+                    # Get integration_id from integration discovery
+                    integration_id = None
+                    if self.integration_discovery:
+                        integration_id = self.integration_discovery.get_integration_for_entity(
+                            entity_state.entity_id
+                        )
+
                     entity = Entity(
                         entity_id=entity_state.entity_id,
                         domain=domain,
                         friendly_name=friendly_name,
+                        integration_id=integration_id,
                         last_seen=entity_state.last_updated,
                         last_state=entity_state.state,
                         is_monitored=True,
@@ -302,6 +342,31 @@ class StateTracker:
             if entity_id in self._cache:
                 del self._cache[entity_id]
                 logger.info(f"Entity {entity_id} removed from cache")
+
+    async def refresh_monitored_set(self) -> None:
+        """Refresh monitored entity set after discovery refresh.
+
+        Called after EntityDiscoveryService completes a refresh to remove entities
+        that are no longer in the monitored set.
+        """
+        if not self.entity_discovery:
+            return
+
+        async with self._lock:
+            # Get current monitored set from discovery service
+            monitored = self.entity_discovery.get_monitored_entities()
+
+            # Remove entities no longer in monitored set
+            to_remove = [eid for eid in self._cache if eid not in monitored]
+
+            for entity_id in to_remove:
+                del self._cache[entity_id]
+                logger.debug(f"Removed {entity_id} from cache (no longer monitored)")
+
+            if to_remove:
+                logger.info(
+                    f"Refreshed monitored set: removed {len(to_remove)} entities from cache"
+                )
 
 
 async def create_state_tracker(

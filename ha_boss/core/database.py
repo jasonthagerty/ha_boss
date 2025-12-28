@@ -4,14 +4,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, select
+from sqlalchemy import JSON, Boolean, DateTime, Float, Index, Integer, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from ha_boss.core.exceptions import DatabaseError
 
 # Current database schema version
-CURRENT_DB_VERSION = 1
+CURRENT_DB_VERSION = 2
 
 
 class Base(DeclarativeBase):
@@ -214,6 +214,225 @@ class PatternInsight(Base):
 
     def __repr__(self) -> str:
         return f"<PatternInsight({self.insight_type}, {self.period}, {self.period_start})>"
+
+
+# Auto-Discovery Models (Schema v2)
+
+
+class Automation(Base):
+    """Automation registry from Home Assistant."""
+
+    __tablename__ = "automations"
+
+    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    friendly_name: Mapped[str | None] = mapped_column(String(255))
+    state: Mapped[str] = mapped_column(String(50), nullable=False)  # on/off
+    mode: Mapped[str | None] = mapped_column(String(50))  # single/restart/queued/parallel
+
+    # Raw configuration for reference
+    trigger_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    condition_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    action_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    # Discovery metadata
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+    is_monitored: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Automation({self.entity_id}, state={self.state})>"
+
+
+class Scene(Base):
+    """Scene registry from Home Assistant."""
+
+    __tablename__ = "scenes"
+
+    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    friendly_name: Mapped[str | None] = mapped_column(String(255))
+    entities_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+    is_monitored: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Scene({self.entity_id})>"
+
+
+class Script(Base):
+    """Script registry from Home Assistant."""
+
+    __tablename__ = "scripts"
+
+    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    friendly_name: Mapped[str | None] = mapped_column(String(255))
+    sequence_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    mode: Mapped[str | None] = mapped_column(String(50))
+
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+    is_monitored: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Script({self.entity_id})>"
+
+
+class AutomationEntity(Base):
+    """Junction table: automation → entities with relationship type."""
+
+    __tablename__ = "automation_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    # Relationship context: trigger/condition/action
+    relationship_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    context: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    # Composite indexes for common queries
+    __table_args__ = (
+        Index("ix_automation_entities_automation", "automation_id", "relationship_type"),
+        Index("ix_automation_entities_entity", "entity_id", "relationship_type"),
+        Index(
+            "ix_automation_entities_unique",
+            "automation_id",
+            "entity_id",
+            "relationship_type",
+            unique=True,
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AutomationEntity({self.automation_id} → {self.entity_id}, {self.relationship_type})>"
+        )
+
+
+class SceneEntity(Base):
+    """Junction table: scene → entities."""
+
+    __tablename__ = "scene_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scene_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    target_state: Mapped[str | None] = mapped_column(String(255))
+    attributes: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_scene_entities_scene", "scene_id"),
+        Index("ix_scene_entities_entity", "entity_id"),
+        Index("ix_scene_entities_unique", "scene_id", "entity_id", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<SceneEntity({self.scene_id} → {self.entity_id})>"
+
+
+class ScriptEntity(Base):
+    """Junction table: script → entities."""
+
+    __tablename__ = "script_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    script_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    sequence_step: Mapped[int | None] = mapped_column(Integer)
+    action_type: Mapped[str | None] = mapped_column(String(100))
+    context: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_script_entities_script", "script_id"),
+        Index("ix_script_entities_entity", "entity_id"),
+        Index("ix_script_entities_unique", "script_id", "entity_id", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ScriptEntity({self.script_id} → {self.entity_id})>"
+
+
+class DiscoveryRefresh(Base):
+    """Track discovery refresh operations for audit and debugging."""
+
+    __tablename__ = "discovery_refreshes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trigger_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # startup/manual/periodic/event
+    trigger_source: Mapped[str | None] = mapped_column(String(100))
+
+    automations_found: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    scenes_found: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    scripts_found: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    entities_discovered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    def __repr__(self) -> str:
+        status = "success" if self.success else "failed"
+        return f"<DiscoveryRefresh({self.trigger_type}, {status}, {self.timestamp})>"
 
 
 class Database:

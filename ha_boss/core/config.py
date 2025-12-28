@@ -32,12 +32,60 @@ class HomeAssistantConfig(BaseSettings):
         return v
 
 
+class AutoDiscoveryConfig(BaseSettings):
+    """Auto-discovery configuration for finding entities in automations/scenes/scripts."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable auto-discovery of entities from automations/scenes/scripts",
+    )
+    skip_disabled_automations: bool = Field(
+        default=True,
+        description="Skip disabled automations during discovery",
+    )
+    include_scenes: bool = Field(
+        default=True,
+        description="Include entities from scenes",
+    )
+    include_scripts: bool = Field(
+        default=True,
+        description="Include entities from scripts",
+    )
+    refresh_interval_seconds: int = Field(
+        default=3600,
+        description="Periodic discovery refresh interval (0 = disabled)",
+        ge=0,
+    )
+    refresh_on_automation_reload: bool = Field(
+        default=True,
+        description="Trigger discovery refresh when automations reload",
+    )
+    refresh_on_scene_reload: bool = Field(
+        default=True,
+        description="Trigger discovery refresh when scenes reload",
+    )
+    refresh_on_script_reload: bool = Field(
+        default=True,
+        description="Trigger discovery refresh when scripts reload",
+    )
+
+
+class EntityOverride(BaseModel):
+    """Per-entity configuration override."""
+
+    grace_period_seconds: int | None = Field(
+        None,
+        description="Override grace period for this specific entity",
+        ge=0,
+    )
+
+
 class MonitoringConfig(BaseSettings):
     """Entity monitoring configuration."""
 
     include: list[str] = Field(
         default_factory=list,
-        description="Entity patterns to monitor (empty = all)",
+        description="Entity patterns to ADD to auto-discovered entities",
     )
     exclude: list[str] = Field(
         default_factory=lambda: [
@@ -46,11 +94,11 @@ class MonitoringConfig(BaseSettings):
             "sensor.uptime*",
             "sun.sun",
         ],
-        description="Entity patterns to exclude",
+        description="Entity patterns to exclude from monitoring",
     )
     grace_period_seconds: int = Field(
         default=300,
-        description="Grace period before entity considered unavailable",
+        description="Default grace period before entity considered unavailable",
         ge=0,
     )
     stale_threshold_seconds: int = Field(
@@ -68,6 +116,32 @@ class MonitoringConfig(BaseSettings):
         description="Periodic health check interval",
         ge=10,
     )
+
+    # Auto-discovery configuration
+    auto_discovery: AutoDiscoveryConfig = Field(
+        default_factory=AutoDiscoveryConfig,
+        description="Auto-discovery configuration",
+    )
+
+    # Per-entity overrides
+    entity_overrides: dict[str, EntityOverride] = Field(
+        default_factory=dict,
+        description="Per-entity configuration overrides",
+    )
+
+    def get_entity_grace_period(self, entity_id: str) -> int:
+        """Get grace period for entity, checking overrides first.
+
+        Args:
+            entity_id: Entity to get grace period for
+
+        Returns:
+            Grace period in seconds (override or default)
+        """
+        override = self.entity_overrides.get(entity_id)
+        if override and override.grace_period_seconds is not None:
+            return override.grace_period_seconds
+        return self.grace_period_seconds
 
 
 class HealingConfig(BaseSettings):

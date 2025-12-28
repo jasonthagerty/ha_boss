@@ -241,3 +241,91 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error type")
     detail: str = Field(..., description="Error details")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
+
+
+# ==================== Discovery API Models ====================
+
+
+class DiscoveryRefreshRequest(BaseModel):
+    """Request to trigger manual discovery refresh."""
+
+    trigger_source: str = Field(default="user_action", description="Source of trigger")
+
+
+class DiscoveryRefreshResponse(BaseModel):
+    """Discovery refresh result."""
+
+    success: bool = Field(..., description="Was refresh successful")
+    automations_found: int = Field(..., description="Number of automations discovered")
+    scenes_found: int = Field(..., description="Number of scenes discovered")
+    scripts_found: int = Field(..., description="Number of scripts discovered")
+    entities_discovered: int = Field(..., description="Number of entities discovered")
+    duration_seconds: float = Field(..., description="Refresh duration in seconds")
+    timestamp: datetime = Field(..., description="Refresh timestamp")
+
+
+class DiscoveryStatsResponse(BaseModel):
+    """Discovery statistics."""
+
+    auto_discovery_enabled: bool = Field(..., description="Is auto-discovery enabled")
+    total_automations: int = Field(..., description="Total automations discovered")
+    enabled_automations: int = Field(..., description="Enabled automations")
+    total_scenes: int = Field(..., description="Total scenes discovered")
+    total_scripts: int = Field(..., description="Total scripts discovered")
+    total_entities: int = Field(..., description="Total entities discovered")
+    monitored_entities: int = Field(..., description="Number of monitored entities")
+    last_refresh: datetime | None = Field(None, description="Last refresh timestamp")
+    next_refresh: datetime | None = Field(None, description="Next scheduled refresh")
+    refresh_interval_seconds: int = Field(..., description="Configured refresh interval")
+
+
+class AutomationSummary(BaseModel):
+    """Automation summary (list view)."""
+
+    entity_id: str = Field(..., description="Automation entity ID")
+    friendly_name: str | None = Field(None, description="Automation friendly name")
+    state: str = Field(..., description="Automation state (on/off)")
+    entity_count: int = Field(..., description="Number of entities used")
+    discovered_at: datetime = Field(..., description="Discovery timestamp")
+
+
+class AutomationDetailResponse(BaseModel):
+    """Detailed automation information."""
+
+    entity_id: str = Field(..., description="Automation entity ID")
+    friendly_name: str | None = Field(None, description="Automation friendly name")
+    state: str = Field(..., description="Automation state (on/off)")
+    mode: str | None = Field(None, description="Automation mode")
+    discovered_at: datetime = Field(..., description="Discovery timestamp")
+    last_seen: datetime = Field(..., description="Last seen timestamp")
+    entities: dict[str, list[str]] = Field(
+        ..., description="Entities grouped by relationship type (trigger/condition/action)"
+    )
+    entity_count: int = Field(..., description="Total number of entities")
+
+
+class EntityAutomationUsage(BaseModel):
+    """Entity usage in automation/scene/script."""
+
+    id: str = Field(..., description="Automation/scene/script entity ID")
+    friendly_name: str | None = Field(None, description="Friendly name")
+    type: Literal["automation", "scene", "script"] = Field(..., description="Usage type")
+    relationship_type: str | None = Field(
+        None, description="Relationship type (trigger/condition/action for automations)"
+    )
+
+
+class EntityAutomationsResponse(BaseModel):
+    """Entity usage in automations/scenes/scripts."""
+
+    entity_id: str = Field(..., description="Entity ID")
+    automations: list[EntityAutomationUsage] = Field(
+        default_factory=list, description="Automations using this entity"
+    )
+    scenes: list[EntityAutomationUsage] = Field(
+        default_factory=list, description="Scenes using this entity"
+    )
+    scripts: list[EntityAutomationUsage] = Field(
+        default_factory=list, description="Scripts using this entity"
+    )
+    total_usage: int = Field(..., description="Total number of usages")

@@ -4,9 +4,11 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import select
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import EntityHistoryResponse, EntityStateResponse
+from ha_boss.core.database import Entity
 
 logger = logging.getLogger(__name__)
 
@@ -39,26 +41,47 @@ async def list_entities(
         if not service.state_tracker:
             raise HTTPException(status_code=500, detail="State tracker not initialized") from None
 
-        # Get all entities from state tracker
-        all_states_dict = await service.state_tracker.get_all_states()
-        all_states = list(all_states_dict.values())
-
-        # Apply pagination
-        paginated_states = all_states[offset : offset + limit]
+        # Query database for monitored entities
+        # This is more reliable than state tracker cache which may be empty
+        async with service.database.async_session() as session:
+            result = await session.execute(
+                select(Entity)
+                .where(Entity.is_monitored == True)  # noqa: E712
+                .order_by(Entity.entity_id)
+                .limit(limit)
+                .offset(offset)
+            )
+            db_entities = result.scalars().all()
 
         # Convert to response models
         entities = []
-        for state in paginated_states:
-            entities.append(
-                EntityStateResponse(
-                    entity_id=state.entity_id,
-                    state=state.state,
-                    attributes=state.attributes,
-                    last_changed=None,  # EntityState doesn't track last_changed
-                    last_updated=state.last_updated,
-                    monitored=True,  # All entities in state tracker are monitored
+        for db_entity in db_entities:
+            # Try to get current state from cache first, fall back to database
+            cached_state = await service.state_tracker.get_state(db_entity.entity_id)
+
+            if cached_state:
+                entities.append(
+                    EntityStateResponse(
+                        entity_id=cached_state.entity_id,
+                        state=cached_state.state,
+                        attributes=cached_state.attributes,
+                        last_changed=None,
+                        last_updated=cached_state.last_updated,
+                        monitored=True,
+                    )
                 )
-            )
+            else:
+                # Use database values as fallback
+                entities.append(
+                    EntityStateResponse(
+                        entity_id=db_entity.entity_id,
+                        state=db_entity.last_state or "unknown",
+                        attributes={},
+                        last_changed=None,
+                        last_updated=db_entity.last_seen,
+                        monitored=True,
+                    )
+                )
 
         return entities
 

@@ -23,6 +23,10 @@ services:
       # Data directory (database, logs)
       - ./data:/app/data:rw
 
+    # Port mapping for API/dashboard access
+    ports:
+      - "${API_PORT:-8000}:8000"
+
     # Network configuration
     networks:
       - haboss-network

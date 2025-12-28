@@ -344,6 +344,16 @@ class Dashboard {
       // Update service status
       document.getElementById('serviceState').textContent = status.state;
       document.getElementById('serviceUptime').textContent = Components.formatDuration(status.uptime_seconds);
+
+      // Extract and format discovery timestamp
+      const discoveryTimestamp = health.essential?.entity_discovery_complete?.details?.last_refresh;
+      if (discoveryTimestamp) {
+        // Format to minute granularity in local time: "Dec 28, 2025 7:57 PM"
+        document.getElementById('lastDiscovery').textContent = dayjs(discoveryTimestamp).format('MMM DD, YYYY h:mm A');
+      } else {
+        document.getElementById('lastDiscovery').textContent = 'Never';
+      }
+
       document.getElementById('healthChecks').textContent = status.health_checks_performed;
       document.getElementById('monitoredEntities').textContent = status.monitored_entities;
 
@@ -799,12 +809,25 @@ class Dashboard {
    */
   async refreshStatus() {
     try {
-      const status = await this.api.getStatus();
+      const [status, health] = await Promise.all([
+        this.api.getStatus(),
+        this.api.getHealth()
+      ]);
 
       // Update status display if on overview tab
       if (this.currentTab === 'overview') {
         document.getElementById('serviceState').textContent = status.state;
         document.getElementById('serviceUptime').textContent = Components.formatDuration(status.uptime_seconds);
+
+        // Extract and format discovery timestamp
+        const discoveryTimestamp = health.essential?.entity_discovery_complete?.details?.last_refresh;
+        if (discoveryTimestamp) {
+          // Format to minute granularity in local time: "Dec 28, 2025 7:57 PM"
+          document.getElementById('lastDiscovery').textContent = dayjs(discoveryTimestamp).format('MMM DD, YYYY h:mm A');
+        } else {
+          document.getElementById('lastDiscovery').textContent = 'Never';
+        }
+
         document.getElementById('healthChecks').textContent = status.health_checks_performed;
         document.getElementById('monitoredEntities').textContent = status.monitored_entities;
         document.getElementById('healingsAttempted').textContent = status.healings_attempted;

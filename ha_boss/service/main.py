@@ -61,6 +61,7 @@ class HABossService:
         self.state_tracker: StateTracker | None = None
         self.health_monitor: HealthMonitor | None = None
         self.integration_discovery: IntegrationDiscovery | None = None
+        self.entity_discovery: Any = None  # EntityDiscoveryService
         self.healing_manager: HealingManager | None = None
         self.notification_manager: NotificationManager | None = None
         self.escalation_manager: NotificationEscalator | None = None
@@ -86,12 +87,13 @@ class HABossService:
         2. Home Assistant client connection + test
         3. Notification manager
         4. Integration discovery
-        5. State tracker with REST snapshot
-        6. Health monitor
-        7. Healing manager
-        8. Escalation manager
-        9. WebSocket connection and subscription
-        10. Background monitoring tasks
+        5. Entity discovery (auto-discovery from automations/scenes/scripts)
+        6. State tracker with REST snapshot (filtered by discovery)
+        7. Health monitor
+        8. Healing manager
+        9. Escalation manager
+        10. WebSocket connection and subscription
+        11. Background monitoring tasks (including periodic discovery)
 
         Raises:
             DatabaseError: Database initialization failed
@@ -149,10 +151,40 @@ class HABossService:
             except Exception as e:
                 logger.warning(f"Integration discovery failed, continuing anyway: {e}")
 
-            # 5. Initialize state tracker
+            # 5. Entity discovery from automations/scenes/scripts
+            if self.config.monitoring.auto_discovery.enabled:
+                try:
+                    from ha_boss.discovery.entity_discovery import EntityDiscoveryService
+
+                    logger.info("Initializing entity discovery...")
+                    self.entity_discovery = EntityDiscoveryService(
+                        ha_client=self.ha_client,
+                        database=self.database,
+                        config=self.config,
+                    )
+
+                    # Run initial discovery
+                    stats = await self.entity_discovery.discover_and_refresh(
+                        trigger_type="startup", trigger_source="service_init"
+                    )
+                    logger.info(
+                        f"✓ Entity discovery completed: {stats['automations_found']} automations, "
+                        f"{stats['scenes_found']} scenes, {stats['scripts_found']} scripts, "
+                        f"{stats['entities_discovered']} entities"
+                    )
+                except Exception as e:
+                    logger.warning(f"Entity discovery failed, continuing without it: {e}")
+                    self.entity_discovery = None
+            else:
+                logger.info("Entity auto-discovery disabled in configuration")
+                self.entity_discovery = None
+
+            # 6. Initialize state tracker
             logger.info("Initializing state tracker...")
             self.state_tracker = StateTracker(
                 database=self.database,
+                entity_discovery=self.entity_discovery,
+                integration_discovery=self.integration_discovery,
                 on_state_updated=self._on_state_updated,
             )
 
@@ -209,10 +241,16 @@ class HABossService:
             logger.info("Connecting to Home Assistant WebSocket...")
             self.websocket_client = WebSocketClient(
                 config=self.config,
+                entity_discovery=self.entity_discovery,
                 on_state_changed=self._on_websocket_state_changed,
             )
             await self.websocket_client.connect()
             await self.websocket_client.subscribe_events("state_changed")
+
+            # Subscribe to call_service events for discovery refresh triggers
+            if self.entity_discovery:
+                await self.websocket_client.subscribe_events("call_service")
+
             logger.info("✓ WebSocket connected and subscribed")
 
             # 10. Start background tasks
@@ -254,6 +292,19 @@ class HABossService:
         task = asyncio.create_task(self._periodic_snapshot_validation())
         task.set_name("periodic_snapshot_validation")
         self._tasks.append(task)
+
+        # Periodic entity discovery refresh (if enabled and interval > 0)
+        if (
+            self.entity_discovery
+            and self.config.monitoring.auto_discovery.refresh_interval_seconds > 0
+        ):
+            task = asyncio.create_task(
+                self.entity_discovery.start_periodic_refresh(
+                    self.config.monitoring.auto_discovery.refresh_interval_seconds
+                )
+            )
+            task.set_name("periodic_discovery_refresh")
+            self._tasks.append(task)
 
         logger.info(f"Started {len(self._tasks)} background tasks")
 
@@ -321,6 +372,7 @@ Access the web dashboard at `/dashboard` for a visual interface.
             # Import and mount all routers (use global service instance)
             from ha_boss.api.routes import (
                 automations,
+                discovery,
                 healing,
                 monitoring,
                 patterns,
@@ -356,6 +408,12 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 automations.router,
                 prefix="/api",
                 tags=["Automations"],
+                dependencies=dependencies,
+            )
+            app.include_router(
+                discovery.router,
+                prefix="/api",
+                tags=["Discovery"],
                 dependencies=dependencies,
             )
             app.include_router(
@@ -669,6 +727,13 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 await self.health_monitor.stop()
             except Exception as e:
                 logger.error(f"Error stopping health monitor: {e}")
+
+        # Stop entity discovery periodic refresh
+        if self.entity_discovery:
+            try:
+                await self.entity_discovery.stop_periodic_refresh()
+            except Exception as e:
+                logger.error(f"Error stopping entity discovery: {e}")
 
         # Stop WebSocket
         if self.websocket_client:

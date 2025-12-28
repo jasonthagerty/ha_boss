@@ -63,6 +63,9 @@ Repository = "https://github.com/jasonthagerty/ha_boss"
 where = ["."]
 include = ["ha_boss*"]
 
+[tool.setuptools.package-data]
+ha_boss = ["api/static/**/*"]
+
 [project.scripts]
 haboss = "ha_boss.cli.commands:app"
 

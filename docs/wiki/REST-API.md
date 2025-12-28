@@ -410,6 +410,7 @@ http://localhost:8000/api
 |----------|-----------|-------------|
 | **Status** | 2 endpoints | Service status and health checks |
 | **Monitoring** | 3 endpoints | Entity states and history |
+| **Discovery** | 5 endpoints | Auto-discovery of entities from automations |
 | **Patterns** | 3 endpoints | Reliability and failure analysis |
 | **Automations** | 3 endpoints | AI-powered automation management |
 | **Healing** | 2 endpoints | Manual healing and history |
@@ -836,6 +837,142 @@ Get state history for an entity.
     {"timestamp": "2025-01-20T12:00:00Z", "state": "72.5"}
   ],
   "count": 2
+}
+```
+
+### Discovery
+
+Auto-discovery endpoints for managing entity discovery from automations, scenes, and scripts. See [Auto-Discovery Guide](Auto-Discovery.md) for complete documentation.
+
+#### POST /api/discovery/refresh
+
+Trigger manual discovery refresh.
+
+**Request:**
+```json
+{
+  "trigger_source": "user_action"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "automations_found": 45,
+  "scenes_found": 12,
+  "scripts_found": 8,
+  "entities_discovered": 127,
+  "duration_seconds": 2.3,
+  "timestamp": "2025-01-20T10:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `400` - Auto-discovery disabled
+- `500` - Discovery failed
+
+#### GET /api/discovery/stats
+
+Get current discovery statistics.
+
+**Response:**
+```json
+{
+  "auto_discovery_enabled": true,
+  "total_automations": 45,
+  "enabled_automations": 42,
+  "total_scenes": 12,
+  "total_scripts": 8,
+  "total_entities": 127,
+  "monitored_entities": 115,
+  "last_refresh": "2025-01-20T10:30:00Z",
+  "next_refresh": "2025-01-20T11:30:00Z",
+  "refresh_interval_seconds": 3600
+}
+```
+
+#### GET /api/automations
+
+List all discovered automations with pagination.
+
+**Parameters:**
+- `state` (str, optional) - Filter by state (`on` or `off`)
+- `limit` (int, 1-1000, default: 100) - Max automations to return
+- `offset` (int, ≥0, default: 0) - Pagination offset
+
+**Response:**
+```json
+[
+  {
+    "entity_id": "automation.bedroom_lights",
+    "friendly_name": "Bedroom Motion Lights",
+    "state": "on",
+    "entity_count": 5,
+    "discovered_at": "2025-01-20T10:30:00Z"
+  }
+]
+```
+
+#### GET /api/automations/{automation_id}
+
+Get detailed automation information with entity relationships.
+
+**Response:**
+```json
+{
+  "entity_id": "automation.bedroom_lights",
+  "friendly_name": "Bedroom Motion Lights",
+  "state": "on",
+  "mode": "single",
+  "discovered_at": "2025-01-20T10:30:00Z",
+  "last_seen": "2025-01-20T10:30:00Z",
+  "entities": {
+    "trigger": ["binary_sensor.bedroom_motion"],
+    "condition": ["sun.sun"],
+    "action": ["light.bedroom", "light.bedroom_accent"]
+  },
+  "entity_count": 4
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `404` - Automation not found
+
+#### GET /api/entities/{entity_id}/usage
+
+Reverse lookup: Find all automations/scenes/scripts using a specific entity.
+
+**Response:**
+```json
+{
+  "entity_id": "light.bedroom",
+  "automations": [
+    {
+      "id": "automation.bedroom_lights",
+      "friendly_name": "Bedroom Motion Lights",
+      "type": "automation",
+      "relationship_type": "action"
+    },
+    {
+      "id": "automation.good_night",
+      "friendly_name": "Good Night Routine",
+      "type": "automation",
+      "relationship_type": "action"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene.movie_time",
+      "friendly_name": "Movie Time",
+      "type": "scene",
+      "relationship_type": null
+    }
+  ],
+  "scripts": [],
+  "total_usage": 3
 }
 ```
 

@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import websockets
 from websockets.exceptions import WebSocketException
@@ -14,6 +14,9 @@ from ha_boss.core.exceptions import (
     HomeAssistantAuthError,
     HomeAssistantConnectionError,
 )
+
+if TYPE_CHECKING:
+    from ha_boss.discovery.entity_discovery import EntityDiscoveryService
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +31,22 @@ class WebSocketClient:
     def __init__(
         self,
         config: Config,
+        entity_discovery: "EntityDiscoveryService | None" = None,
         on_state_changed: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         """Initialize WebSocket client.
 
         Args:
             config: HA Boss configuration
+            entity_discovery: Optional entity discovery service for reload event handling
             on_state_changed: Async callback for state_changed events
         """
         # Build WebSocket URL from HTTP URL
         ws_url = config.home_assistant.url.replace("http://", "ws://").replace("https://", "wss://")
         self.ws_url = f"{ws_url}/api/websocket"
         self.token = config.home_assistant.token
+        self.config = config
+        self.entity_discovery = entity_discovery
 
         # Connection settings
         self.max_retries = config.rest.retry_attempts
@@ -149,11 +156,58 @@ class WebSocketClient:
                 except Exception as e:
                     logger.error(f"Error in state_changed callback: {e}", exc_info=True)
 
+            elif event_type == "call_service":
+                # Handle automation/scene/script reload events
+                await self._handle_service_call(event.get("data", {}))
+
         elif msg_type == "pong":
             # Response to ping, ignore
             pass
         else:
             logger.debug(f"Received message type: {msg_type}")
+
+    async def _handle_service_call(self, data: dict[str, Any]) -> None:
+        """Handle service call events for discovery refresh triggers.
+
+        Args:
+            data: Service call event data
+        """
+        if not self.entity_discovery:
+            return
+
+        domain = data.get("domain")
+        service = data.get("service")
+
+        # Check for automation/scene/script reload services
+        if domain == "automation" and service == "reload":
+            if self.config.monitoring.auto_discovery.refresh_on_automation_reload:
+                logger.info("Automation reload detected, triggering discovery refresh")
+                try:
+                    await self.entity_discovery.discover_and_refresh(
+                        trigger_type="event", trigger_source="automation_reload"
+                    )
+                except Exception as e:
+                    logger.error(f"Discovery refresh failed after automation reload: {e}")
+
+        elif domain == "scene" and service == "reload":
+            if self.config.monitoring.auto_discovery.refresh_on_scene_reload:
+                logger.info("Scene reload detected, triggering discovery refresh")
+                try:
+                    await self.entity_discovery.discover_and_refresh(
+                        trigger_type="event", trigger_source="scene_reload"
+                    )
+                except Exception as e:
+                    logger.error(f"Discovery refresh failed after scene reload: {e}")
+
+        elif domain == "script" and service == "reload":
+            if self.config.monitoring.auto_discovery.refresh_on_script_reload:
+                logger.info("Script reload detected, triggering discovery refresh")
+                try:
+                    await self.entity_discovery.discover_and_refresh(
+                        trigger_type="event", trigger_source="script_reload"
+                    )
+                except Exception as e:
+                    logger.error(f"Discovery refresh failed after script reload: {e}")
 
     async def _listen_loop(self) -> None:
         """Main message listening loop."""
@@ -194,7 +248,12 @@ class WebSocketClient:
 
             try:
                 await self.connect()
-                await self.subscribe_events()
+                await self.subscribe_events()  # Subscribe to state_changed
+
+                # Also subscribe to call_service events for discovery refresh triggers
+                if self.entity_discovery:
+                    await self.subscribe_events("call_service")
+
                 logger.info("Reconnection successful")
 
                 # Restart listen loop
@@ -217,7 +276,11 @@ class WebSocketClient:
         self._running = True
 
         await self.connect()
-        await self.subscribe_events()
+        await self.subscribe_events()  # Subscribe to state_changed
+
+        # Also subscribe to call_service events for discovery refresh triggers
+        if self.entity_discovery:
+            await self.subscribe_events("call_service")
 
         # Start listening loop
         asyncio.create_task(self._listen_loop())

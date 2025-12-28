@@ -42,11 +42,25 @@ async def get_status() -> ServiceStatusResponse:
         if service.start_time:
             uptime_seconds = (datetime.now(UTC) - service.start_time).total_seconds()
 
-        # Count monitored entities
+        # Count monitored entities from database (more reliable than cache)
         monitored_count = 0
-        if service.state_tracker:
-            all_states = await service.state_tracker.get_all_states()
-            monitored_count = len(all_states)
+        try:
+            async with service.database.async_session() as session:
+                from sqlalchemy import func, select
+
+                from ha_boss.core.database import Entity
+
+                result = await session.execute(
+                    select(func.count())
+                    .select_from(Entity)
+                    .where(Entity.is_monitored == True)  # noqa: E712
+                )
+                monitored_count = result.scalar() or 0
+        except Exception:
+            # Fallback to cache if database query fails
+            if service.state_tracker:
+                all_states = await service.state_tracker.get_all_states()
+                monitored_count = len(all_states)
 
         return ServiceStatusResponse(
             state=service.state,
@@ -254,24 +268,49 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
         )
 
     # 6. State Tracker Initialized
-    tracker_initialized = (
-        service.state_tracker is not None
-        and hasattr(service.state_tracker, "_cache")
-        and len(service.state_tracker._cache) > 0
-    )
+    cache_size = 0
+    db_monitored_count = 0
+
+    if service.state_tracker is not None and hasattr(service.state_tracker, "_cache"):
+        cache_size = len(service.state_tracker._cache)
+
+        # Also check database for monitored entities (more reliable than cache)
+        try:
+            async with service.database.async_session() as session:
+                from ha_boss.core.database import Entity
+                from sqlalchemy import func, select
+
+                result = await session.execute(
+                    select(func.count())
+                    .select_from(Entity)
+                    .where(Entity.is_monitored == True)  # noqa: E712
+                )
+                db_monitored_count = result.scalar() or 0
+        except Exception:
+            pass  # If query fails, just use cache_size
+
+    # Consider healthy if either cache has entities OR database has monitored entities
+    tracker_initialized = cache_size > 0 or db_monitored_count > 0
 
     if tracker_initialized:
-        cache_size = len(service.state_tracker._cache)
-        components["state_tracker_initialized"] = ComponentHealth(
-            status="healthy",
-            message=f"State tracker initialized with {cache_size} entities",
-            details={"cached_entities": cache_size, "initialized": True},
-        )
+        if cache_size > 0:
+            components["state_tracker_initialized"] = ComponentHealth(
+                status="healthy",
+                message=f"State tracker initialized with {cache_size} entities",
+                details={"cached_entities": cache_size, "db_monitored": db_monitored_count, "initialized": True},
+            )
+        else:
+            # Cache is empty but database has entities (acceptable)
+            components["state_tracker_initialized"] = ComponentHealth(
+                status="healthy",
+                message=f"State tracker initialized ({db_monitored_count} monitored in DB)",
+                details={"cached_entities": 0, "db_monitored": db_monitored_count, "initialized": True},
+            )
     else:
         components["state_tracker_initialized"] = ComponentHealth(
             status="degraded",
             message="State tracker not initialized or empty",
-            details={"cached_entities": 0, "initialized": False},
+            details={"cached_entities": 0, "db_monitored": 0, "initialized": False},
         )
 
     # 7. Integration Discovery Complete
@@ -299,7 +338,55 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
             details={"discovered_mappings": 0, "integrations": 0},
         )
 
-    # 8. Event Loop Responsive
+    # 8. Entity Discovery Complete
+    entity_discovery_complete = (
+        service.entity_discovery is not None
+        and hasattr(service.entity_discovery, "_monitored_set")
+    )
+
+    if entity_discovery_complete:
+        monitored_count = len(service.entity_discovery._monitored_set)
+        auto_discovered_count = len(service.entity_discovery._auto_discovered_entities)
+
+        # Get last discovery refresh timestamp from database
+        last_refresh = None
+        try:
+            async with service.database.async_session() as session:
+                from ha_boss.core.database import DiscoveryRefresh
+                from sqlalchemy import select
+
+                result = await session.execute(
+                    select(DiscoveryRefresh)
+                    .where(DiscoveryRefresh.success == True)  # noqa: E712
+                    .order_by(DiscoveryRefresh.timestamp.desc())
+                    .limit(1)
+                )
+                last_refresh_record = result.scalar_one_or_none()
+                if last_refresh_record:
+                    last_refresh = last_refresh_record.timestamp
+                    # Ensure timezone-aware for proper ISO format with UTC indicator
+                    if last_refresh and last_refresh.tzinfo is None:
+                        last_refresh = last_refresh.replace(tzinfo=UTC)
+        except Exception:
+            pass  # If query fails, just skip timestamp
+
+        components["entity_discovery_complete"] = ComponentHealth(
+            status="healthy",
+            message=f"Entity discovery complete: {monitored_count} monitored",
+            details={
+                "monitored_entities": monitored_count,
+                "auto_discovered": auto_discovered_count,
+                "last_refresh": last_refresh.isoformat() if last_refresh else None,
+            },
+        )
+    else:
+        components["entity_discovery_complete"] = ComponentHealth(
+            status="degraded",
+            message="Entity discovery not complete",
+            details={"monitored_entities": 0, "auto_discovered": 0, "last_refresh": None},
+        )
+
+    # 9. Event Loop Responsive
     # Simple check: we're executing, so event loop is responsive
     # In future, could track time since last check
     components["event_loop_responsive"] = ComponentHealth(

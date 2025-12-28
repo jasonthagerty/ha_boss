@@ -173,7 +173,7 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
 
     # Register routes with optional authentication
     from ha_boss.api.dependencies import verify_api_key
-    from ha_boss.api.routes import automations, healing, monitoring, patterns, status
+    from ha_boss.api.routes import automations, discovery, healing, monitoring, patterns, status
 
     # Add authentication dependency if enabled
     dependencies = []
@@ -196,6 +196,9 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
         automations.router, prefix="/api", tags=["Automations"], dependencies=dependencies
     )
     app.include_router(healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies)
+    app.include_router(
+        discovery.router, prefix="/api", tags=["Discovery"], dependencies=dependencies
+    )
 
     # Static file serving for dashboard
     static_dir = Path(__file__).parent / "static"

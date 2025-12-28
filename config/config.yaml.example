@@ -10,10 +10,40 @@ home_assistant:
   token: "${HA_TOKEN}"
 
 monitoring:
-  # Entities to monitor (glob patterns, empty list = all entities)
+  # Auto-Discovery: Automatically discover entities from enabled automations/scenes/scripts
+  # This is the default and recommended mode - HA Boss will monitor entities that
+  # are actually being used in your automations. Manual include/exclude patterns
+  # are ADDITIVE to auto-discovered entities (not replacements).
+  auto_discovery:
+    # Enable auto-discovery from automations, scenes, and scripts
+    enabled: true
+
+    # Skip disabled automations during discovery (recommended)
+    skip_disabled_automations: true
+
+    # Include entities from scenes
+    include_scenes: true
+
+    # Include entities from scripts
+    include_scripts: true
+
+    # Periodic refresh interval (seconds, 0 = disabled)
+    # Automatically re-scan automations/scenes/scripts hourly
+    refresh_interval_seconds: 3600  # 1 hour
+
+    # Event-triggered refresh (on automation/scene/script reload)
+    refresh_on_automation_reload: true
+    refresh_on_scene_reload: true
+    refresh_on_script_reload: true
+
+  # Entity patterns to ADD to auto-discovered entities (glob patterns)
+  # Use this to manually include entities not found in automations
+  # Example: ["input_boolean.*", "sensor.manual_monitor"]
   include: []
 
-  # Entities to exclude from monitoring
+  # Entity patterns to EXCLUDE from final monitored set (glob patterns)
+  # Applied after auto-discovery and include patterns
+  # Use this to remove noisy entities from monitoring
   exclude:
     - "sensor.time*"
     - "sensor.date*"
@@ -22,6 +52,12 @@ monitoring:
 
   # Grace period before considering entity truly unavailable (seconds)
   grace_period_seconds: 300  # 5 minutes
+
+  # Per-entity overrides (optional)
+  # Override grace period for specific critical entities
+  # entity_overrides:
+  #   "sensor.critical_temperature":
+  #     grace_period_seconds: 60  # 1 minute for critical sensors
 
   # Threshold for stale entities (no update in X seconds)
   stale_threshold_seconds: 3600  # 1 hour
