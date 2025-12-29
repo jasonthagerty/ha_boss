@@ -40,7 +40,7 @@ Complete installation guide for HA Boss, covering Docker deployment (recommended
 
 ### For Local Development
 
-- **Python 3.11 or 3.12** (3.12 recommended for consistency with CI)
+- **Python 3.12** (REQUIRED - project standardized on 3.12 only)
 - **uv** (recommended) - Fast Python package installer
   - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
   - Alternative: Use pip with standard Python venv
