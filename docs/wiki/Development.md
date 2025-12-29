@@ -738,7 +738,7 @@ Before submitting a PR, verify:
 
 **CI Pipeline** (`.github/workflows/ci.yml`):
 - Runs on: push to main/develop, all PRs
-- Tests: Python 3.11 and 3.12
+- Tests: Python 3.12 only (standardized)
 - Checks: black, ruff, mypy, pytest
 - Auto-creates issue on main branch failures (tagged `claude-task`)
 

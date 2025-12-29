@@ -50,7 +50,10 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 
 ### Prerequisites
 
-- **Python 3.12** (required for consistency with CI)
+- **Python 3.12** (REQUIRED - project standardized on 3.12 only)
+  - ⚠️ Using any other Python version will cause CI failures
+  - All tooling (black, ruff, mypy) is configured for Python 3.12
+  - CI only tests Python 3.12 to ensure consistency
 - **uv** (fast Python package installer - https://github.com/astral-sh/uv)
 - **GitHub MCP Server** (recommended) - for issue/PR management via Claude Code
   - See "GitHub MCP Server Integration" section below for setup

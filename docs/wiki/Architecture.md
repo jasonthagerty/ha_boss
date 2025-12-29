@@ -65,7 +65,7 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 
 ### Core Technologies
 
-- **Python 3.11+**: Primary programming language (3.12 for CI consistency)
+- **Python 3.12**: Primary programming language (standardized)
 - **asyncio**: Asynchronous I/O for concurrent operations
 - **aiohttp**: Async HTTP client for REST API calls
 - **websockets**: WebSocket client for real-time monitoring
