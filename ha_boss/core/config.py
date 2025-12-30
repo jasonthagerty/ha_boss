@@ -5,17 +5,21 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ha_boss.core.exceptions import ConfigurationError
 
 
-class HomeAssistantConfig(BaseSettings):
-    """Home Assistant connection configuration."""
+class HomeAssistantInstance(BaseModel):
+    """Configuration for a single Home Assistant instance."""
 
+    instance_id: str = Field(..., description="Unique identifier for this HA instance")
     url: str = Field(..., description="Home Assistant instance URL")
     token: str = Field(..., description="Long-lived access token")
+    bridge_enabled: bool = Field(
+        default=True, description="Attempt to use HA Boss Bridge if available"
+    )
 
     @field_validator("url")
     @classmethod
@@ -28,8 +32,87 @@ class HomeAssistantConfig(BaseSettings):
     def validate_token(cls, v: str) -> str:
         """Ensure token is not empty."""
         if not v or v.startswith("${"):
-            raise ValueError("HA_TOKEN environment variable is not set")
+            raise ValueError("Token is not set or is a placeholder")
         return v
+
+    @field_validator("instance_id")
+    @classmethod
+    def validate_instance_id(cls, v: str) -> str:
+        """Ensure instance_id is valid."""
+        if not v or not v.strip():
+            raise ValueError("instance_id cannot be empty")
+        # Convert to safe identifier (no spaces, special chars)
+        return v.strip().replace(" ", "_").lower()
+
+
+class HomeAssistantConfig(BaseSettings):
+    """Home Assistant connection configuration (supports single and multi-instance)."""
+
+    # Legacy single-instance fields (deprecated but supported for backward compatibility)
+    url: str | None = Field(None, description="[DEPRECATED] Use instances instead")
+    token: str | None = Field(None, description="[DEPRECATED] Use instances instead")
+
+    # New multi-instance field
+    instances: list[HomeAssistantInstance] = Field(
+        default_factory=list, description="List of Home Assistant instances to monitor"
+    )
+
+    @model_validator(mode="after")
+    def validate_instances(self) -> "HomeAssistantConfig":
+        """Convert legacy single-instance config to multi-instance format."""
+        # If legacy fields are set and instances is empty, convert to instances format
+        if self.url and self.token and not self.instances:
+            self.instances = [
+                HomeAssistantInstance(
+                    instance_id="default", url=self.url, token=self.token, bridge_enabled=True
+                )
+            ]
+            # Clear legacy fields after conversion
+            self.url = None
+            self.token = None
+
+        # Ensure at least one instance is configured
+        if not self.instances:
+            raise ValueError(
+                "No Home Assistant instances configured. "
+                "Set either 'url' and 'token' (legacy) or 'instances' list."
+            )
+
+        # Validate unique instance IDs
+        instance_ids = [inst.instance_id for inst in self.instances]
+        if len(instance_ids) != len(set(instance_ids)):
+            raise ValueError(
+                "Duplicate instance_id values found. Each instance must have a unique ID."
+            )
+
+        return self
+
+    def get_instance(self, instance_id: str) -> HomeAssistantInstance | None:
+        """Get instance configuration by ID.
+
+        Args:
+            instance_id: Instance identifier
+
+        Returns:
+            Instance configuration or None if not found
+        """
+        for instance in self.instances:
+            if instance.instance_id == instance_id:
+                return instance
+        return None
+
+    def get_default_instance(self) -> HomeAssistantInstance:
+        """Get the default/first instance.
+
+        Returns:
+            First instance configuration
+
+        Raises:
+            ValueError: If no instances configured
+        """
+        if not self.instances:
+            raise ValueError("No instances configured")
+        return self.instances[0]
 
 
 class AutoDiscoveryConfig(BaseSettings):
