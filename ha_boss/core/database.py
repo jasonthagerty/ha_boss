@@ -11,7 +11,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from ha_boss.core.exceptions import DatabaseError
 
 # Current database schema version
-CURRENT_DB_VERSION = 2
+CURRENT_DB_VERSION = 3
 
 
 class Base(DeclarativeBase):
@@ -41,7 +41,11 @@ class Entity(Base):
 
     __tablename__ = "entities"
 
-    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     domain: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     friendly_name: Mapped[str | None] = mapped_column(String(255))
     device_id: Mapped[str | None] = mapped_column(String(255), index=True)
@@ -59,8 +63,12 @@ class Entity(Base):
         nullable=False,
     )
 
+    __table_args__ = (
+        Index("ix_entities_instance_entity", "instance_id", "entity_id", unique=True),
+    )
+
     def __repr__(self) -> str:
-        return f"<Entity({self.entity_id}, state={self.last_state})>"
+        return f"<Entity({self.instance_id}:{self.entity_id}, state={self.last_state})>"
 
 
 class HealthEvent(Base):
@@ -69,6 +77,9 @@ class HealthEvent(Base):
     __tablename__ = "health_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True
@@ -79,7 +90,7 @@ class HealthEvent(Base):
     details: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     def __repr__(self) -> str:
-        return f"<HealthEvent({self.entity_id}, {self.event_type}, {self.timestamp})>"
+        return f"<HealthEvent({self.instance_id}:{self.entity_id}, {self.event_type}, {self.timestamp})>"
 
 
 class HealingAction(Base):
@@ -88,6 +99,9 @@ class HealingAction(Base):
     __tablename__ = "healing_actions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     integration_id: Mapped[str | None] = mapped_column(String(255), index=True)
     action: Mapped[str] = mapped_column(String(100), nullable=False)  # reload_integration, etc.
@@ -101,7 +115,7 @@ class HealingAction(Base):
 
     def __repr__(self) -> str:
         status = "success" if self.success else "failed"
-        return f"<HealingAction({self.entity_id}, {self.action}, {status})>"
+        return f"<HealingAction({self.instance_id}:{self.entity_id}, {self.action}, {status})>"
 
 
 class Integration(Base):
@@ -109,7 +123,11 @@ class Integration(Base):
 
     __tablename__ = "integrations"
 
-    entry_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
+    entry_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source: Mapped[str | None] = mapped_column(String(50))
@@ -129,8 +147,12 @@ class Integration(Base):
         nullable=False,
     )
 
+    __table_args__ = (
+        Index("ix_integrations_instance_entry", "instance_id", "entry_id", unique=True),
+    )
+
     def __repr__(self) -> str:
-        return f"<Integration({self.domain}, {self.title})>"
+        return f"<Integration({self.instance_id}:{self.domain}, {self.title})>"
 
 
 class StateHistory(Base):
@@ -139,6 +161,9 @@ class StateHistory(Base):
     __tablename__ = "state_history"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     old_state: Mapped[str | None] = mapped_column(String(255))
     new_state: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -148,7 +173,7 @@ class StateHistory(Base):
     context: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # time_of_day, day_of_week, etc.
 
     def __repr__(self) -> str:
-        return f"<StateHistory({self.entity_id}, {self.old_state}→{self.new_state})>"
+        return f"<StateHistory({self.instance_id}:{self.entity_id}, {self.old_state}→{self.new_state})>"
 
 
 # Phase 2: Pattern Collection Models
@@ -160,6 +185,9 @@ class IntegrationReliability(Base):
     __tablename__ = "integration_reliability"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     integration_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     integration_domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
@@ -173,7 +201,7 @@ class IntegrationReliability(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<IntegrationReliability({self.integration_domain}, {self.event_type}, {self.timestamp})>"
+        return f"<IntegrationReliability({self.instance_id}:{self.integration_domain}, {self.event_type}, {self.timestamp})>"
 
 
 class IntegrationMetrics(Base):
@@ -182,6 +210,9 @@ class IntegrationMetrics(Base):
     __tablename__ = "integration_metrics"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     integration_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     integration_domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     period_start: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
@@ -193,7 +224,7 @@ class IntegrationMetrics(Base):
     success_rate: Mapped[float | None] = mapped_column(Float)
 
     def __repr__(self) -> str:
-        return f"<IntegrationMetrics({self.integration_domain}, {self.period_start}, rate={self.success_rate})>"
+        return f"<IntegrationMetrics({self.instance_id}:{self.integration_domain}, {self.period_start}, rate={self.success_rate})>"
 
 
 class PatternInsight(Base):
@@ -224,7 +255,11 @@ class Automation(Base):
 
     __tablename__ = "automations"
 
-    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     friendly_name: Mapped[str | None] = mapped_column(String(255))
     state: Mapped[str] = mapped_column(String(50), nullable=False)  # on/off
     mode: Mapped[str | None] = mapped_column(String(50))  # single/restart/queued/parallel
@@ -253,8 +288,12 @@ class Automation(Base):
         nullable=False,
     )
 
+    __table_args__ = (
+        Index("ix_automations_instance_entity", "instance_id", "entity_id", unique=True),
+    )
+
     def __repr__(self) -> str:
-        return f"<Automation({self.entity_id}, state={self.state})>"
+        return f"<Automation({self.instance_id}:{self.entity_id}, state={self.state})>"
 
 
 class Scene(Base):
@@ -262,7 +301,11 @@ class Scene(Base):
 
     __tablename__ = "scenes"
 
-    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     friendly_name: Mapped[str | None] = mapped_column(String(255))
     entities_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
@@ -284,8 +327,10 @@ class Scene(Base):
         nullable=False,
     )
 
+    __table_args__ = (Index("ix_scenes_instance_entity", "instance_id", "entity_id", unique=True),)
+
     def __repr__(self) -> str:
-        return f"<Scene({self.entity_id})>"
+        return f"<Scene({self.instance_id}:{self.entity_id})>"
 
 
 class Script(Base):
@@ -293,7 +338,11 @@ class Script(Base):
 
     __tablename__ = "scripts"
 
-    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     friendly_name: Mapped[str | None] = mapped_column(String(255))
     sequence_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     mode: Mapped[str | None] = mapped_column(String(50))
@@ -316,8 +365,10 @@ class Script(Base):
         nullable=False,
     )
 
+    __table_args__ = (Index("ix_scripts_instance_entity", "instance_id", "entity_id", unique=True),)
+
     def __repr__(self) -> str:
-        return f"<Script({self.entity_id})>"
+        return f"<Script({self.instance_id}:{self.entity_id})>"
 
 
 class AutomationEntity(Base):
@@ -326,6 +377,9 @@ class AutomationEntity(Base):
     __tablename__ = "automation_entities"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
@@ -339,10 +393,16 @@ class AutomationEntity(Base):
 
     # Composite indexes for common queries
     __table_args__ = (
-        Index("ix_automation_entities_automation", "automation_id", "relationship_type"),
-        Index("ix_automation_entities_entity", "entity_id", "relationship_type"),
+        Index(
+            "ix_automation_entities_automation",
+            "instance_id",
+            "automation_id",
+            "relationship_type",
+        ),
+        Index("ix_automation_entities_entity", "instance_id", "entity_id", "relationship_type"),
         Index(
             "ix_automation_entities_unique",
+            "instance_id",
             "automation_id",
             "entity_id",
             "relationship_type",
@@ -351,9 +411,7 @@ class AutomationEntity(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<AutomationEntity({self.automation_id} → {self.entity_id}, {self.relationship_type})>"
-        )
+        return f"<AutomationEntity({self.instance_id}:{self.automation_id} → {self.entity_id}, {self.relationship_type})>"
 
 
 class SceneEntity(Base):
@@ -362,6 +420,9 @@ class SceneEntity(Base):
     __tablename__ = "scene_entities"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     scene_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     target_state: Mapped[str | None] = mapped_column(String(255))
@@ -372,13 +433,13 @@ class SceneEntity(Base):
     )
 
     __table_args__ = (
-        Index("ix_scene_entities_scene", "scene_id"),
-        Index("ix_scene_entities_entity", "entity_id"),
-        Index("ix_scene_entities_unique", "scene_id", "entity_id", unique=True),
+        Index("ix_scene_entities_scene", "instance_id", "scene_id"),
+        Index("ix_scene_entities_entity", "instance_id", "entity_id"),
+        Index("ix_scene_entities_unique", "instance_id", "scene_id", "entity_id", unique=True),
     )
 
     def __repr__(self) -> str:
-        return f"<SceneEntity({self.scene_id} → {self.entity_id})>"
+        return f"<SceneEntity({self.instance_id}:{self.scene_id} → {self.entity_id})>"
 
 
 class ScriptEntity(Base):
@@ -387,6 +448,9 @@ class ScriptEntity(Base):
     __tablename__ = "script_entities"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     script_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     sequence_step: Mapped[int | None] = mapped_column(Integer)
@@ -398,13 +462,13 @@ class ScriptEntity(Base):
     )
 
     __table_args__ = (
-        Index("ix_script_entities_script", "script_id"),
-        Index("ix_script_entities_entity", "entity_id"),
-        Index("ix_script_entities_unique", "script_id", "entity_id", unique=True),
+        Index("ix_script_entities_script", "instance_id", "script_id"),
+        Index("ix_script_entities_entity", "instance_id", "entity_id"),
+        Index("ix_script_entities_unique", "instance_id", "script_id", "entity_id", unique=True),
     )
 
     def __repr__(self) -> str:
-        return f"<ScriptEntity({self.script_id} → {self.entity_id})>"
+        return f"<ScriptEntity({self.instance_id}:{self.script_id} → {self.entity_id})>"
 
 
 class DiscoveryRefresh(Base):
@@ -413,6 +477,9 @@ class DiscoveryRefresh(Base):
     __tablename__ = "discovery_refreshes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True, default="default"
+    )
     trigger_type: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True
     )  # startup/manual/periodic/event
