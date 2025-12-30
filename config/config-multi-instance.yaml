@@ -1,0 +1,120 @@
+# HA Boss Multi-Instance Configuration Example
+# Monitors multiple Home Assistant instances from a single HA Boss service
+# Copy to config.yaml and customize for your setup
+
+home_assistant:
+  # Multi-instance configuration
+  # Each instance requires a unique instance_id, URL, and token
+  instances:
+    # Main house instance
+    - instance_id: "home"
+      url: "http://homeassistant.local:8123"
+      token: "${HA_HOME_TOKEN}"
+      bridge_enabled: true  # Try to use HA Boss Bridge if available
+
+    # Vacation cabin instance
+    - instance_id: "cabin"
+      url: "https://cabin.duckdns.org"
+      token: "${HA_CABIN_TOKEN}"
+      bridge_enabled: true
+
+    # Parent's house instance
+    - instance_id: "parents"
+      url: "http://192.168.1.100:8123"
+      token: "${HA_PARENTS_TOKEN}"
+      bridge_enabled: false  # No bridge installed here
+
+monitoring:
+  # Auto-Discovery: Automatically discover entities from enabled automations/scenes/scripts
+  # Applies to ALL instances - each instance is scanned independently
+  auto_discovery:
+    enabled: true
+    skip_disabled_automations: true
+    include_scenes: true
+    include_scripts: true
+    refresh_interval_seconds: 3600  # 1 hour
+    refresh_on_automation_reload: true
+    refresh_on_scene_reload: true
+    refresh_on_script_reload: true
+
+  # Entity patterns (applied per-instance)
+  include: []
+  exclude:
+    - "sensor.time*"
+    - "sensor.date*"
+    - "sensor.uptime*"
+    - "sun.sun"
+
+  # Grace period before considering entity unavailable
+  grace_period_seconds: 300  # 5 minutes
+
+  # Per-entity overrides (works across all instances)
+  # Prefix with instance_id if you need instance-specific overrides
+  # entity_overrides:
+  #   "sensor.critical_temperature":
+  #     grace_period_seconds: 60
+
+  stale_threshold_seconds: 3600
+  snapshot_interval_seconds: 300
+
+healing:
+  enabled: true
+  max_attempts: 3
+  cooldown_seconds: 300
+  circuit_breaker_threshold: 10
+  circuit_breaker_reset_seconds: 3600
+
+notifications:
+  on_healing_failure: true
+  weekly_summary: true
+  ha_service: "persistent_notification.create"
+  ai_enhanced: true
+
+mode: "production"
+
+logging:
+  level: "INFO"
+  format: "text"
+  file: "/app/data/ha_boss.log"
+  max_size_mb: 10
+  backup_count: 5
+
+database:
+  path: "/app/data/ha_boss.db"
+  echo: false
+  retention_days: 30
+
+websocket:
+  reconnect_delay_seconds: 5
+  heartbeat_interval_seconds: 30
+  timeout_seconds: 10
+
+rest:
+  timeout_seconds: 10
+  retry_attempts: 3
+  retry_base_delay_seconds: 1.0
+
+intelligence:
+  pattern_collection_enabled: true
+  anomaly_detection_enabled: true
+  anomaly_sensitivity_threshold: 2.0
+  anomaly_scan_hours: 24
+
+  ollama_enabled: true
+  ollama_url: "http://localhost:11434"
+  ollama_model: "llama3.1:8b"
+  ollama_timeout_seconds: 30
+
+  claude_enabled: false
+  claude_api_key: "${CLAUDE_API_KEY}"
+  claude_model: "claude-3-5-sonnet-20241022"
+
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8000
+  cors_enabled: true
+  cors_origins:
+    - "*"
+  auth_enabled: false
+  api_keys: []
