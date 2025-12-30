@@ -332,7 +332,19 @@ def status(
         table.add_column("Setting", style="cyan")
         table.add_column("Value")
 
-        table.add_row("HA URL", config.home_assistant.url)
+        # Show instance URLs (multi-instance support)
+        if config.home_assistant.instances:
+            if len(config.home_assistant.instances) == 1:
+                table.add_row("HA URL", config.home_assistant.instances[0].url)
+            else:
+                urls = ", ".join(
+                    f"{inst.instance_id}: {inst.url}"
+                    for inst in config.home_assistant.instances
+                )
+                table.add_row("HA Instances", urls)
+        else:
+            table.add_row("HA URL", "Not configured")
+
         table.add_row("Mode", config.mode)
         table.add_row("Healing Enabled", "✓" if config.healing.enabled else "✗")
         table.add_row("Database", str(config.database.path))
@@ -352,23 +364,43 @@ def status(
 
 
 async def _check_ha_connection(config: Config) -> None:
-    """Check connection to Home Assistant.
+    """Check connection to Home Assistant instances.
 
     Args:
         config: HA Boss configuration
     """
-    try:
-        async with await create_ha_client(config) as client:
-            ha_config = await client.get_config()
-            console.print(
-                f"[green]✓[/green] Connected to Home Assistant "
-                f"(version {ha_config.get('version', 'unknown')})"
+    instances = config.home_assistant.instances
+    if not instances:
+        console.print("[yellow]⚠[/yellow] No instances configured")
+        return
+
+    # Check each instance
+    for instance in instances:
+        try:
+            async with await create_ha_client(config, instance.instance_id) as client:
+                ha_config = await client.get_config()
+                instance_label = (
+                    "" if len(instances) == 1 else f" [{instance.instance_id}]"
+                )
+                console.print(
+                    f"[green]✓[/green] Connected to Home Assistant{instance_label} "
+                    f"(version {ha_config.get('version', 'unknown')})"
+                )
+                console.print(
+                    f"  Location: {ha_config.get('location_name', 'Unknown')}"
+                )
+        except HomeAssistantAuthError:
+            instance_label = (
+                "" if len(instances) == 1 else f" [{instance.instance_id}]"
             )
-            console.print(f"  Location: {ha_config.get('location_name', 'Unknown')}")
-    except HomeAssistantAuthError:
-        console.print("[red]✗[/red] Authentication failed - check your token")
-    except HomeAssistantConnectionError as e:
-        console.print(f"[red]✗[/red] Connection failed: {e}")
+            console.print(
+                f"[red]✗[/red] Authentication failed{instance_label} - check your token"
+            )
+        except HomeAssistantConnectionError as e:
+            instance_label = (
+                "" if len(instances) == 1 else f" [{instance.instance_id}]"
+            )
+            console.print(f"[red]✗[/red] Connection failed{instance_label}: {e}")
 
 
 async def _show_db_stats(config: Config) -> None:
@@ -581,7 +613,19 @@ def validate_config(
         table.add_column("Setting", style="cyan")
         table.add_column("Value")
 
-        table.add_row("HA URL", config.home_assistant.url)
+        # Show instance URLs (multi-instance support)
+        if config.home_assistant.instances:
+            if len(config.home_assistant.instances) == 1:
+                table.add_row("HA URL", config.home_assistant.instances[0].url)
+            else:
+                urls = ", ".join(
+                    f"{inst.instance_id}: {inst.url}"
+                    for inst in config.home_assistant.instances
+                )
+                table.add_row("HA Instances", urls)
+        else:
+            table.add_row("HA URL", "Not configured")
+
         table.add_row("Mode", config.mode)
         table.add_row("Monitoring Grace Period", f"{config.monitoring.grace_period_seconds}s")
         table.add_row("Healing Enabled", "Yes" if config.healing.enabled else "No")
