@@ -302,6 +302,7 @@ class HealthMonitor:
         try:
             async with self.database.async_session() as session:
                 event = HealthEvent(
+                    instance_id=self.state_tracker.instance_id,
                     entity_id=issue.entity_id,
                     event_type=issue.issue_type,
                     timestamp=issue.detected_at,
