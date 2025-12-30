@@ -70,12 +70,14 @@ class FailureEvent:
 class ReliabilityAnalyzer:
     """Analyze integration reliability patterns."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, instance_id: str, database: Database) -> None:
         """Initialize analyzer.
 
         Args:
+            instance_id: Home Assistant instance identifier
             database: Database instance for queries
         """
+        self.instance_id = instance_id
         self.database = database
 
     async def get_integration_metrics(
@@ -121,7 +123,10 @@ class ReliabilityAnalyzer:
                         )
                     ).label("unavailable_events"),
                 )
-                .where(IntegrationReliability.timestamp >= period_start)
+                .where(
+                    IntegrationReliability.instance_id == self.instance_id,
+                    IntegrationReliability.timestamp >= period_start,
+                )
                 .group_by(
                     IntegrationReliability.integration_id,
                     IntegrationReliability.integration_domain,
@@ -186,8 +191,11 @@ class ReliabilityAnalyzer:
             # Query for failure events only
             query = (
                 select(IntegrationReliability)
-                .where(IntegrationReliability.timestamp >= period_start)
-                .where(IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]))
+                .where(
+                    IntegrationReliability.instance_id == self.instance_id,
+                    IntegrationReliability.timestamp >= period_start,
+                    IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]),
+                )
                 .order_by(IntegrationReliability.timestamp.asc())
                 .limit(limit)
             )

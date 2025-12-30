@@ -56,6 +56,7 @@ class AnomalyDetector:
 
     def __init__(
         self,
+        instance_id: str,
         database: Database,
         llm_router: LLMRouter | None = None,
         sensitivity_threshold: float = 2.0,
@@ -63,10 +64,12 @@ class AnomalyDetector:
         """Initialize anomaly detector.
 
         Args:
+            instance_id: Home Assistant instance identifier
             database: Database instance for pattern queries
             llm_router: Optional LLM router for AI explanations
             sensitivity_threshold: Standard deviations for anomaly detection (default: 2.0)
         """
+        self.instance_id = instance_id
         self.database = database
         self.llm_router = llm_router
         self.sensitivity_threshold = sensitivity_threshold
@@ -129,8 +132,11 @@ class AnomalyDetector:
                     IntegrationReliability.integration_domain,
                     func.count(IntegrationReliability.id).label("failure_count"),
                 )
-                .where(IntegrationReliability.timestamp >= period_start)
-                .where(IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]))
+                .where(
+                    IntegrationReliability.instance_id == self.instance_id,
+                    IntegrationReliability.timestamp >= period_start,
+                    IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]),
+                )
                 .group_by(
                     IntegrationReliability.integration_id,
                     IntegrationReliability.integration_domain,
@@ -153,9 +159,12 @@ class AnomalyDetector:
                     IntegrationReliability.integration_domain,
                     func.count(IntegrationReliability.id).label("failure_count"),
                 )
-                .where(IntegrationReliability.timestamp >= baseline_start)
-                .where(IntegrationReliability.timestamp < baseline_end)
-                .where(IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]))
+                .where(
+                    IntegrationReliability.instance_id == self.instance_id,
+                    IntegrationReliability.timestamp >= baseline_start,
+                    IntegrationReliability.timestamp < baseline_end,
+                    IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]),
+                )
                 .group_by(
                     IntegrationReliability.integration_id,
                     IntegrationReliability.integration_domain,
@@ -250,8 +259,11 @@ class AnomalyDetector:
             # Get all failures in the period with timestamps
             query = (
                 select(IntegrationReliability)
-                .where(IntegrationReliability.timestamp >= period_start)
-                .where(IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]))
+                .where(
+                    IntegrationReliability.instance_id == self.instance_id,
+                    IntegrationReliability.timestamp >= period_start,
+                    IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]),
+                )
                 .order_by(IntegrationReliability.timestamp)
             )
 
@@ -342,8 +354,11 @@ class AnomalyDetector:
             # Get all failures with timestamps
             query = (
                 select(IntegrationReliability)
-                .where(IntegrationReliability.timestamp >= period_start)
-                .where(IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]))
+                .where(
+                    IntegrationReliability.instance_id == self.instance_id,
+                    IntegrationReliability.timestamp >= period_start,
+                    IntegrationReliability.event_type.in_(["heal_failure", "unavailable"]),
+                )
                 .order_by(IntegrationReliability.timestamp)
             )
 
