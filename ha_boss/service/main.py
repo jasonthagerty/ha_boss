@@ -81,6 +81,60 @@ class HABossService:
         self.healings_succeeded: dict[str, int] = {}
         self.healings_failed: dict[str, int] = {}
 
+    def _get_default_instance_id(self) -> str:
+        """Get the default instance ID (first instance or 'default').
+
+        Returns:
+            The default instance ID
+
+        Raises:
+            RuntimeError: If no instances are configured
+        """
+        if not self.ha_clients:
+            raise RuntimeError("No instances configured")
+        return list(self.ha_clients.keys())[0]
+
+    # Backward compatibility properties for single-instance access
+    @property
+    def ha_client(self) -> Any:
+        """Get the default HA client for backward compatibility."""
+        return self.ha_clients.get(self._get_default_instance_id())
+
+    @property
+    def websocket_client(self) -> Any:
+        """Get the default WebSocket client for backward compatibility."""
+        return self.websocket_clients.get(self._get_default_instance_id())
+
+    @property
+    def state_tracker(self) -> Any:
+        """Get the default state tracker for backward compatibility."""
+        return self.state_trackers.get(self._get_default_instance_id())
+
+    @property
+    def health_monitor(self) -> Any:
+        """Get the default health monitor for backward compatibility."""
+        return self.health_monitors.get(self._get_default_instance_id())
+
+    @property
+    def healing_manager(self) -> Any:
+        """Get the default healing manager for backward compatibility."""
+        return self.healing_managers.get(self._get_default_instance_id())
+
+    @property
+    def integration_discovery(self) -> Any:
+        """Get the default integration discovery for backward compatibility."""
+        return self.integration_discoveries.get(self._get_default_instance_id())
+
+    @property
+    def entity_discovery(self) -> Any:
+        """Get the default entity discovery for backward compatibility."""
+        return self.entity_discoveries.get(self._get_default_instance_id())
+
+    @property
+    def pattern_collector(self) -> Any:
+        """Get the default pattern collector for backward compatibility."""
+        return self.pattern_collectors.get(self._get_default_instance_id())
+
     async def _initialize_instance(
         self, instance_id: str, url: str, token: str, bridge_enabled: bool
     ) -> None:

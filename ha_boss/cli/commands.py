@@ -803,7 +803,7 @@ async def _show_reliability(config: Config, days: int, integration_domain: str |
     from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
 
     async with Database(str(config.database.path)) as db:
-        analyzer = ReliabilityAnalyzer(db)
+        analyzer = ReliabilityAnalyzer("default", db)
 
         # Get metrics
         metrics = await analyzer.get_integration_metrics(
@@ -948,7 +948,7 @@ async def _show_failures(
     from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
 
     async with Database(str(config.database.path)) as db:
-        analyzer = ReliabilityAnalyzer(db)
+        analyzer = ReliabilityAnalyzer("default", db)
 
         # Get failure events
         events = await analyzer.get_failure_timeline(
@@ -1136,6 +1136,7 @@ async def _generate_weekly_summary(config: Config, send_notify: bool) -> None:
             task = progress.add_task("Generating weekly summary...", total=None)
 
             generator = WeeklySummaryGenerator(
+                instance_id="default",
                 config=config,
                 database=db,
                 llm_router=llm_router,
@@ -1263,7 +1264,7 @@ async def _show_recommendations(config: Config, integration_domain: str, days: i
     from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
 
     async with Database(str(config.database.path)) as db:
-        analyzer = ReliabilityAnalyzer(db)
+        analyzer = ReliabilityAnalyzer("default", db)
 
         # Get recommendations
         recommendations = await analyzer.get_recommendations(

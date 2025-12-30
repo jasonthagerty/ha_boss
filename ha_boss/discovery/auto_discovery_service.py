@@ -116,7 +116,9 @@ class AutoDiscoveryService:
         instance_results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Collect results
-        for instance, result in zip(self.config.home_assistant.instances, instance_results, strict=True):
+        for instance, result in zip(
+            self.config.home_assistant.instances, instance_results, strict=True
+        ):
             if isinstance(result, Exception):
                 logger.error(
                     "Discovery failed for instance %s: %s",
