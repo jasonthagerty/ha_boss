@@ -25,7 +25,7 @@ async def test_database(tmp_path):
 @pytest.fixture
 async def analyzer(test_database):
     """Create analyzer instance."""
-    return ReliabilityAnalyzer(test_database)
+    return ReliabilityAnalyzer("default", test_database)
 
 
 @pytest.fixture
@@ -181,7 +181,7 @@ async def test_reliability_score_fair(test_database):
 
         await session.commit()
 
-    analyzer = ReliabilityAnalyzer(test_database)
+    analyzer = ReliabilityAnalyzer("default", test_database)
     metrics = await analyzer.get_integration_metrics(days=7, integration_domain="test")
 
     metric = metrics[0]
@@ -269,7 +269,7 @@ async def test_get_top_failing_integrations(analyzer, sample_data):
 @pytest.mark.asyncio
 async def test_no_data_returns_empty_list(test_database):
     """Test that no data returns empty list, not crash."""
-    analyzer = ReliabilityAnalyzer(test_database)
+    analyzer = ReliabilityAnalyzer("default", test_database)
 
     # Query with no data in database
     metrics = await analyzer.get_integration_metrics(days=7)
@@ -329,7 +329,7 @@ async def test_recommendations_no_healing_with_unavailable(analyzer, sample_data
 @pytest.mark.asyncio
 async def test_recommendations_no_data(test_database):
     """Test recommendations when no data exists."""
-    analyzer = ReliabilityAnalyzer(test_database)
+    analyzer = ReliabilityAnalyzer("default", test_database)
     recommendations = await analyzer.get_recommendations(integration_domain="nonexistent", days=7)
 
     assert len(recommendations) == 1
@@ -378,7 +378,7 @@ async def test_failure_event_dataclass():
 async def test_date_range_filtering(test_database):
     """Test that date range filtering works correctly."""
     now = datetime.now(UTC)
-    analyzer = ReliabilityAnalyzer(test_database)
+    analyzer = ReliabilityAnalyzer("default", test_database)
 
     async with test_database.async_session() as session:
         # Old event (15 days ago)
@@ -412,7 +412,7 @@ async def test_date_range_filtering(test_database):
 async def test_multiple_integrations_same_domain(test_database):
     """Test handling multiple integration instances of same domain."""
     now = datetime.now(UTC)
-    analyzer = ReliabilityAnalyzer(test_database)
+    analyzer = ReliabilityAnalyzer("default", test_database)
 
     async with test_database.async_session() as session:
         # Two different hue bridges

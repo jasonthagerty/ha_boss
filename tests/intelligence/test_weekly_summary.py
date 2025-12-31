@@ -54,6 +54,7 @@ def test_config(tmp_path):
 async def generator(test_database, test_config):
     """Create WeeklySummaryGenerator instance."""
     return WeeklySummaryGenerator(
+        instance_id="default",
         config=test_config,
         database=test_database,
     )
@@ -299,6 +300,7 @@ class TestWeeklySummaryGenerator:
     async def test_generator_initialization(self, test_database, test_config):
         """Test generator initialization."""
         generator = WeeklySummaryGenerator(
+            instance_id="default",
             config=test_config,
             database=test_database,
         )
@@ -469,6 +471,7 @@ class TestAIGeneration:
         mock_router.generate.return_value = "Test AI summary"
 
         generator = WeeklySummaryGenerator(
+            instance_id="default",
             config=test_config,
             database=test_database,
             llm_router=mock_router,
@@ -488,6 +491,7 @@ class TestAIGeneration:
         mock_router.generate.side_effect = Exception("LLM error")
 
         generator = WeeklySummaryGenerator(
+            instance_id="default",
             config=test_config,
             database=test_database,
             llm_router=mock_router,
@@ -510,6 +514,7 @@ class TestNotifications:
         mock_manager = AsyncMock(spec=NotificationManager)
 
         generator = WeeklySummaryGenerator(
+            instance_id="default",
             config=test_config,
             database=test_database,
             notification_manager=mock_manager,
@@ -556,6 +561,7 @@ class TestEdgeCases:
             await session.commit()
 
         generator = WeeklySummaryGenerator(
+            instance_id="default",
             config=test_config,
             database=test_database,
         )
@@ -582,6 +588,7 @@ class TestEdgeCases:
             await session.commit()
 
         generator = WeeklySummaryGenerator(
+            instance_id="default",
             config=test_config,
             database=test_database,
         )
@@ -608,6 +615,7 @@ class TestEdgeCases:
             await session.commit()
 
         generator = WeeklySummaryGenerator(
+            instance_id="default",
             config=test_config,
             database=test_database,
         )
@@ -625,6 +633,7 @@ class TestEdgeCases:
         mock_manager = AsyncMock(spec=NotificationManager)
 
         generator = WeeklySummaryGenerator(
+            instance_id="default",
             config=test_config,
             database=test_database,
             notification_manager=mock_manager,

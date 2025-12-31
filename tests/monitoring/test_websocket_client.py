@@ -30,13 +30,15 @@ def mock_config():
 @pytest.fixture
 def ws_client(mock_config):
     """Create WebSocket client instance."""
-    return WebSocketClient(mock_config)
+    instance = mock_config.home_assistant.get_default_instance()
+    return WebSocketClient(instance, mock_config)
 
 
 @pytest.mark.asyncio
 async def test_ws_client_init(mock_config):
     """Test WebSocket client initialization."""
-    client = WebSocketClient(mock_config)
+    instance = mock_config.home_assistant.get_default_instance()
+    client = WebSocketClient(instance, mock_config)
     assert client.ws_url == "ws://homeassistant.local:8123/api/websocket"
     assert client.token == "test_token"
     assert client._ws is None
@@ -46,8 +48,9 @@ async def test_ws_client_init(mock_config):
 @pytest.mark.asyncio
 async def test_https_to_wss_conversion(mock_config):
     """Test HTTPS URL converts to WSS."""
-    mock_config.home_assistant.url = "https://homeassistant.local:8123"
-    client = WebSocketClient(mock_config)
+    mock_config.home_assistant.instances[0].url = "https://homeassistant.local:8123"
+    instance = mock_config.home_assistant.get_default_instance()
+    client = WebSocketClient(instance, mock_config)
     assert client.ws_url == "wss://homeassistant.local:8123/api/websocket"
 
 
