@@ -51,13 +51,13 @@ async def test_database(tmp_path):
 @pytest.fixture
 def pattern_collector(mock_config, test_database):
     """Create PatternCollector instance."""
-    return PatternCollector(mock_config, test_database)
+    return PatternCollector("default", mock_config, test_database)
 
 
 @pytest.fixture
 def pattern_collector_disabled(mock_config_disabled, test_database):
     """Create PatternCollector instance with collection disabled."""
-    return PatternCollector(mock_config_disabled, test_database)
+    return PatternCollector("default", mock_config_disabled, test_database)
 
 
 @pytest.mark.asyncio
