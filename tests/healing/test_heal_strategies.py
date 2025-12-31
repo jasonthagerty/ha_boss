@@ -71,6 +71,7 @@ async def database(tmp_path):
 def mock_ha_client():
     """Create mock HA client."""
     client = AsyncMock(spec=HomeAssistantClient)
+    client.instance_id = "default"
     client.reload_integration = AsyncMock()
     return client
 

@@ -25,7 +25,7 @@ async def mock_database() -> Database:
 @pytest.fixture
 async def state_tracker(mock_database: Database) -> StateTracker:
     """Create a state tracker instance."""
-    return StateTracker(mock_database)
+    return StateTracker("default", mock_database)
 
 
 @pytest.fixture
@@ -355,7 +355,7 @@ class TestStateTrackerPersistence:
     @pytest.mark.asyncio
     async def test_persist_entity_new(self, mock_database: Database) -> None:
         """Test persisting a new entity to database."""
-        tracker = StateTracker(mock_database)
+        tracker = StateTracker("default", mock_database)
 
         # Mock session and query
         mock_session = MagicMock()
@@ -383,7 +383,7 @@ class TestStateTrackerPersistence:
     @pytest.mark.asyncio
     async def test_persist_entity_database_error(self, mock_database: Database) -> None:
         """Test handling database error during persist."""
-        tracker = StateTracker(mock_database)
+        tracker = StateTracker("default", mock_database)
 
         # Mock session to raise error
         mock_session = MagicMock()
@@ -409,7 +409,7 @@ class TestCreateStateTracker:
     ) -> None:
         """Test creating and initializing state tracker."""
         with patch.object(StateTracker, "_persist_entity", new_callable=AsyncMock):
-            tracker = await create_state_tracker(mock_database, sample_states)
+            tracker = await create_state_tracker("default", mock_database, sample_states)
 
             assert isinstance(tracker, StateTracker)
             states = await tracker.get_all_states()
@@ -421,6 +421,8 @@ class TestCreateStateTracker:
         callback = AsyncMock()
 
         with patch.object(StateTracker, "_persist_entity", new_callable=AsyncMock):
-            tracker = await create_state_tracker(mock_database, [], on_state_updated=callback)
+            tracker = await create_state_tracker(
+                "default", mock_database, [], on_state_updated=callback
+            )
 
             assert tracker.on_state_updated == callback

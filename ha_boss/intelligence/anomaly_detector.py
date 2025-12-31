@@ -529,6 +529,7 @@ Keep your response brief (3-4 sentences max)."""
 
 async def create_anomaly_detector(
     database: Database,
+    instance_id: str = "default",
     llm_router: LLMRouter | None = None,
     sensitivity_threshold: float = 2.0,
 ) -> AnomalyDetector:
@@ -536,10 +537,11 @@ async def create_anomaly_detector(
 
     Args:
         database: Database instance
+        instance_id: Home Assistant instance ID (default: "default")
         llm_router: Optional LLM router for AI explanations
         sensitivity_threshold: Standard deviations for anomaly detection
 
     Returns:
         Initialized anomaly detector
     """
-    return AnomalyDetector(database, llm_router, sensitivity_threshold)
+    return AnomalyDetector(instance_id, database, llm_router, sensitivity_threshold)

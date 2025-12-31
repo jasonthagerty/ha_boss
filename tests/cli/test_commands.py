@@ -549,7 +549,7 @@ class TestAutomationCommands:
         mock_ha_client.__aenter__ = AsyncMock(return_value=mock_ha_client)
         mock_ha_client.__aexit__ = AsyncMock(return_value=None)
 
-        async def mock_create_client(config):
+        async def mock_create_client(config, instance_id=None):
             return mock_ha_client
 
         mock_client.side_effect = mock_create_client
@@ -581,7 +581,7 @@ class TestAutomationCommands:
         mock_ha_client.__aenter__ = AsyncMock(return_value=mock_ha_client)
         mock_ha_client.__aexit__ = AsyncMock(return_value=None)
 
-        async def mock_create_client(config):
+        async def mock_create_client(config, instance_id=None):
             return mock_ha_client
 
         mock_client.side_effect = mock_create_client
@@ -784,7 +784,7 @@ class TestStatusCommandVariations:
         mock_ha_client.__aenter__ = AsyncMock(return_value=mock_ha_client)
         mock_ha_client.__aexit__ = AsyncMock(return_value=None)
 
-        async def mock_create_client(config):
+        async def mock_create_client(config, instance_id=None):
             return mock_ha_client
 
         mock_client.side_effect = mock_create_client
@@ -801,7 +801,7 @@ class TestStatusCommandVariations:
 
         mock_load.return_value = mock_config
 
-        async def mock_create_client_error(config):
+        async def mock_create_client_error(config, instance_id=None):
             raise HomeAssistantConnectionError("Cannot connect")
 
         mock_client.side_effect = mock_create_client_error
@@ -917,7 +917,7 @@ class TestAutomationCommandErrors:
         mock_ha_client.__aenter__ = AsyncMock(return_value=mock_ha_client)
         mock_ha_client.__aexit__ = AsyncMock(return_value=None)
 
-        async def mock_create_client(config):
+        async def mock_create_client(config, instance_id=None):
             return mock_ha_client
 
         mock_client.side_effect = mock_create_client

@@ -378,6 +378,7 @@ class StateTracker:
 
 
 async def create_state_tracker(
+    instance_id: str,
     database: Database,
     initial_states: list[dict[str, Any]],
     on_state_updated: (
@@ -387,6 +388,7 @@ async def create_state_tracker(
     """Create and initialize a state tracker.
 
     Args:
+        instance_id: Home Assistant instance identifier
         database: Database manager
         initial_states: Initial state snapshot from Home Assistant
         on_state_updated: Optional callback for state changes
@@ -394,6 +396,6 @@ async def create_state_tracker(
     Returns:
         Initialized state tracker
     """
-    tracker = StateTracker(database, on_state_updated=on_state_updated)
+    tracker = StateTracker(instance_id, database, on_state_updated=on_state_updated)
     await tracker.initialize(initial_states)
     return tracker

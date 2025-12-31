@@ -42,6 +42,7 @@ async def mock_database() -> Database:
 async def mock_state_tracker() -> StateTracker:
     """Create a mock state tracker."""
     tracker = MagicMock(spec=StateTracker)
+    tracker.instance_id = "default"
     tracker.get_all_states = AsyncMock(return_value={})
     tracker.get_state = AsyncMock(return_value=None)
     return tracker

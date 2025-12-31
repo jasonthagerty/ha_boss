@@ -368,7 +368,8 @@ async def create_websocket_client(
         HomeAssistantConnectionError: Connection failed
         HomeAssistantAuthError: Authentication failed
     """
-    client = WebSocketClient(config, on_state_changed=on_state_changed)
+    instance = config.home_assistant.get_default_instance()
+    client = WebSocketClient(instance, config, on_state_changed=on_state_changed)
 
     try:
         await client.start()

@@ -59,7 +59,7 @@ def test_config_disabled():
 async def test_pattern_collector_initialized_when_enabled(test_config, test_database):
     """Test that PatternCollector is initialized when enabled in config."""
     # Create pattern collector directly
-    pattern_collector = PatternCollector(config=test_config, database=test_database)
+    pattern_collector = PatternCollector("default", config=test_config, database=test_database)
 
     # Pattern collector should be initialized
     assert pattern_collector is not None
@@ -69,7 +69,9 @@ async def test_pattern_collector_initialized_when_enabled(test_config, test_data
 @pytest.mark.asyncio
 async def test_pattern_collector_not_initialized_when_disabled(test_config_disabled, test_database):
     """Test that PatternCollector respects disabled config."""
-    pattern_collector = PatternCollector(config=test_config_disabled, database=test_database)
+    pattern_collector = PatternCollector(
+        "default", config=test_config_disabled, database=test_database
+    )
 
     # Try to record an event - should be no-op when disabled
     initial_count = pattern_collector.get_event_count()
@@ -94,7 +96,7 @@ async def test_unavailable_event_recorded(test_database):
         mode="testing",
     )
 
-    pattern_collector = PatternCollector(config=config, database=test_database)
+    pattern_collector = PatternCollector("default", config=config, database=test_database)
 
     # Record unavailable event
     await pattern_collector.record_entity_unavailable(
@@ -129,7 +131,7 @@ async def test_healing_success_recorded(test_database):
         mode="testing",
     )
 
-    pattern_collector = PatternCollector(config=config, database=test_database)
+    pattern_collector = PatternCollector("default", config=config, database=test_database)
 
     # Record successful healing
     await pattern_collector.record_healing_attempt(
@@ -164,7 +166,7 @@ async def test_healing_failure_recorded(test_database):
         mode="testing",
     )
 
-    pattern_collector = PatternCollector(config=config, database=test_database)
+    pattern_collector = PatternCollector("default", config=config, database=test_database)
 
     # Record failed healing
     await pattern_collector.record_healing_attempt(
@@ -199,7 +201,7 @@ async def test_pattern_collection_without_integration_info(test_database):
         mode="testing",
     )
 
-    pattern_collector = PatternCollector(config=config, database=test_database)
+    pattern_collector = PatternCollector("default", config=config, database=test_database)
 
     # Record event without integration info
     await pattern_collector.record_entity_unavailable(
@@ -234,7 +236,7 @@ async def test_multiple_events_recorded(test_database):
         mode="testing",
     )
 
-    pattern_collector = PatternCollector(config=config, database=test_database)
+    pattern_collector = PatternCollector("default", config=config, database=test_database)
 
     # Record multiple events
     await pattern_collector.record_entity_unavailable(
@@ -287,7 +289,7 @@ async def test_pattern_collection_gracefully_handles_errors(test_database):
         mode="testing",
     )
 
-    pattern_collector = PatternCollector(config=config, database=test_database)
+    pattern_collector = PatternCollector("default", config=config, database=test_database)
 
     # Close the database to simulate an error
     await test_database.close()
