@@ -338,8 +338,7 @@ def status(
                 table.add_row("HA URL", config.home_assistant.instances[0].url)
             else:
                 urls = ", ".join(
-                    f"{inst.instance_id}: {inst.url}"
-                    for inst in config.home_assistant.instances
+                    f"{inst.instance_id}: {inst.url}" for inst in config.home_assistant.instances
                 )
                 table.add_row("HA Instances", urls)
         else:
@@ -379,27 +378,17 @@ async def _check_ha_connection(config: Config) -> None:
         try:
             async with await create_ha_client(config, instance.instance_id) as client:
                 ha_config = await client.get_config()
-                instance_label = (
-                    "" if len(instances) == 1 else f" [{instance.instance_id}]"
-                )
+                instance_label = "" if len(instances) == 1 else f" [{instance.instance_id}]"
                 console.print(
                     f"[green]✓[/green] Connected to Home Assistant{instance_label} "
                     f"(version {ha_config.get('version', 'unknown')})"
                 )
-                console.print(
-                    f"  Location: {ha_config.get('location_name', 'Unknown')}"
-                )
+                console.print(f"  Location: {ha_config.get('location_name', 'Unknown')}")
         except HomeAssistantAuthError:
-            instance_label = (
-                "" if len(instances) == 1 else f" [{instance.instance_id}]"
-            )
-            console.print(
-                f"[red]✗[/red] Authentication failed{instance_label} - check your token"
-            )
+            instance_label = "" if len(instances) == 1 else f" [{instance.instance_id}]"
+            console.print(f"[red]✗[/red] Authentication failed{instance_label} - check your token")
         except HomeAssistantConnectionError as e:
-            instance_label = (
-                "" if len(instances) == 1 else f" [{instance.instance_id}]"
-            )
+            instance_label = "" if len(instances) == 1 else f" [{instance.instance_id}]"
             console.print(f"[red]✗[/red] Connection failed{instance_label}: {e}")
 
 
@@ -619,8 +608,7 @@ def validate_config(
                 table.add_row("HA URL", config.home_assistant.instances[0].url)
             else:
                 urls = ", ".join(
-                    f"{inst.instance_id}: {inst.url}"
-                    for inst in config.home_assistant.instances
+                    f"{inst.instance_id}: {inst.url}" for inst in config.home_assistant.instances
                 )
                 table.add_row("HA Instances", urls)
         else:
@@ -800,6 +788,11 @@ def reliability_report(
         "-d",
         help="Number of days to analyze (default: 7)",
     ),
+    instance_id: str | None = typer.Option(
+        None,
+        "--instance-id",
+        help="Target specific Home Assistant instance (default: first configured instance)",
+    ),
     config_path: Path | None = typer.Option(
         None,
         "--config",
@@ -820,6 +813,7 @@ def reliability_report(
         haboss patterns reliability
         haboss patterns reliability --integration hue
         haboss patterns reliability --days 30
+        haboss patterns reliability --instance-id home
     """
     console.print(
         Panel.fit(
@@ -830,24 +824,31 @@ def reliability_report(
 
     try:
         config = load_config(config_path)
-        asyncio.run(_show_reliability(config, days, integration))
+        asyncio.run(_show_reliability(config, days, integration, instance_id))
 
     except Exception as e:
         handle_error(e)
 
 
-async def _show_reliability(config: Config, days: int, integration_domain: str | None) -> None:
+async def _show_reliability(
+    config: Config, days: int, integration_domain: str | None, instance_id: str | None = None
+) -> None:
     """Show reliability report.
 
     Args:
         config: HA Boss configuration
         days: Number of days to analyze
         integration_domain: Optional integration filter
+        instance_id: Optional instance ID (defaults to first configured instance)
     """
     from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
 
+    # Get instance ID if not specified
+    if instance_id is None:
+        instance_id = config.home_assistant.get_default_instance().instance_id
+
     async with Database(str(config.database.path)) as db:
-        analyzer = ReliabilityAnalyzer("default", db)
+        analyzer = ReliabilityAnalyzer(instance_id, db)
 
         # Get metrics
         metrics = await analyzer.get_integration_metrics(
@@ -944,6 +945,11 @@ def failures_timeline(
         "-l",
         help="Maximum number of events to show (default: 50)",
     ),
+    instance_id: str | None = typer.Option(
+        None,
+        "--instance-id",
+        help="Target specific Home Assistant instance (default: first configured instance)",
+    ),
     config_path: Path | None = typer.Option(
         None,
         "--config",
@@ -962,6 +968,7 @@ def failures_timeline(
         haboss patterns failures
         haboss patterns failures --integration zwave
         haboss patterns failures --days 30 --limit 100
+        haboss patterns failures --instance-id home
     """
     console.print(
         Panel.fit(
@@ -972,14 +979,18 @@ def failures_timeline(
 
     try:
         config = load_config(config_path)
-        asyncio.run(_show_failures(config, integration, days, limit))
+        asyncio.run(_show_failures(config, integration, days, limit, instance_id))
 
     except Exception as e:
         handle_error(e)
 
 
 async def _show_failures(
-    config: Config, integration_domain: str | None, days: int, limit: int
+    config: Config,
+    integration_domain: str | None,
+    days: int,
+    limit: int,
+    instance_id: str | None = None,
 ) -> None:
     """Show failure timeline.
 
@@ -988,11 +999,16 @@ async def _show_failures(
         integration_domain: Optional integration filter
         days: Number of days to analyze
         limit: Maximum number of events to show
+        instance_id: Optional instance ID (defaults to first configured instance)
     """
     from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
 
+    # Get instance ID if not specified
+    if instance_id is None:
+        instance_id = config.home_assistant.get_default_instance().instance_id
+
     async with Database(str(config.database.path)) as db:
-        analyzer = ReliabilityAnalyzer("default", db)
+        analyzer = ReliabilityAnalyzer(instance_id, db)
 
         # Get failure events
         events = await analyzer.get_failure_timeline(
@@ -1061,6 +1077,11 @@ def weekly_summary(
         "-c",
         help="Path to configuration file",
     ),
+    instance_id: str | None = typer.Option(
+        None,
+        "--instance-id",
+        help="Target specific Home Assistant instance (default: first configured instance)",
+    ),
     no_notify: bool = typer.Option(
         False,
         "--no-notify",
@@ -1086,6 +1107,7 @@ def weekly_summary(
         haboss patterns weekly-summary
         haboss patterns weekly-summary --no-notify
         haboss patterns weekly-summary --no-ai
+        haboss patterns weekly-summary --instance-id home
     """
     console.print(
         Panel.fit(
@@ -1101,18 +1123,23 @@ def weekly_summary(
         if no_ai:
             config.notifications.ai_enhanced = False
 
-        asyncio.run(_generate_weekly_summary(config, send_notify=not no_notify))
+        asyncio.run(
+            _generate_weekly_summary(config, send_notify=not no_notify, instance_id=instance_id)
+        )
 
     except Exception as e:
         handle_error(e)
 
 
-async def _generate_weekly_summary(config: Config, send_notify: bool) -> None:
+async def _generate_weekly_summary(
+    config: Config, send_notify: bool, instance_id: str | None = None
+) -> None:
     """Generate and display weekly summary.
 
     Args:
         config: HA Boss configuration
         send_notify: Whether to send HA notification
+        instance_id: Optional instance ID (defaults to first configured instance)
     """
     from ha_boss.core.ha_client import create_ha_client
     from ha_boss.intelligence.claude_client import ClaudeClient
@@ -1120,6 +1147,10 @@ async def _generate_weekly_summary(config: Config, send_notify: bool) -> None:
     from ha_boss.intelligence.ollama_client import OllamaClient
     from ha_boss.intelligence.weekly_summary import WeeklySummaryGenerator
     from ha_boss.notifications.manager import NotificationManager
+
+    # Get instance ID if not specified
+    if instance_id is None:
+        instance_id = config.home_assistant.get_default_instance().instance_id
 
     async with Database(str(config.database.path)) as db:
         await db.init_db()
@@ -1163,7 +1194,7 @@ async def _generate_weekly_summary(config: Config, send_notify: bool) -> None:
         ha_client = None
         if send_notify:
             try:
-                ha_client = await create_ha_client(config)
+                ha_client = await create_ha_client(config, instance_id)
                 notification_manager = NotificationManager(config, ha_client)
             except Exception as e:
                 console.print(
@@ -1180,7 +1211,7 @@ async def _generate_weekly_summary(config: Config, send_notify: bool) -> None:
             task = progress.add_task("Generating weekly summary...", total=None)
 
             generator = WeeklySummaryGenerator(
-                instance_id="default",
+                instance_id=instance_id,
                 config=config,
                 database=db,
                 llm_router=llm_router,
@@ -1262,6 +1293,11 @@ def integration_recommendations(
         "-d",
         help="Number of days to analyze (default: 7)",
     ),
+    instance_id: str | None = typer.Option(
+        None,
+        "--instance-id",
+        help="Target specific Home Assistant instance (default: first configured instance)",
+    ),
     config_path: Path | None = typer.Option(
         None,
         "--config",
@@ -1279,6 +1315,7 @@ def integration_recommendations(
     Examples:
         haboss patterns recommendations hue
         haboss patterns recommendations zwave --days 30
+        haboss patterns recommendations hue --instance-id home
     """
     console.print(
         Panel.fit(
@@ -1291,24 +1328,31 @@ def integration_recommendations(
 
     try:
         config = load_config(config_path)
-        asyncio.run(_show_recommendations(config, integration, days))
+        asyncio.run(_show_recommendations(config, integration, days, instance_id))
 
     except Exception as e:
         handle_error(e)
 
 
-async def _show_recommendations(config: Config, integration_domain: str, days: int) -> None:
+async def _show_recommendations(
+    config: Config, integration_domain: str, days: int, instance_id: str | None = None
+) -> None:
     """Show recommendations for an integration.
 
     Args:
         config: HA Boss configuration
         integration_domain: Integration to analyze
         days: Number of days to analyze
+        instance_id: Optional instance ID (defaults to first configured instance)
     """
     from ha_boss.intelligence.reliability_analyzer import ReliabilityAnalyzer
 
+    # Get instance ID if not specified
+    if instance_id is None:
+        instance_id = config.home_assistant.get_default_instance().instance_id
+
     async with Database(str(config.database.path)) as db:
-        analyzer = ReliabilityAnalyzer("default", db)
+        analyzer = ReliabilityAnalyzer(instance_id, db)
 
         # Get recommendations
         recommendations = await analyzer.get_recommendations(
