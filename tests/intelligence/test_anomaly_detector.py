@@ -39,13 +39,13 @@ def mock_llm_router():
 @pytest.fixture
 def detector(database):
     """Create anomaly detector without LLM."""
-    return AnomalyDetector(database)
+    return AnomalyDetector("default", database)
 
 
 @pytest.fixture
 def detector_with_llm(database, mock_llm_router):
     """Create anomaly detector with LLM."""
-    return AnomalyDetector(database, mock_llm_router)
+    return AnomalyDetector("default", database, mock_llm_router)
 
 
 # Helper functions for creating test data
@@ -235,10 +235,10 @@ class TestUnusualFailureRateDetection:
     async def test_custom_sensitivity_threshold(self, database):
         """Test that custom sensitivity threshold affects detection."""
         # Lower sensitivity = more anomalies
-        detector_sensitive = AnomalyDetector(database, sensitivity_threshold=1.5)
+        detector_sensitive = AnomalyDetector("default", database, sensitivity_threshold=1.5)
 
         # Higher sensitivity = fewer anomalies
-        detector_strict = AnomalyDetector(database, sensitivity_threshold=3.0)
+        detector_strict = AnomalyDetector("default", database, sensitivity_threshold=3.0)
 
         now = datetime.now(UTC)
 
