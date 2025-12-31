@@ -338,7 +338,7 @@ async def test_anomaly_detection_scan_latency(
     Acceptance: 30-day anomaly scan should complete in < 5s (target: 3s).
     """
     # Create test data (simulate 30 days of failures)
-    pattern_collector = PatternCollector(config=perf_config, database=perf_database)
+    pattern_collector = PatternCollector("default", config=perf_config, database=perf_database)
 
     print("\n  Creating 30 days of test failure data...")
     for day in range(30):
@@ -357,6 +357,7 @@ async def test_anomaly_detection_scan_latency(
 
     # Create anomaly detector (without LLM for pure detection speed)
     detector = AnomalyDetector(
+        "default",
         database=perf_database,
         llm_router=None,  # Skip AI explanations for performance test
         sensitivity_threshold=2.0,
@@ -393,7 +394,7 @@ async def test_weekly_summary_generation_latency(
     Acceptance: Weekly summary with AI should complete in < 15s (target: 10s).
     """
     # Create test data (1 week of reliability data)
-    pattern_collector = PatternCollector(config=perf_config, database=perf_database)
+    pattern_collector = PatternCollector("default", config=perf_config, database=perf_database)
 
     print("\n  Creating 1 week of test data...")
     for _day in range(7):

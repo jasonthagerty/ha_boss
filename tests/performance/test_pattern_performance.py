@@ -48,7 +48,7 @@ async def test_pattern_recording_latency(perf_database: Database, perf_config: C
 
     Acceptance: Pattern recording should complete in < 5ms.
     """
-    pattern_collector = PatternCollector(config=perf_config, database=perf_database)
+    pattern_collector = PatternCollector("default", config=perf_config, database=perf_database)
 
     # Warm up
     await pattern_collector.record_entity_unavailable(
@@ -86,7 +86,7 @@ async def test_healing_attempt_recording_latency(
 
     Acceptance: Healing attempt recording should complete in < 5ms.
     """
-    pattern_collector = PatternCollector(config=perf_config, database=perf_database)
+    pattern_collector = PatternCollector("default", config=perf_config, database=perf_database)
 
     # Warm up
     await pattern_collector.record_healing_attempt(
@@ -126,7 +126,7 @@ async def test_query_performance_with_10k_events(
 
     Acceptance: Reliability queries should complete in < 100ms even with 10k events.
     """
-    pattern_collector = PatternCollector(config=perf_config, database=perf_database)
+    pattern_collector = PatternCollector("default", config=perf_config, database=perf_database)
 
     # Create 10k events (mix of unavailable, heal_success, heal_failure)
     print("\n  Creating 10k events for performance test...")
@@ -155,7 +155,7 @@ async def test_query_performance_with_10k_events(
     print("  ✓ 10k events created")
 
     # Benchmark queries
-    analyzer = ReliabilityAnalyzer(perf_database)
+    analyzer = ReliabilityAnalyzer("default", perf_database)
 
     # Test 1: Get all integration metrics
     start_time = time.perf_counter()
@@ -209,7 +209,7 @@ async def test_concurrent_pattern_recording(perf_database: Database, perf_config
     """
     import asyncio
 
-    pattern_collector = PatternCollector(config=perf_config, database=perf_database)
+    pattern_collector = PatternCollector("default", config=perf_config, database=perf_database)
 
     # Test concurrent recording
     async def record_batch(batch_id: int, count: int) -> None:
@@ -246,8 +246,8 @@ async def test_database_growth_impact(perf_database: Database, perf_config: Conf
 
     Acceptance: Query times should remain roughly constant as database grows.
     """
-    pattern_collector = PatternCollector(config=perf_config, database=perf_database)
-    analyzer = ReliabilityAnalyzer(perf_database)
+    pattern_collector = PatternCollector("default", config=perf_config, database=perf_database)
+    analyzer = ReliabilityAnalyzer("default", perf_database)
 
     query_times = []
 
