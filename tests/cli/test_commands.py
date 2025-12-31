@@ -712,7 +712,7 @@ class TestConfigValidateErrors:
 
         mock_load.return_value = mock_config
 
-        async def mock_create_client_auth_error(config):
+        async def mock_create_client_auth_error(config, instance_id=None):
             raise HomeAssistantAuthError("Invalid token")
 
         mock_client.side_effect = mock_create_client_auth_error
@@ -730,7 +730,7 @@ class TestConfigValidateErrors:
 
         mock_load.return_value = mock_config
 
-        async def mock_create_client_conn_error(config):
+        async def mock_create_client_conn_error(config, instance_id=None):
             raise HomeAssistantConnectionError("Cannot connect")
 
         mock_client.side_effect = mock_create_client_conn_error

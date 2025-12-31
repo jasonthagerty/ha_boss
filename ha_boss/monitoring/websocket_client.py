@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import websockets
 from websockets.exceptions import WebSocketException
 
-from ha_boss.core.config import Config
+from ha_boss.core.config import Config, HomeAssistantInstance
 from ha_boss.core.exceptions import (
     HomeAssistantAuthError,
     HomeAssistantConnectionError,
@@ -30,6 +30,7 @@ class WebSocketClient:
 
     def __init__(
         self,
+        instance: HomeAssistantInstance,
         config: Config,
         entity_discovery: "EntityDiscoveryService | None" = None,
         on_state_changed: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
@@ -37,14 +38,17 @@ class WebSocketClient:
         """Initialize WebSocket client.
 
         Args:
-            config: HA Boss configuration
+            instance: Home Assistant instance configuration (URL, token, instance_id)
+            config: HA Boss configuration for connection settings
             entity_discovery: Optional entity discovery service for reload event handling
             on_state_changed: Async callback for state_changed events
         """
         # Build WebSocket URL from HTTP URL
-        ws_url = config.home_assistant.url.replace("http://", "ws://").replace("https://", "wss://")
+        ws_url = instance.url.replace("http://", "ws://").replace("https://", "wss://")
         self.ws_url = f"{ws_url}/api/websocket"
-        self.token = config.home_assistant.token
+        self.token = instance.token
+        self.instance = instance
+        self.instance_id = instance.instance_id
         self.config = config
         self.entity_discovery = entity_discovery
 

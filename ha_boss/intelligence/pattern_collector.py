@@ -20,15 +20,18 @@ class PatternCollector:
 
     def __init__(
         self,
+        instance_id: str,
         config: Config,
         database: Database,
     ) -> None:
         """Initialize pattern collector.
 
         Args:
+            instance_id: Home Assistant instance identifier
             config: HA Boss configuration
             database: Database manager
         """
+        self.instance_id = instance_id
         self.config = config
         self.database = database
         self._event_count = 0  # For testing/monitoring
@@ -133,6 +136,7 @@ class PatternCollector:
 
         async with self.database.async_session() as session:
             event = IntegrationReliability(
+                instance_id=self.instance_id,
                 integration_id=integration_id,
                 integration_domain=integration_domain,
                 timestamp=timestamp,

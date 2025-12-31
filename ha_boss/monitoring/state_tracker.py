@@ -59,6 +59,7 @@ class StateTracker:
 
     def __init__(
         self,
+        instance_id: str,
         database: Database,
         entity_discovery: "EntityDiscoveryService | None" = None,
         integration_discovery: "IntegrationDiscovery | None" = None,
@@ -69,11 +70,13 @@ class StateTracker:
         """Initialize state tracker.
 
         Args:
+            instance_id: Home Assistant instance identifier
             database: Database manager for persistence
             entity_discovery: Optional entity discovery service for filtering
             integration_discovery: Optional integration discovery for entity→integration mapping
             on_state_updated: Optional callback for state changes (new_state, old_state)
         """
+        self.instance_id = instance_id
         self.database = database
         self.entity_discovery = entity_discovery
         self.integration_discovery = integration_discovery
@@ -267,7 +270,10 @@ class StateTracker:
             async with self.database.async_session() as session:
                 # Check if entity exists
                 result = await session.execute(
-                    select(Entity).where(Entity.entity_id == entity_state.entity_id)
+                    select(Entity).where(
+                        Entity.instance_id == self.instance_id,
+                        Entity.entity_id == entity_state.entity_id,
+                    )
                 )
                 entity = result.scalar_one_or_none()
 
@@ -290,6 +296,7 @@ class StateTracker:
                         )
 
                     entity = Entity(
+                        instance_id=self.instance_id,
                         entity_id=entity_state.entity_id,
                         domain=domain,
                         friendly_name=friendly_name,
@@ -320,6 +327,7 @@ class StateTracker:
         try:
             async with self.database.async_session() as session:
                 history = StateHistory(
+                    instance_id=self.instance_id,
                     entity_id=entity_id,
                     old_state=old_state,
                     new_state=new_state,

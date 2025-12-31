@@ -80,8 +80,18 @@ Thumbs.db
 secrets.yaml
 known_devices.yaml
 
-# SQLite database files
-data/*.db
-data/*.db-journal
-data/*.db-shm
-data/*.db-wal
+# Runtime data directory
+data/
+
+# SQLite database files (covered by data/ above, but kept for clarity)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# User-specific service files
+*.service
+
+# Temporary summary/report files
+*_SUMMARY.md
+FINAL_*.md

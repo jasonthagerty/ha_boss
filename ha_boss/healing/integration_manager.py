@@ -222,7 +222,9 @@ class IntegrationDiscovery:
         async with self.database.async_session() as session:
             from sqlalchemy import select
 
-            result = await session.execute(select(Integration))
+            result = await session.execute(
+                select(Integration).where(Integration.instance_id == self.ha_client.instance_id)
+            )
             integrations = result.scalars().all()
 
             for integration in integrations:
@@ -251,7 +253,10 @@ class IntegrationDiscovery:
 
             # Fetch all existing integrations in one query to avoid race conditions
             result = await session.execute(
-                select(Integration).where(Integration.entry_id.in_(self._integrations.keys()))
+                select(Integration).where(
+                    Integration.instance_id == self.ha_client.instance_id,
+                    Integration.entry_id.in_(self._integrations.keys()),
+                )
             )
             existing_map = {i.entry_id: i for i in result.scalars().all()}
 
@@ -269,6 +274,7 @@ class IntegrationDiscovery:
                 else:
                     # Create new
                     integration = Integration(
+                        instance_id=self.ha_client.instance_id,
                         entry_id=entry_id,
                         domain=details["domain"],
                         title=details["title"],

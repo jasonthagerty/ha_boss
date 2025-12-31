@@ -31,8 +31,10 @@ async def test_create_entity(tmp_path):
     db_path = tmp_path / "test.db"
     db = await init_database(db_path)
 
+    entity_id = None
     async with db.async_session() as session:
         entity = Entity(
+            instance_id="default",
             entity_id="sensor.test_temp",
             domain="sensor",
             friendly_name="Test Temperature",
@@ -42,11 +44,13 @@ async def test_create_entity(tmp_path):
         )
         session.add(entity)
         await session.commit()
+        entity_id = entity.id
 
-    # Retrieve entity
+    # Retrieve entity by primary key (autoincrement id)
     async with db.async_session() as session:
-        result = await session.get(Entity, "sensor.test_temp")
+        result = await session.get(Entity, entity_id)
         assert result is not None
+        assert result.instance_id == "default"
         assert result.entity_id == "sensor.test_temp"
         assert result.domain == "sensor"
         assert result.last_state == "22.5"
@@ -106,8 +110,10 @@ async def test_create_integration(tmp_path):
     db_path = tmp_path / "test.db"
     db = await init_database(db_path)
 
+    integration_id = None
     async with db.async_session() as session:
         integration = Integration(
+            instance_id="default",
             entry_id="abc123",
             domain="mqtt",
             title="MQTT Broker",
@@ -117,10 +123,14 @@ async def test_create_integration(tmp_path):
         )
         session.add(integration)
         await session.commit()
+        integration_id = integration.id
 
-        # Retrieve integration
-        result = await session.get(Integration, "abc123")
+    # Retrieve integration by primary key (autoincrement id)
+    async with db.async_session() as session:
+        result = await session.get(Integration, integration_id)
         assert result is not None
+        assert result.instance_id == "default"
+        assert result.entry_id == "abc123"
         assert result.domain == "mqtt"
 
     await db.close()

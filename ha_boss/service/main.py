@@ -13,7 +13,6 @@ from ha_boss.core.exceptions import (
     CircuitBreakerOpenError,
     DatabaseError,
 )
-from ha_boss.core.ha_client import create_ha_client
 from ha_boss.healing.escalation import NotificationEscalator
 from ha_boss.healing.heal_strategies import HealingManager
 from ha_boss.healing.integration_manager import IntegrationDiscovery
@@ -38,11 +37,12 @@ class ServiceState:
 class HABossService:
     """Main service orchestration for HA Boss.
 
-    Coordinates all MVP components into a continuously running service:
-    - WebSocket monitoring
-    - Health detection
-    - Auto-healing with safety mechanisms
-    - Notification escalation
+    Coordinates all MVP components for multiple Home Assistant instances:
+    - Per-instance WebSocket monitoring
+    - Per-instance Health detection
+    - Per-instance Auto-healing with safety mechanisms
+    - Per-instance Notification escalation
+    - Shared database for all instances
     """
 
     def __init__(self, config: Config) -> None:
@@ -54,30 +54,253 @@ class HABossService:
         self.config = config
         self.state = ServiceState.STOPPED
 
-        # Core components (initialized in start())
+        # Shared components (initialized in start())
         self.database: Database | None = None
-        self.ha_client: Any = None
-        self.websocket_client: WebSocketClient | None = None
-        self.state_tracker: StateTracker | None = None
-        self.health_monitor: HealthMonitor | None = None
-        self.integration_discovery: IntegrationDiscovery | None = None
-        self.entity_discovery: Any = None  # EntityDiscoveryService
-        self.healing_manager: HealingManager | None = None
-        self.notification_manager: NotificationManager | None = None
-        self.escalation_manager: NotificationEscalator | None = None
-        self.pattern_collector: Any = None  # PatternCollector (Phase 2)
+
+        # Per-instance components (keyed by instance_id)
+        self.ha_clients: dict[str, Any] = {}
+        self.websocket_clients: dict[str, WebSocketClient] = {}
+        self.state_trackers: dict[str, StateTracker] = {}
+        self.health_monitors: dict[str, HealthMonitor] = {}
+        self.integration_discoveries: dict[str, IntegrationDiscovery] = {}
+        self.entity_discoveries: dict[str, Any] = {}  # EntityDiscoveryService
+        self.healing_managers: dict[str, HealingManager] = {}
+        self.notification_managers: dict[str, NotificationManager] = {}
+        self.escalation_managers: dict[str, NotificationEscalator] = {}
+        self.pattern_collectors: dict[str, Any] = {}  # PatternCollector (Phase 2)
 
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
         self._shutdown_event = asyncio.Event()
         self._api_server: Any = None  # Uvicorn server instance
 
-        # Statistics
+        # Statistics (per instance)
         self.start_time: datetime | None = None
-        self.health_checks_performed = 0
-        self.healings_attempted = 0
-        self.healings_succeeded = 0
-        self.healings_failed = 0
+        self.health_checks_performed: dict[str, int] = {}
+        self.healings_attempted: dict[str, int] = {}
+        self.healings_succeeded: dict[str, int] = {}
+        self.healings_failed: dict[str, int] = {}
+
+    def _get_default_instance_id(self) -> str:
+        """Get the default instance ID (first instance or 'default').
+
+        Returns:
+            The default instance ID
+
+        Raises:
+            RuntimeError: If no instances are configured
+        """
+        if not self.ha_clients:
+            raise RuntimeError("No instances configured")
+        return list(self.ha_clients.keys())[0]
+
+    # Backward compatibility properties for single-instance access
+    @property
+    def ha_client(self) -> Any:
+        """Get the default HA client for backward compatibility."""
+        return self.ha_clients.get(self._get_default_instance_id())
+
+    @property
+    def websocket_client(self) -> Any:
+        """Get the default WebSocket client for backward compatibility."""
+        return self.websocket_clients.get(self._get_default_instance_id())
+
+    @property
+    def state_tracker(self) -> Any:
+        """Get the default state tracker for backward compatibility."""
+        return self.state_trackers.get(self._get_default_instance_id())
+
+    @property
+    def health_monitor(self) -> Any:
+        """Get the default health monitor for backward compatibility."""
+        return self.health_monitors.get(self._get_default_instance_id())
+
+    @property
+    def healing_manager(self) -> Any:
+        """Get the default healing manager for backward compatibility."""
+        return self.healing_managers.get(self._get_default_instance_id())
+
+    @property
+    def integration_discovery(self) -> Any:
+        """Get the default integration discovery for backward compatibility."""
+        return self.integration_discoveries.get(self._get_default_instance_id())
+
+    @property
+    def entity_discovery(self) -> Any:
+        """Get the default entity discovery for backward compatibility."""
+        return self.entity_discoveries.get(self._get_default_instance_id())
+
+    @property
+    def pattern_collector(self) -> Any:
+        """Get the default pattern collector for backward compatibility."""
+        return self.pattern_collectors.get(self._get_default_instance_id())
+
+    async def _initialize_instance(
+        self, instance_id: str, url: str, token: str, bridge_enabled: bool
+    ) -> None:
+        """Initialize all components for a single Home Assistant instance.
+
+        Args:
+            instance_id: Unique identifier for this instance
+            url: Home Assistant URL
+            token: Long-lived access token
+            bridge_enabled: Whether to try using HA Boss Bridge
+
+        Raises:
+            HomeAssistantConnectionError: Cannot connect to HA
+            HomeAssistantAuthError: Authentication failed
+        """
+        logger.info(f"[{instance_id}] Initializing instance...")
+
+        # Initialize statistics for this instance
+        self.health_checks_performed[instance_id] = 0
+        self.healings_attempted[instance_id] = 0
+        self.healings_succeeded[instance_id] = 0
+        self.healings_failed[instance_id] = 0
+
+        # 1. Create Home Assistant client
+        logger.info(f"[{instance_id}] Connecting to Home Assistant at {url}...")
+        from ha_boss.core.ha_client import HAClient
+
+        self.ha_clients[instance_id] = HAClient(url=url, token=token)
+
+        # Test connection
+        await self.ha_clients[instance_id].get_states()
+        logger.info(f"[{instance_id}] ✓ Home Assistant connection established")
+
+        # 2. Initialize notification manager
+        logger.info(f"[{instance_id}] Initializing notification manager...")
+        self.notification_managers[instance_id] = NotificationManager(
+            config=self.config,
+            ha_client=self.ha_clients[instance_id],
+        )
+        logger.info(f"[{instance_id}] ✓ Notification manager initialized")
+
+        # 3. Discover integrations
+        logger.info(f"[{instance_id}] Discovering integrations...")
+        self.integration_discoveries[instance_id] = IntegrationDiscovery(
+            ha_client=self.ha_clients[instance_id],
+            database=self.database,
+            config=self.config,
+        )
+        # Attempt discovery but don't fail if it doesn't work
+        try:
+            await self.integration_discoveries[instance_id].discover_all()
+            logger.info(f"[{instance_id}] ✓ Integration discovery completed")
+        except Exception as e:
+            logger.warning(f"[{instance_id}] Integration discovery failed, continuing anyway: {e}")
+
+        # 4. Entity discovery from automations/scenes/scripts
+        if self.config.monitoring.auto_discovery.enabled:
+            try:
+                from ha_boss.discovery.entity_discovery import EntityDiscoveryService
+
+                logger.info(f"[{instance_id}] Initializing entity discovery...")
+                self.entity_discoveries[instance_id] = EntityDiscoveryService(
+                    ha_client=self.ha_clients[instance_id],
+                    database=self.database,
+                    config=self.config,
+                    instance_id=instance_id,
+                )
+
+                # Run initial discovery
+                stats = await self.entity_discoveries[instance_id].discover_and_refresh(
+                    trigger_type="startup", trigger_source="service_init"
+                )
+                logger.info(
+                    f"[{instance_id}] ✓ Entity discovery completed: "
+                    f"{stats['automations_found']} automations, "
+                    f"{stats['scenes_found']} scenes, {stats['scripts_found']} scripts, "
+                    f"{stats['entities_discovered']} entities"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[{instance_id}] Entity discovery failed, continuing without it: {e}"
+                )
+                self.entity_discoveries[instance_id] = None
+        else:
+            logger.info(f"[{instance_id}] Entity auto-discovery disabled in configuration")
+            self.entity_discoveries[instance_id] = None
+
+        # 5. Initialize state tracker with REST snapshot
+        logger.info(f"[{instance_id}] Initializing state tracker...")
+        self.state_trackers[instance_id] = StateTracker(
+            database=self.database,
+            config=self.config,
+            instance_id=instance_id,
+        )
+
+        # Fetch initial state from REST API
+        states = await self.ha_clients[instance_id].get_states()
+        for state_data in states:
+            await self.state_trackers[instance_id].update_state(state_data)
+
+        logger.info(f"[{instance_id}] ✓ State tracker initialized with {len(states)} entities")
+
+        # 6. Initialize health monitor
+        logger.info(f"[{instance_id}] Initializing health monitor...")
+        self.health_monitors[instance_id] = HealthMonitor(
+            config=self.config,
+            state_tracker=self.state_trackers[instance_id],
+            database=self.database,
+            on_issue_detected=lambda issue: self._on_health_issue(instance_id, issue),
+            instance_id=instance_id,
+        )
+        await self.health_monitors[instance_id].start()
+        logger.info(f"[{instance_id}] ✓ Health monitor started")
+
+        # 7. Initialize healing manager
+        logger.info(f"[{instance_id}] Initializing healing manager...")
+        self.healing_managers[instance_id] = HealingManager(
+            config=self.config,
+            database=self.database,
+            ha_client=self.ha_clients[instance_id],
+            integration_discovery=self.integration_discoveries[instance_id],
+        )
+        logger.info(f"[{instance_id}] ✓ Healing manager initialized")
+
+        # 8. Initialize escalation manager
+        logger.info(f"[{instance_id}] Initializing escalation manager...")
+        self.escalation_managers[instance_id] = NotificationEscalator(
+            config=self.config,
+            ha_client=self.ha_clients[instance_id],
+        )
+        logger.info(f"[{instance_id}] ✓ Escalation manager initialized")
+
+        # 9. Initialize pattern collector (Phase 2)
+        if self.config.intelligence.pattern_collection_enabled:
+            try:
+                from ha_boss.intelligence.pattern_collector import PatternCollector
+
+                logger.info(f"[{instance_id}] Initializing pattern collector...")
+                self.pattern_collectors[instance_id] = PatternCollector(
+                    instance_id=instance_id,
+                    database=self.database,
+                    config=self.config,
+                )
+                logger.info(f"[{instance_id}] ✓ Pattern collector initialized")
+            except Exception as e:
+                logger.warning(f"[{instance_id}] Failed to initialize pattern collector: {e}")
+                logger.info(f"[{instance_id}] Continuing without pattern collection")
+
+        # 10. Connect WebSocket
+        logger.info(f"[{instance_id}] Connecting to Home Assistant WebSocket...")
+        self.websocket_clients[instance_id] = WebSocketClient(
+            config=self.config,
+            entity_discovery=self.entity_discoveries.get(instance_id),
+            on_state_changed=lambda event: self._on_websocket_state_changed(instance_id, event),
+            url=url,
+            token=token,
+        )
+        await self.websocket_clients[instance_id].connect()
+        await self.websocket_clients[instance_id].subscribe_events("state_changed")
+
+        # Subscribe to call_service events for discovery refresh triggers
+        if self.entity_discoveries.get(instance_id):
+            await self.websocket_clients[instance_id].subscribe_events("call_service")
+
+        logger.info(f"[{instance_id}] ✓ WebSocket connected and subscribed")
+        logger.info(f"[{instance_id}] ✅ Instance initialization complete")
 
     async def start(self) -> None:
         """Start the HA Boss service and all components.
@@ -109,7 +332,7 @@ class HABossService:
         self.start_time = datetime.now(UTC)
 
         try:
-            # 1. Initialize database
+            # 1. Initialize database (shared across all instances)
             logger.info("Initializing database...")
             self.database = Database(self.config.database.path)
             await self.database.init_db()
@@ -121,139 +344,36 @@ class HABossService:
                 raise DatabaseError(message)
             logger.info(f"✓ Database initialized ({message})")
 
-            # 2. Create Home Assistant client
-            logger.info(f"Connecting to Home Assistant at {self.config.home_assistant.url}...")
-            self.ha_client = await create_ha_client(self.config)
+            # 2. Initialize all Home Assistant instances
+            instances = self.config.home_assistant.instances
+            if not instances:
+                # Backward compatibility: Use legacy single-instance config
+                logger.warning("No instances configured, using legacy single-instance mode")
+                from ha_boss.core.config import HomeAssistantInstance
 
-            # Test connection
-            await self.ha_client.get_states()
-            logger.info("✓ Home Assistant connection established")
-
-            # 3. Initialize notification manager
-            logger.info("Initializing notification manager...")
-            self.notification_manager = NotificationManager(
-                config=self.config,
-                ha_client=self.ha_client,
-            )
-            logger.info("✓ Notification manager initialized")
-
-            # 4. Discover integrations
-            logger.info("Discovering integrations...")
-            self.integration_discovery = IntegrationDiscovery(
-                ha_client=self.ha_client,
-                database=self.database,
-                config=self.config,
-            )
-            # Attempt discovery but don't fail if it doesn't work
-            try:
-                await self.integration_discovery.discover_all()
-                logger.info("✓ Integration discovery completed")
-            except Exception as e:
-                logger.warning(f"Integration discovery failed, continuing anyway: {e}")
-
-            # 5. Entity discovery from automations/scenes/scripts
-            if self.config.monitoring.auto_discovery.enabled:
-                try:
-                    from ha_boss.discovery.entity_discovery import EntityDiscoveryService
-
-                    logger.info("Initializing entity discovery...")
-                    self.entity_discovery = EntityDiscoveryService(
-                        ha_client=self.ha_client,
-                        database=self.database,
-                        config=self.config,
+                instances = [
+                    HomeAssistantInstance(
+                        instance_id="default",
+                        url=self.config.home_assistant.url,
+                        token=self.config.home_assistant.token,
+                        bridge_enabled=True,
                     )
+                ]
 
-                    # Run initial discovery
-                    stats = await self.entity_discovery.discover_and_refresh(
-                        trigger_type="startup", trigger_source="service_init"
-                    )
-                    logger.info(
-                        f"✓ Entity discovery completed: {stats['automations_found']} automations, "
-                        f"{stats['scenes_found']} scenes, {stats['scripts_found']} scripts, "
-                        f"{stats['entities_discovered']} entities"
-                    )
-                except Exception as e:
-                    logger.warning(f"Entity discovery failed, continuing without it: {e}")
-                    self.entity_discovery = None
-            else:
-                logger.info("Entity auto-discovery disabled in configuration")
-                self.entity_discovery = None
+            logger.info(f"Initializing {len(instances)} Home Assistant instance(s)...")
 
-            # 6. Initialize state tracker
-            logger.info("Initializing state tracker...")
-            self.state_tracker = StateTracker(
-                database=self.database,
-                entity_discovery=self.entity_discovery,
-                integration_discovery=self.integration_discovery,
-                on_state_updated=self._on_state_updated,
-            )
+            # Initialize instances sequentially to avoid overwhelming resources
+            for instance_config in instances:
+                await self._initialize_instance(
+                    instance_id=instance_config.instance_id,
+                    url=instance_config.url,
+                    token=instance_config.token,
+                    bridge_enabled=instance_config.bridge_enabled,
+                )
 
-            # Fetch initial state snapshot from REST API
-            initial_states = await self.ha_client.get_states()
-            await self.state_tracker.initialize(initial_states)
-            logger.info(f"✓ State tracker initialized with {len(initial_states)} entities")
+            logger.info(f"✅ All {len(instances)} instance(s) initialized successfully")
 
-            # 6. Initialize health monitor
-            logger.info("Initializing health monitor...")
-            self.health_monitor = HealthMonitor(
-                config=self.config,
-                database=self.database,
-                state_tracker=self.state_tracker,
-                on_issue_detected=self._on_health_issue,
-            )
-            await self.health_monitor.start()
-            logger.info("✓ Health monitor started")
-
-            # 7. Initialize healing manager
-            logger.info("Initializing healing manager...")
-            self.healing_manager = HealingManager(
-                config=self.config,
-                database=self.database,
-                ha_client=self.ha_client,
-                integration_discovery=self.integration_discovery,
-            )
-            logger.info("✓ Healing manager initialized")
-
-            # 8. Initialize escalation manager
-            logger.info("Initializing escalation manager...")
-            self.escalation_manager = NotificationEscalator(
-                config=self.config,
-                ha_client=self.ha_client,
-            )
-            logger.info("✓ Escalation manager initialized")
-
-            # 8.5 Initialize pattern collector (Phase 2)
-            if self.config.intelligence.pattern_collection_enabled:
-                try:
-                    from ha_boss.intelligence.pattern_collector import PatternCollector
-
-                    logger.info("Initializing pattern collector...")
-                    self.pattern_collector = PatternCollector(
-                        database=self.database,
-                        config=self.config,
-                    )
-                    logger.info("✓ Pattern collector initialized")
-                except Exception as e:
-                    logger.warning(f"Failed to initialize pattern collector: {e}")
-                    logger.info("Continuing without pattern collection")
-
-            # 9. Connect WebSocket
-            logger.info("Connecting to Home Assistant WebSocket...")
-            self.websocket_client = WebSocketClient(
-                config=self.config,
-                entity_discovery=self.entity_discovery,
-                on_state_changed=self._on_websocket_state_changed,
-            )
-            await self.websocket_client.connect()
-            await self.websocket_client.subscribe_events("state_changed")
-
-            # Subscribe to call_service events for discovery refresh triggers
-            if self.entity_discovery:
-                await self.websocket_client.subscribe_events("call_service")
-
-            logger.info("✓ WebSocket connected and subscribed")
-
-            # 10. Start background tasks
+            # 3. Start background tasks
             logger.info("Starting background tasks...")
             self._start_background_tasks()
 
@@ -279,34 +399,39 @@ class HABossService:
             raise
 
     def _start_background_tasks(self) -> None:
-        """Start all background tasks."""
-        # WebSocket receiver
-        task = asyncio.create_task(self.websocket_client.start())  # type: ignore
-        task.set_name("websocket_receiver")
-        self._tasks.append(task)
-
-        # Note: HealthMonitor runs its own internal monitoring loop
-        # No need for separate periodic health check task here
-
-        # Periodic REST snapshot validation (every 5 minutes)
-        task = asyncio.create_task(self._periodic_snapshot_validation())
-        task.set_name("periodic_snapshot_validation")
-        self._tasks.append(task)
-
-        # Periodic entity discovery refresh (if enabled and interval > 0)
-        if (
-            self.entity_discovery
-            and self.config.monitoring.auto_discovery.refresh_interval_seconds > 0
-        ):
-            task = asyncio.create_task(
-                self.entity_discovery.start_periodic_refresh(
-                    self.config.monitoring.auto_discovery.refresh_interval_seconds
-                )
-            )
-            task.set_name("periodic_discovery_refresh")
+        """Start all background tasks for all instances."""
+        # Start tasks for each instance
+        for instance_id, websocket_client in self.websocket_clients.items():
+            # WebSocket receiver
+            task = asyncio.create_task(websocket_client.start())  # type: ignore
+            task.set_name(f"websocket_receiver_{instance_id}")
             self._tasks.append(task)
 
-        logger.info(f"Started {len(self._tasks)} background tasks")
+            # Periodic REST snapshot validation (every 5 minutes)
+            task = asyncio.create_task(self._periodic_snapshot_validation(instance_id))
+            task.set_name(f"periodic_snapshot_validation_{instance_id}")
+            self._tasks.append(task)
+
+            # Periodic entity discovery refresh (if enabled and interval > 0)
+            entity_discovery = self.entity_discoveries.get(instance_id)
+            if (
+                entity_discovery
+                and self.config.monitoring.auto_discovery.refresh_interval_seconds > 0
+            ):
+                task = asyncio.create_task(
+                    entity_discovery.start_periodic_refresh(
+                        self.config.monitoring.auto_discovery.refresh_interval_seconds
+                    )
+                )
+                task.set_name(f"periodic_discovery_refresh_{instance_id}")
+                self._tasks.append(task)
+
+        # Note: HealthMonitor runs its own internal monitoring loop (per instance)
+        # No need for separate periodic health check task here
+
+        logger.info(
+            f"Started {len(self._tasks)} background tasks for {len(self.websocket_clients)} instance(s)"
+        )
 
     def _start_api_server(self) -> None:
         """Start the FastAPI server in a background task."""
@@ -484,45 +609,60 @@ Access the web dashboard at `/dashboard` for a visual interface.
         except Exception as e:
             logger.error(f"API server error: {e}", exc_info=True)
 
-    async def _periodic_snapshot_validation(self) -> None:
-        """Periodically validate state tracker cache against REST API snapshot."""
+    async def _periodic_snapshot_validation(self, instance_id: str) -> None:
+        """Periodically validate state tracker cache against REST API snapshot.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+        """
         interval = self.config.monitoring.snapshot_interval_seconds
 
         while not self._shutdown_event.is_set():
             try:
-                if self.ha_client and self.state_tracker:
-                    logger.debug("Fetching REST API snapshot for validation...")
-                    states = await self.ha_client.get_states()
+                ha_client = self.ha_clients.get(instance_id)
+                state_tracker = self.state_trackers.get(instance_id)
+
+                if ha_client and state_tracker:
+                    logger.debug(f"[{instance_id}] Fetching REST API snapshot for validation...")
+                    states = await ha_client.get_states()
 
                     # Update state tracker with fresh data
                     for state_data in states:
                         entity_id = state_data.get("entity_id")
                         if entity_id:
-                            await self.state_tracker.update_state(state_data)
+                            await state_tracker.update_state(state_data)
 
-                    logger.debug(f"Validated {len(states)} entities via REST snapshot")
+                    logger.debug(
+                        f"[{instance_id}] Validated {len(states)} entities via REST snapshot"
+                    )
 
                 await asyncio.sleep(interval)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in periodic snapshot validation: {e}", exc_info=True)
+                logger.error(
+                    f"[{instance_id}] Error in periodic snapshot validation: {e}", exc_info=True
+                )
 
-    async def _on_websocket_state_changed(self, event: dict[str, Any]) -> None:
+    async def _on_websocket_state_changed(self, instance_id: str, event: dict[str, Any]) -> None:
         """Handle state_changed events from WebSocket.
 
         Args:
+            instance_id: Home Assistant instance identifier
             event: WebSocket state_changed event data containing entity_id, new_state, old_state
         """
         try:
             # Update state tracker with full event data
             # event structure: {entity_id: "...", new_state: {...}, old_state: {...}}
-            if self.state_tracker:
-                await self.state_tracker.update_state(event)
+            state_tracker = self.state_trackers.get(instance_id)
+            if state_tracker:
+                await state_tracker.update_state(event)
 
         except Exception as e:
-            logger.error(f"Error handling WebSocket state change: {e}", exc_info=True)
+            logger.error(
+                f"[{instance_id}] Error handling WebSocket state change: {e}", exc_info=True
+            )
 
     async def _on_state_updated(
         self, new_state: EntityState, old_state: EntityState | None
@@ -545,36 +685,43 @@ Access the web dashboard at `/dashboard` for a visual interface.
             except Exception as e:
                 logger.error(f"Error checking health for {new_state.entity_id}: {e}", exc_info=True)
 
-    async def _on_health_issue(self, issue: HealthIssue) -> None:
+    async def _on_health_issue(self, instance_id: str, issue: HealthIssue) -> None:
         """Callback when health issue is detected.
 
         Args:
+            instance_id: Home Assistant instance identifier
             issue: Detected health issue
         """
         logger.info(
-            f"Health issue detected: {issue.entity_id} - {issue.issue_type} "
+            f"[{instance_id}] Health issue detected: {issue.entity_id} - {issue.issue_type} "
             f"(detected at {issue.detected_at})"
         )
 
         # Skip healing for recovery events
         if issue.issue_type == "recovered":
-            logger.info(f"Entity {issue.entity_id} recovered automatically")
+            logger.info(f"[{instance_id}] Entity {issue.entity_id} recovered automatically")
             return
 
+        # Get instance components
+        pattern_collector = self.pattern_collectors.get(instance_id)
+        integration_discovery = self.integration_discoveries.get(instance_id)
+        healing_manager = self.healing_managers.get(instance_id)
+        escalation_manager = self.escalation_managers.get(instance_id)
+
         # Record unavailable event for pattern analysis (Phase 2)
-        if self.pattern_collector and issue.issue_type in ("unavailable", "stale"):
+        if pattern_collector and issue.issue_type in ("unavailable", "stale"):
             try:
                 # Get integration info
                 integration_id = None
                 integration_domain = None
-                if self.integration_discovery:
-                    integration_id = self.integration_discovery.get_integration_for_entity(
+                if integration_discovery:
+                    integration_id = integration_discovery.get_integration_for_entity(
                         issue.entity_id
                     )
                     if integration_id:
-                        integration_domain = self.integration_discovery.get_domain(integration_id)
+                        integration_domain = integration_discovery.get_domain(integration_id)
 
-                await self.pattern_collector.record_entity_unavailable(
+                await pattern_collector.record_entity_unavailable(
                     entity_id=issue.entity_id,
                     integration_id=integration_id,
                     integration_domain=integration_domain,
@@ -582,33 +729,35 @@ Access the web dashboard at `/dashboard` for a visual interface.
                     details=issue.details,
                 )
             except Exception as e:
-                logger.debug(f"Failed to record unavailable event: {e}")
+                logger.debug(f"[{instance_id}] Failed to record unavailable event: {e}")
 
         # Attempt auto-healing if enabled
-        if self.config.healing.enabled and self.healing_manager:
+        if self.config.healing.enabled and healing_manager:
             try:
-                logger.info(f"Attempting auto-heal for {issue.entity_id}...")
-                self.healings_attempted += 1
+                logger.info(f"[{instance_id}] Attempting auto-heal for {issue.entity_id}...")
+                self.healings_attempted[instance_id] = (
+                    self.healings_attempted.get(instance_id, 0) + 1
+                )
 
-                success = await self.healing_manager.heal(issue)
+                success = await healing_manager.heal(issue)
 
                 # Record healing attempt for pattern analysis (Phase 2)
-                if self.pattern_collector:
+                if pattern_collector:
                     try:
                         # Get integration info
                         integration_id = None
                         integration_domain = None
-                        if self.integration_discovery:
-                            integration_id = self.integration_discovery.get_integration_for_entity(
+                        if integration_discovery:
+                            integration_id = integration_discovery.get_integration_for_entity(
                                 issue.entity_id
                             )
                             if integration_id:
-                                integration_domain = self.integration_discovery.get_domain(
+                                integration_domain = integration_discovery.get_domain(
                                     integration_id
                                 )
 
                         if success:
-                            await self.pattern_collector.record_healing_attempt(
+                            await pattern_collector.record_healing_attempt(
                                 entity_id=issue.entity_id,
                                 integration_id=integration_id,
                                 integration_domain=integration_domain,
@@ -617,7 +766,7 @@ Access the web dashboard at `/dashboard` for a visual interface.
                                 details={"issue_type": issue.issue_type},
                             )
                         else:
-                            await self.pattern_collector.record_healing_attempt(
+                            await pattern_collector.record_healing_attempt(
                                 entity_id=issue.entity_id,
                                 integration_id=integration_id,
                                 integration_domain=integration_domain,
@@ -629,17 +778,19 @@ Access the web dashboard at `/dashboard` for a visual interface.
                                 },
                             )
                     except Exception as e:
-                        logger.debug(f"Failed to record healing attempt: {e}")
+                        logger.debug(f"[{instance_id}] Failed to record healing attempt: {e}")
 
                 if success:
-                    logger.info(f"✓ Successfully healed {issue.entity_id}")
-                    self.healings_succeeded += 1
+                    logger.info(f"[{instance_id}] ✓ Successfully healed {issue.entity_id}")
+                    self.healings_succeeded[instance_id] = (
+                        self.healings_succeeded.get(instance_id, 0) + 1
+                    )
                 else:
-                    logger.warning(f"✗ Healing failed for {issue.entity_id}")
-                    self.healings_failed += 1
+                    logger.warning(f"[{instance_id}] ✗ Healing failed for {issue.entity_id}")
+                    self.healings_failed[instance_id] = self.healings_failed.get(instance_id, 0) + 1
                     # Escalate to notifications
-                    if self.escalation_manager:
-                        await self.escalation_manager.notify_healing_failure(
+                    if escalation_manager:
+                        await escalation_manager.notify_healing_failure(
                             health_issue=issue,
                             error=Exception(
                                 f"Healing failed after {self.config.healing.max_attempts} attempts"
@@ -648,16 +799,16 @@ Access the web dashboard at `/dashboard` for a visual interface.
                         )
 
             except CircuitBreakerOpenError:
-                logger.warning(f"Circuit breaker open, skipping heal attempt for {issue.entity_id}")
+                logger.warning(
+                    f"[{instance_id}] Circuit breaker open, skipping heal attempt for {issue.entity_id}"
+                )
                 # Escalate circuit breaker trip
-                if self.escalation_manager and self.integration_discovery:
+                if escalation_manager and integration_discovery:
                     # Get integration name for notification
-                    entry_id = self.integration_discovery.get_integration_for_entity(
-                        issue.entity_id
-                    )
+                    entry_id = integration_discovery.get_integration_for_entity(issue.entity_id)
                     integration_name = issue.entity_id  # Default to entity_id
                     if entry_id:
-                        details = self.integration_discovery.get_integration_details(entry_id)
+                        details = integration_discovery.get_integration_details(entry_id)
                         if details:
                             integration_name = (
                                 details.get("title") or details.get("domain") or entry_id
@@ -670,7 +821,7 @@ Access the web dashboard at `/dashboard` for a visual interface.
                         seconds=self.config.healing.circuit_breaker_reset_seconds
                     )
 
-                    await self.escalation_manager.notify_circuit_breaker_open(
+                    await escalation_manager.notify_circuit_breaker_open(
                         integration_name=integration_name,
                         failure_count=self.config.healing.circuit_breaker_threshold,
                         reset_time=reset_time,
@@ -678,10 +829,11 @@ Access the web dashboard at `/dashboard` for a visual interface.
 
             except Exception as e:
                 logger.error(
-                    f"Error during healing attempt for {issue.entity_id}: {e}", exc_info=True
+                    f"[{instance_id}] Error during healing attempt for {issue.entity_id}: {e}",
+                    exc_info=True,
                 )
         else:
-            logger.info("Auto-healing disabled, issue logged only")
+            logger.info(f"[{instance_id}] Auto-healing disabled, issue logged only")
 
     async def stop(self) -> None:
         """Gracefully stop the HA Boss service."""
@@ -711,8 +863,8 @@ Access the web dashboard at `/dashboard` for a visual interface.
         logger.info("HA Boss service stopped")
 
     async def _cleanup(self) -> None:
-        """Clean up all components."""
-        # Stop API server
+        """Clean up all components for all instances."""
+        # Stop API server (shared)
         if self._api_server:
             try:
                 logger.info("Stopping API server...")
@@ -721,40 +873,48 @@ Access the web dashboard at `/dashboard` for a visual interface.
             except Exception as e:
                 logger.error(f"Error stopping API server: {e}")
 
-        # Stop health monitor
-        if self.health_monitor:
-            try:
-                await self.health_monitor.stop()
-            except Exception as e:
-                logger.error(f"Error stopping health monitor: {e}")
+        # Clean up each instance
+        for instance_id in list(self.ha_clients.keys()):
+            logger.info(f"[{instance_id}] Cleaning up instance components...")
 
-        # Stop entity discovery periodic refresh
-        if self.entity_discovery:
-            try:
-                await self.entity_discovery.stop_periodic_refresh()
-            except Exception as e:
-                logger.error(f"Error stopping entity discovery: {e}")
+            # Stop health monitor
+            health_monitor = self.health_monitors.get(instance_id)
+            if health_monitor:
+                try:
+                    await health_monitor.stop()
+                except Exception as e:
+                    logger.error(f"[{instance_id}] Error stopping health monitor: {e}")
 
-        # Stop WebSocket
-        if self.websocket_client:
-            try:
-                await self.websocket_client.stop()
-            except Exception as e:
-                logger.error(f"Error stopping WebSocket: {e}")
+            # Stop entity discovery periodic refresh
+            entity_discovery = self.entity_discoveries.get(instance_id)
+            if entity_discovery:
+                try:
+                    await entity_discovery.stop_periodic_refresh()
+                except Exception as e:
+                    logger.error(f"[{instance_id}] Error stopping entity discovery: {e}")
 
-        # Close database
+            # Stop WebSocket
+            websocket_client = self.websocket_clients.get(instance_id)
+            if websocket_client:
+                try:
+                    await websocket_client.stop()
+                except Exception as e:
+                    logger.error(f"[{instance_id}] Error stopping WebSocket: {e}")
+
+            # Close HA client
+            ha_client = self.ha_clients.get(instance_id)
+            if ha_client:
+                try:
+                    await ha_client.close()
+                except Exception as e:
+                    logger.error(f"[{instance_id}] Error closing HA client: {e}")
+
+        # Close database (shared)
         if self.database:
             try:
                 await self.database.close()
             except Exception as e:
                 logger.error(f"Error closing database: {e}")
-
-        # Close HA client
-        if self.ha_client:
-            try:
-                await self.ha_client.close()
-            except Exception as e:
-                logger.error(f"Error closing HA client: {e}")
 
     async def run_forever(self) -> None:
         """Run the service until interrupted.
@@ -785,30 +945,59 @@ Access the web dashboard at `/dashboard` for a visual interface.
         """Get current service status.
 
         Returns:
-            Dictionary with service status information
+            Dictionary with service status information including all instances
         """
         uptime_seconds = 0.0
         if self.start_time:
             uptime_seconds = (datetime.now(UTC) - self.start_time).total_seconds()
 
+        # Aggregate statistics across all instances
+        total_health_checks = sum(self.health_checks_performed.values())
+        total_healings_attempted = sum(self.healings_attempted.values())
+        total_healings_succeeded = sum(self.healings_succeeded.values())
+        total_healings_failed = sum(self.healings_failed.values())
+
         success_rate = 0.0
-        if self.healings_attempted > 0:
-            success_rate = (self.healings_succeeded / self.healings_attempted) * 100
+        if total_healings_attempted > 0:
+            success_rate = (total_healings_succeeded / total_healings_attempted) * 100
+
+        # Per-instance status
+        instances_status = {}
+        for instance_id in self.ha_clients.keys():
+            websocket_client = self.websocket_clients.get(instance_id)
+            instance_healings_attempted = self.healings_attempted.get(instance_id, 0)
+            instance_healings_succeeded = self.healings_succeeded.get(instance_id, 0)
+
+            instance_success_rate = 0.0
+            if instance_healings_attempted > 0:
+                instance_success_rate = (
+                    instance_healings_succeeded / instance_healings_attempted
+                ) * 100
+
+            instances_status[instance_id] = {
+                "websocket_connected": (
+                    websocket_client.is_connected() if websocket_client else False
+                ),
+                "health_checks_performed": self.health_checks_performed.get(instance_id, 0),
+                "healings_attempted": instance_healings_attempted,
+                "healings_succeeded": instance_healings_succeeded,
+                "healings_failed": self.healings_failed.get(instance_id, 0),
+                "healing_success_rate": instance_success_rate,
+            }
 
         return {
             "state": self.state,
             "mode": self.config.mode,
             "uptime_seconds": uptime_seconds,
             "start_time": self.start_time.isoformat() if self.start_time else None,
-            "websocket_connected": (
-                self.websocket_client.is_connected() if self.websocket_client else False
-            ),
             "healing_enabled": self.config.healing.enabled,
+            "instance_count": len(self.ha_clients),
+            "instances": instances_status,
             "statistics": {
-                "health_checks_performed": self.health_checks_performed,
-                "healings_attempted": self.healings_attempted,
-                "healings_succeeded": self.healings_succeeded,
-                "healings_failed": self.healings_failed,
+                "health_checks_performed": total_health_checks,
+                "healings_attempted": total_healings_attempted,
+                "healings_succeeded": total_healings_succeeded,
+                "healings_failed": total_healings_failed,
                 "healing_success_rate": success_rate,
             },
         }

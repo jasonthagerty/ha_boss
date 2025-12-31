@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import aiohttp
 
-from ha_boss.core.config import Config
+from ha_boss.core.config import Config, HomeAssistantInstance
 from ha_boss.core.exceptions import (
     HomeAssistantAPIError,
     HomeAssistantAuthError,
@@ -24,14 +24,17 @@ class HomeAssistantClient:
     error handling, and authentication.
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, instance: HomeAssistantInstance, config: Config) -> None:
         """Initialize Home Assistant client.
 
         Args:
-            config: HA Boss configuration containing HA URL and token
+            instance: Home Assistant instance configuration (URL, token, instance_id)
+            config: HA Boss configuration for REST settings
         """
-        self.base_url = config.home_assistant.url
-        self.token = config.home_assistant.token
+        self.instance = instance
+        self.instance_id = instance.instance_id
+        self.base_url = instance.url
+        self.token = instance.token
         self.timeout = config.rest.timeout_seconds
         self.max_retries = config.rest.retry_attempts
         self.retry_base_delay = config.rest.retry_base_delay_seconds
@@ -431,11 +434,12 @@ class HomeAssistantClient:
                 )
 
 
-async def create_ha_client(config: Config) -> HomeAssistantClient:
+async def create_ha_client(config: Config, instance_id: str | None = None) -> HomeAssistantClient:
     """Create and initialize Home Assistant client.
 
     Args:
         config: HA Boss configuration
+        instance_id: Optional instance ID (defaults to first instance)
 
     Returns:
         Initialized HA client
@@ -443,13 +447,24 @@ async def create_ha_client(config: Config) -> HomeAssistantClient:
     Raises:
         HomeAssistantConnectionError: Cannot connect to HA
         HomeAssistantAuthError: Invalid token
+        ValueError: Instance ID not found
     """
-    client = HomeAssistantClient(config)
+    # Get instance configuration
+    if instance_id:
+        instance = config.home_assistant.get_instance(instance_id)
+        if not instance:
+            raise ValueError(f"Instance '{instance_id}' not found in configuration")
+    else:
+        instance = config.home_assistant.get_default_instance()
+
+    client = HomeAssistantClient(instance, config)
 
     # Verify connection
     try:
         await client.check_connection()
-        logger.info(f"Successfully connected to Home Assistant at {config.home_assistant.url}")
+        logger.info(
+            f"Successfully connected to Home Assistant instance '{instance.instance_id}' at {instance.url}"
+        )
     except Exception:
         await client.close()
         raise

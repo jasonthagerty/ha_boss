@@ -78,6 +78,7 @@ class WeeklySummaryGenerator:
 
     def __init__(
         self,
+        instance_id: str,
         config: Config,
         database: Database,
         llm_router: LLMRouter | None = None,
@@ -86,16 +87,18 @@ class WeeklySummaryGenerator:
         """Initialize weekly summary generator.
 
         Args:
+            instance_id: Home Assistant instance identifier
             config: HA Boss configuration
             database: Database instance
             llm_router: Optional LLM router for AI summaries
             notification_manager: Optional notification manager for delivery
         """
+        self.instance_id = instance_id
         self.config = config
         self.database = database
         self.llm_router = llm_router
         self.notification_manager = notification_manager
-        self.reliability_analyzer = ReliabilityAnalyzer(database)
+        self.reliability_analyzer = ReliabilityAnalyzer(instance_id, database)
 
     async def generate_summary(
         self,
@@ -212,10 +215,10 @@ class WeeklySummaryGenerator:
 
         async with self.database.async_session() as session:
             # Query for previous week's data
-            query = (
-                select(IntegrationReliability)
-                .where(IntegrationReliability.timestamp >= prev_start)
-                .where(IntegrationReliability.timestamp < current_period_start)
+            query = select(IntegrationReliability).where(
+                IntegrationReliability.instance_id == self.instance_id,
+                IntegrationReliability.timestamp >= prev_start,
+                IntegrationReliability.timestamp < current_period_start,
             )
             result = await session.execute(query)
             events = result.scalars().all()

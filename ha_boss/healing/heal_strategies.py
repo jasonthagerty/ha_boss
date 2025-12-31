@@ -179,7 +179,10 @@ class HealingManager:
         """
         async with self.database.async_session() as session:
             result = await session.execute(
-                select(Integration).where(Integration.entry_id == integration_id)
+                select(Integration).where(
+                    Integration.instance_id == self.ha_client.instance_id,
+                    Integration.entry_id == integration_id,
+                )
             )
             integration = result.scalar_one_or_none()
 
@@ -268,6 +271,7 @@ class HealingManager:
         """
         async with self.database.async_session() as session:
             action = HealingAction(
+                instance_id=self.ha_client.instance_id,
                 entity_id=entity_id,
                 integration_id=integration_id,
                 action="reload_integration",
@@ -288,7 +292,10 @@ class HealingManager:
         """
         async with self.database.async_session() as session:
             result = await session.execute(
-                select(Integration).where(Integration.entry_id == integration_id)
+                select(Integration).where(
+                    Integration.instance_id == self.ha_client.instance_id,
+                    Integration.entry_id == integration_id,
+                )
             )
             integration = result.scalar_one_or_none()
 
@@ -307,7 +314,10 @@ class HealingManager:
         """
         async with self.database.async_session() as session:
             result = await session.execute(
-                select(Integration).where(Integration.entry_id == integration_id)
+                select(Integration).where(
+                    Integration.instance_id == self.ha_client.instance_id,
+                    Integration.entry_id == integration_id,
+                )
             )
             integration = result.scalar_one_or_none()
 
@@ -327,7 +337,10 @@ class HealingManager:
 
         async with self.database.async_session() as session:
             result = await session.execute(
-                select(Integration).where(Integration.entry_id == integration_id)
+                select(Integration).where(
+                    Integration.instance_id == self.ha_client.instance_id,
+                    Integration.entry_id == integration_id,
+                )
             )
             integration = result.scalar_one_or_none()
 
