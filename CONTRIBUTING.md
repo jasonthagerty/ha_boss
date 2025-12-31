@@ -148,6 +148,41 @@ make ci-check
 4. **Link Issues**: Reference related issues in PR description
 5. **Request Review**: Tag `@claude` for AI review
 
+### PR Scope Guidelines
+
+**Keep PRs Small and Focused** - Smaller PRs are easier to review, test, and merge safely.
+
+**Size Limits** (aim for these targets):
+- **Lines Changed**: < 500 lines (ideal), < 1000 lines (acceptable), > 1000 (split it!)
+- **Files Changed**: < 10 files (ideal), < 20 files (max)
+- **Commits**: 1-5 commits per PR (squash related changes)
+- **Review Time**: Should be reviewable in < 30 minutes
+
+**When to Split a PR**:
+- Refactoring + new features → Separate PRs
+- Multiple unrelated bug fixes → Separate PRs
+- Large architectural changes → Phase into multiple PRs
+- Changes affecting > 20 test files → Split by component
+
+**Good PR Examples**:
+- ✅ "Add WebSocket reconnection logic" (1 file, 150 lines, 5 tests)
+- ✅ "Fix config validation for multi-instance" (3 files, 200 lines)
+- ✅ "Refactor StateTracker to use async" (2 files, 300 lines)
+
+**Bad PR Examples**:
+- ❌ "Implement multi-instance support" (50 files, 3000 lines) → Split into:
+  - PR 1: Add multi-instance config structure
+  - PR 2: Update database models for multi-instance
+  - PR 3: Refactor components to accept instance_id
+  - PR 4: Update CLI for multi-instance
+  - PR 5: Update tests for multi-instance
+
+**Exception**: Breaking changes that must be atomic CAN be larger, but:
+- Require detailed migration guide
+- Include comprehensive test coverage
+- Update ALL affected tests in the same PR
+- Get approval from maintainers first
+
 ### PR Template
 
 The PR template will guide you through providing:

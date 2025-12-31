@@ -466,6 +466,98 @@ All HA Boss work (all phases) is tracked on a single project board organized by 
 - CI checks must pass before merge
 - Squash commits on merge to keep history clean
 
+### PR Size and Scope Best Practices
+
+**CRITICAL**: Keep PRs small and focused. Large PRs are difficult to review, prone to bugs, and block other work.
+
+**Size Limits** (enforce these):
+- **Lines Changed**: < 500 lines (ideal), < 1000 lines (acceptable), > 1000 (SPLIT IT!)
+- **Files Changed**: < 10 files (ideal), < 20 files (maximum)
+- **Test Files**: < 5 test files affected (if > 10, definitely split)
+- **Commits**: 1-5 commits per PR
+- **Review Time**: Must be reviewable in < 30 minutes
+
+**Automatic Split Triggers** - If ANY of these apply, split the PR:
+- Changes affect > 20 files
+- Line changes > 1000
+- Multiple unrelated components modified
+- Refactoring + new features together
+- Breaking changes + non-breaking changes together
+
+**Phasing Large Changes**:
+
+When implementing large features (like multi-instance support), phase into sequential PRs:
+
+```
+Phase 1: Data Model Changes
+  - PR 1: Add new config models (config.py only)
+  - PR 2: Update database schema (database.py + migration)
+
+Phase 2: Core Component Updates
+  - PR 3: Update StateTracker for instance_id
+  - PR 4: Update WebSocketClient for instance_id
+  - PR 5: Update HAClient for instance_id
+
+Phase 3: Service Layer Updates
+  - PR 6: Update HealingManager for instance_id
+  - PR 7: Update PatternCollector for instance_id
+
+Phase 4: Interface Updates
+  - PR 8: Update CLI commands for multi-instance
+  - PR 9: Update API routes for multi-instance
+
+Phase 5: Test Updates (CRITICAL - Don't skip!)
+  - PR 10: Update config and client tests
+  - PR 11: Update monitoring component tests
+  - PR 12: Update service and integration tests
+```
+
+**Why This Matters**:
+- **Review Quality**: Reviewers can't effectively review 3000+ line changes
+- **Bug Detection**: Smaller PRs make bugs easier to spot and isolate
+- **CI Stability**: Breaking tests in small batches is easier to fix
+- **Rollback Safety**: If issues arise, smaller PRs are easier to revert
+- **Parallel Work**: Multiple small PRs can be reviewed/merged simultaneously
+
+**Bad Example** (What NOT to do):
+```
+❌ PR #115: "Multi-instance orchestration for HA Boss"
+   - 50+ files changed
+   - 3000+ lines changed
+   - Updated config, database, all components, CLI, API, AND tests
+   - Left 100+ tests broken
+   - Blocked all other PRs for days
+   - Required 5+ follow-up PRs to fix tests
+```
+
+**Good Example** (What TO do):
+```
+✅ PR #118: "Refactor StateTracker and WebSocketClient tests for multi-instance"
+   - 8 files changed
+   - 76 lines changed
+   - Single concern: Fix specific test files
+   - All tests passing
+   - Merged in < 1 hour
+```
+
+**Exception Handling**:
+
+If you MUST create a large PR due to atomic breaking changes:
+1. Get explicit approval from maintainer BEFORE starting
+2. Create comprehensive test coverage IN THE SAME PR
+3. Update ALL affected tests (do not leave broken tests)
+4. Write detailed migration guide
+5. Provide rollback plan
+6. Expect thorough review (may take days)
+
+**When Working on Issues**:
+
+Before creating a PR, check:
+1. Can this be split into 2-3 smaller PRs? → Do it
+2. Am I mixing refactoring with new features? → Split them
+3. Am I updating > 10 test files? → Split by component
+4. Will this take > 30 min to review? → Split it
+
 ## CI/CD Integration
 
 ### GitHub Actions Workflows
