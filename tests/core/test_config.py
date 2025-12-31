@@ -21,8 +21,11 @@ def test_config_defaults():
 
     config = Config(**config_data)
 
-    assert config.home_assistant.url == "http://homeassistant.local:8123"
-    assert config.home_assistant.token == "test_token_123"
+    # Legacy url/token should be converted to instances
+    assert len(config.home_assistant.instances) == 1
+    assert config.home_assistant.instances[0].url == "http://homeassistant.local:8123"
+    assert config.home_assistant.instances[0].token == "test_token_123"
+    assert config.home_assistant.instances[0].instance_id == "default"
     assert config.mode == "production"
     assert config.monitoring.grace_period_seconds == 300
     assert config.healing.enabled is True
@@ -40,7 +43,7 @@ def test_config_url_trailing_slash():
     }
 
     config = Config(**config_data)
-    assert config.home_assistant.url == "http://homeassistant.local:8123"
+    assert config.home_assistant.instances[0].url == "http://homeassistant.local:8123"
 
 
 def test_config_invalid_token():
@@ -96,7 +99,7 @@ def test_load_config_success(tmp_path):
 
     config = load_config(config_file)
 
-    assert config.home_assistant.url == "http://homeassistant.local:8123"
+    assert config.home_assistant.instances[0].url == "http://homeassistant.local:8123"
     assert config.mode == "testing"
 
 
@@ -119,8 +122,8 @@ def test_load_config_env_substitution(tmp_path):
     ):
         config = load_config(config_file)
 
-        assert config.home_assistant.url == "http://test:8123"
-        assert config.home_assistant.token == "env_token"
+        assert config.home_assistant.instances[0].url == "http://test:8123"
+        assert config.home_assistant.instances[0].token == "env_token"
 
 
 def test_load_config_file_not_found():
