@@ -69,7 +69,9 @@ async def test_pattern_collector_initialized_when_enabled(test_config, test_data
 @pytest.mark.asyncio
 async def test_pattern_collector_not_initialized_when_disabled(test_config_disabled, test_database):
     """Test that PatternCollector respects disabled config."""
-    pattern_collector = PatternCollector("default", config=test_config_disabled, database=test_database)
+    pattern_collector = PatternCollector(
+        "default", config=test_config_disabled, database=test_database
+    )
 
     # Try to record an event - should be no-op when disabled
     initial_count = pattern_collector.get_event_count()
