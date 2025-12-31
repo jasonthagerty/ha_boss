@@ -36,7 +36,9 @@ async def database(tmp_path):
 @pytest.fixture
 def mock_ha_client():
     """Create mock HA client."""
-    return AsyncMock(spec=HomeAssistantClient)
+    client = AsyncMock(spec=HomeAssistantClient)
+    client.instance_id = "default"
+    return client
 
 
 @pytest.fixture
@@ -240,8 +242,10 @@ async def test_save_and_load_from_database(integration_discovery, mock_storage_f
     await integration_discovery._save_to_database()
 
     # Create new instance and load from database
+    new_mock_client = AsyncMock(spec=HomeAssistantClient)
+    new_mock_client.instance_id = "default"
     new_discovery = IntegrationDiscovery(
-        AsyncMock(spec=HomeAssistantClient),
+        new_mock_client,
         database,
         Config(home_assistant=HomeAssistantConfig(url="http://test", token="test")),
     )
