@@ -28,13 +28,15 @@ def mock_config():
 @pytest.fixture
 def client(mock_config):
     """Create HA client instance."""
-    return HomeAssistantClient(mock_config)
+    instance = mock_config.home_assistant.get_default_instance()
+    return HomeAssistantClient(instance, mock_config)
 
 
 @pytest.mark.asyncio
 async def test_client_init(mock_config):
     """Test client initialization."""
-    client = HomeAssistantClient(mock_config)
+    instance = mock_config.home_assistant.get_default_instance()
+    client = HomeAssistantClient(instance, mock_config)
     assert client.base_url == "http://homeassistant.local:8123"
     assert client.token == "test_token"
     assert client._session is None
@@ -61,7 +63,8 @@ async def test_close_session(client):
 @pytest.mark.asyncio
 async def test_context_manager(mock_config):
     """Test async context manager."""
-    async with HomeAssistantClient(mock_config) as client:
+    instance = mock_config.home_assistant.get_default_instance()
+    async with HomeAssistantClient(instance, mock_config) as client:
         assert client._session is not None
         assert not client._session.closed
 
