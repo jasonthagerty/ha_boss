@@ -82,7 +82,7 @@ class TestHABossServiceStart:
         # Mock all component initializations
         with (
             patch("ha_boss.service.main.Database") as mock_db_class,
-            patch("ha_boss.core.ha_client.HAClient") as mock_ha_client_class,
+            patch("ha_boss.core.ha_client.HomeAssistantClient") as mock_ha_client_class,
             patch("ha_boss.service.main.IntegrationDiscovery") as mock_integration_discovery,
             patch(
                 "ha_boss.discovery.entity_discovery.EntityDiscoveryService"
@@ -180,7 +180,7 @@ class TestHABossServiceStart:
         """Test that start() handles connection errors gracefully."""
         with (
             patch("ha_boss.service.main.Database") as mock_db_class,
-            patch("ha_boss.core.ha_client.HAClient") as mock_ha_client_class,
+            patch("ha_boss.core.ha_client.HomeAssistantClient") as mock_ha_client_class,
         ):
             mock_db = AsyncMock()
             mock_db.init_db = AsyncMock()
