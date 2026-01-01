@@ -160,8 +160,8 @@ class HABossService:
 
         # 1. Create Home Assistant client
         logger.info(f"[{instance_id}] Connecting to Home Assistant at {url}...")
-        from ha_boss.core.ha_client import HomeAssistantClient
         from ha_boss.core.config import HomeAssistantInstance
+        from ha_boss.core.ha_client import HomeAssistantClient
 
         instance = HomeAssistantInstance(
             instance_id=instance_id, url=url, token=token, bridge_enabled=bridge_enabled
