@@ -470,4 +470,3 @@ async def create_ha_client(config: Config, instance_id: str | None = None) -> Ho
         raise
 
     return client
-
