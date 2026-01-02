@@ -228,10 +228,18 @@ class HABossService:
 
         # 5. Initialize state tracker with REST snapshot
         logger.info(f"[{instance_id}] Initializing state tracker...")
+
+        # Create callback wrapper to include instance_id
+        async def on_state_updated_wrapper(
+            new_state: EntityState, old_state: EntityState | None
+        ) -> None:
+            await self._on_state_updated(instance_id, new_state, old_state)
+
         self.state_trackers[instance_id] = StateTracker(
             database=self.database,
             config=self.config,
             instance_id=instance_id,
+            on_state_updated=on_state_updated_wrapper,
         )
 
         # Fetch initial state from REST API
@@ -669,25 +677,32 @@ Access the web dashboard at `/dashboard` for a visual interface.
             )
 
     async def _on_state_updated(
-        self, new_state: EntityState, old_state: EntityState | None
+        self, instance_id: str, new_state: EntityState, old_state: EntityState | None
     ) -> None:
         """Callback when entity state is updated.
 
         Args:
+            instance_id: Home Assistant instance identifier
             new_state: New entity state
             old_state: Previous state (if any)
         """
-        # Trigger health check for this specific entity
-        if self.health_monitor:
+        # Trigger health check for this specific entity on the correct instance
+        health_monitor = self.health_monitors.get(instance_id)
+        if health_monitor:
             try:
-                issue = await self.health_monitor.check_entity_now(new_state.entity_id)
+                issue = await health_monitor.check_entity_now(new_state.entity_id)
                 if issue:
                     logger.debug(
-                        f"State update triggered health issue for {new_state.entity_id}: "
-                        f"{issue.issue_type}"
+                        f"[{instance_id}] State update triggered health issue for "
+                        f"{new_state.entity_id}: {issue.issue_type}"
                     )
+                    # Trigger healing for this issue
+                    await self._on_health_issue(instance_id, issue)
             except Exception as e:
-                logger.error(f"Error checking health for {new_state.entity_id}: {e}", exc_info=True)
+                logger.error(
+                    f"[{instance_id}] Error checking health for {new_state.entity_id}: {e}",
+                    exc_info=True,
+                )
 
     async def _on_health_issue(self, instance_id: str, issue: HealthIssue) -> None:
         """Callback when health issue is detected.
