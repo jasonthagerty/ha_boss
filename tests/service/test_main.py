@@ -407,7 +407,6 @@ class TestHABossServiceStatus:
         assert status["statistics"]["healing_success_rate"] == 80.0
         assert status["instances"]["default"]["websocket_connected"] is True
 
-
     @pytest.mark.asyncio
     async def test_state_tracker_callback_integration(self, service: HABossService) -> None:
         """Test that StateTracker actually calls _on_state_updated callback."""
@@ -424,7 +423,9 @@ class TestHABossServiceStatus:
         callback_called = False
         callback_args = None
 
-        async def track_callback(instance_id: str, new_state: EntityState, old_state: EntityState | None) -> None:
+        async def track_callback(
+            instance_id: str, new_state: EntityState, old_state: EntityState | None
+        ) -> None:
             nonlocal callback_called, callback_args
             callback_called = True
             callback_args = (instance_id, new_state, old_state)
