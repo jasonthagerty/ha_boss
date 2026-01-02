@@ -259,7 +259,7 @@ class TestHABossServiceCallbacks:
     @pytest.mark.asyncio
     async def test_on_state_updated_triggers_health_check(self, service: HABossService) -> None:
         """Test that state updates trigger health checks."""
-        # Set up mocks for default instance (need ha_client too for property to work)
+        # Set up mocks for default instance
         service.ha_clients["default"] = AsyncMock()
 
         mock_health_monitor = AsyncMock()
@@ -273,7 +273,8 @@ class TestHABossServiceCallbacks:
             last_updated=datetime.now(UTC),
         )
 
-        await service._on_state_updated(new_state, None)
+        # Call with instance_id parameter
+        await service._on_state_updated("default", new_state, None)
 
         # Verify health check was called
         mock_health_monitor.check_entity_now.assert_called_once_with("sensor.test")
@@ -405,3 +406,64 @@ class TestHABossServiceStatus:
         assert status["statistics"]["healings_succeeded"] == 4
         assert status["statistics"]["healing_success_rate"] == 80.0
         assert status["instances"]["default"]["websocket_connected"] is True
+
+    @pytest.mark.asyncio
+    async def test_state_tracker_callback_integration(self, service: HABossService) -> None:
+        """Test that StateTracker actually calls _on_state_updated callback."""
+        # Set up service components for default instance
+        service.ha_clients["default"] = AsyncMock()
+
+        # Create real StateTracker with callback
+        from ha_boss.core.database import Database
+
+        test_db = Database(":memory:")
+        await test_db.init_db()
+
+        # Track callback invocations
+        callback_called = False
+        callback_args = None
+
+        async def track_callback(
+            instance_id: str, new_state: EntityState, old_state: EntityState | None
+        ) -> None:
+            nonlocal callback_called, callback_args
+            callback_called = True
+            callback_args = (instance_id, new_state, old_state)
+
+        # Replace _on_state_updated with tracking version
+        service._on_state_updated = track_callback
+
+        # Create StateTracker with callback wrapper
+        from ha_boss.monitoring.state_tracker import StateTracker
+
+        async def on_state_updated_wrapper(
+            new_state: EntityState, old_state: EntityState | None
+        ) -> None:
+            await service._on_state_updated("default", new_state, old_state)
+
+        state_tracker = StateTracker(
+            database=test_db,
+            instance_id="default",
+            on_state_updated=on_state_updated_wrapper,
+        )
+
+        # Simulate state update (WebSocket event format)
+        state_data = {
+            "entity_id": "sensor.test",
+            "new_state": {
+                "state": "unavailable",
+                "last_changed": datetime.now(UTC).isoformat(),
+                "last_updated": datetime.now(UTC).isoformat(),
+                "attributes": {},
+            },
+        }
+
+        await state_tracker.update_state(state_data)
+
+        # Verify callback was called
+        assert callback_called, "Callback should have been invoked"
+        assert callback_args is not None
+        assert callback_args[0] == "default"
+        assert callback_args[1].entity_id == "sensor.test"
+
+        await test_db.close()
