@@ -6,6 +6,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class InstanceInfo(BaseModel):
+    """Home Assistant instance information."""
+
+    instance_id: str = Field(..., description="Instance identifier")
+    url: str = Field(..., description="Home Assistant URL")
+    websocket_connected: bool = Field(..., description="Is WebSocket connected")
+    state: str = Field(..., description="Instance connection state")
+
+
 class ServiceStatusResponse(BaseModel):
     """Service status information."""
 

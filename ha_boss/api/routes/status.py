@@ -9,6 +9,7 @@ from ha_boss.api.app import get_service
 from ha_boss.api.models import (
     ComponentHealth,
     EnhancedHealthCheckResponse,
+    InstanceInfo,
     PerformanceMetrics,
     ServiceStatusResponse,
 )
@@ -18,31 +19,75 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/status", response_model=ServiceStatusResponse)
-async def get_status() -> ServiceStatusResponse:
-    """Get current service status and statistics.
-
-    Returns detailed information about the HA Boss service including:
-    - Current state (running/stopped/error)
-    - Uptime and start time
-    - Health check and healing statistics
-    - Number of monitored entities
+@router.get("/instances", response_model=list[InstanceInfo])
+async def list_instances() -> list[InstanceInfo]:
+    """List all configured Home Assistant instances.
 
     Returns:
-        Service status information
+        List of instance information including connection status
 
     Raises:
         HTTPException: Service not initialized (500)
     """
     try:
         service = get_service()
+        instances = []
+
+        for instance_id, ha_client in service.ha_clients.items():
+            websocket_client = service.websocket_clients.get(instance_id)
+            ws_connected = websocket_client.is_connected() if websocket_client else False
+
+            instances.append(
+                InstanceInfo(
+                    instance_id=instance_id,
+                    url=ha_client.base_url,
+                    websocket_connected=ws_connected,
+                    state="connected" if ws_connected else "disconnected",
+                )
+            )
+
+        return instances
+
+    except RuntimeError as e:
+        logger.error(f"Service not initialized: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+@router.get("/status", response_model=ServiceStatusResponse)
+async def get_status(instance_id: str = "default") -> ServiceStatusResponse:
+    """Get service status and statistics for a specific instance.
+
+    Args:
+        instance_id: Instance identifier (default: "default")
+
+    Returns detailed information about the HA Boss service including:
+    - Current state (running/stopped/error)
+    - Uptime and start time
+    - Health check and healing statistics for the instance
+    - Number of monitored entities for the instance
+
+    Returns:
+        Service status information for the specified instance
+
+    Raises:
+        HTTPException: Service not initialized (500) or instance not found (404)
+    """
+    try:
+        service = get_service()
+
+        # Validate instance exists
+        if instance_id not in service.ha_clients:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
+            )
 
         # Calculate uptime
         uptime_seconds = 0.0
         if service.start_time:
             uptime_seconds = (datetime.now(UTC) - service.start_time).total_seconds()
 
-        # Count monitored entities from database (more reliable than cache)
+        # Count monitored entities from database for this instance
         monitored_count = 0
         db_success = False
         try:
@@ -55,6 +100,7 @@ async def get_status() -> ServiceStatusResponse:
                     select(func.count())
                     .select_from(Entity)
                     .where(Entity.is_monitored == True)  # noqa: E712
+                    .where(Entity.instance_id == instance_id)
                 )
                 count_value = result.scalar() or 0
                 # Ensure we got an integer (not a mock/coroutine)
@@ -65,29 +111,38 @@ async def get_status() -> ServiceStatusResponse:
             pass  # Fall through to cache fallback
 
         # Fallback to cache if database query didn't succeed
-        if not db_success and service.state_tracker:
-            if hasattr(service.state_tracker, "_cache"):
+        state_tracker = service.state_trackers.get(instance_id)
+        if not db_success and state_tracker:
+            if hasattr(state_tracker, "_cache"):
                 # Use cache directly (works with mocks and real implementation)
-                monitored_count = len(service.state_tracker._cache)
+                monitored_count = len(state_tracker._cache)
             else:
                 # Try get_all_states as last resort
                 try:
-                    all_states = await service.state_tracker.get_all_states()
+                    all_states = await state_tracker.get_all_states()
                     monitored_count = len(all_states) if isinstance(all_states, dict) else 0
                 except Exception:
                     monitored_count = 0
+
+        # Get per-instance statistics
+        health_checks = service.health_checks_performed.get(instance_id, 0)
+        healings_attempted = service.healings_attempted.get(instance_id, 0)
+        healings_succeeded = service.healings_succeeded.get(instance_id, 0)
+        healings_failed = service.healings_failed.get(instance_id, 0)
 
         return ServiceStatusResponse(
             state=service.state,
             uptime_seconds=uptime_seconds,
             start_time=service.start_time,
-            health_checks_performed=service.health_checks_performed,
-            healings_attempted=service.healings_attempted,
-            healings_succeeded=service.healings_succeeded,
-            healings_failed=service.healings_failed,
+            health_checks_performed=health_checks,
+            healings_attempted=healings_attempted,
+            healings_succeeded=healings_succeeded,
+            healings_failed=healings_failed,
             monitored_entities=monitored_count,
         )
 
+    except HTTPException:
+        raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from None

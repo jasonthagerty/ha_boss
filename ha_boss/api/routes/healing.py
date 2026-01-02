@@ -17,45 +17,58 @@ router = APIRouter()
 @router.post("/healing/{entity_id:path}", response_model=HealingActionResponse)
 async def trigger_healing(
     entity_id: str = Path(..., description="Entity ID to heal"),
+    instance_id: str = Query("default", description="Instance identifier"),
 ) -> HealingActionResponse:
-    """Manually trigger healing for a specific entity.
+    """Manually trigger healing for a specific entity in a specific instance.
 
     Attempts to heal the specified entity by reloading its integration.
     This bypasses normal grace periods and cooldowns.
 
     Args:
         entity_id: Entity ID to heal (e.g., 'sensor.temperature')
+        instance_id: Instance identifier (default: "default")
 
     Returns:
         Healing action result
 
     Raises:
-        HTTPException: Service error (500) or entity not found (404)
+        HTTPException: Instance not found (404), entity not found (404), or service error (500)
     """
     try:
         service = get_service()
 
-        if not service.healing_manager:
-            raise HTTPException(status_code=500, detail="Healing manager not initialized") from None
-
-        if not service.integration_discovery:
+        # Validate instance exists and get per-instance components
+        healing_manager = service.healing_managers.get(instance_id)
+        if not healing_manager:
             raise HTTPException(
-                status_code=500, detail="Integration discovery not initialized"
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.healing_managers.keys())}",
+            ) from None
+
+        integration_discovery = service.integration_discoveries.get(instance_id)
+        if not integration_discovery:
+            raise HTTPException(
+                status_code=500, detail="Integration discovery not initialized for this instance"
             ) from None
 
         # Get entity state
-        if not service.state_tracker:
-            raise HTTPException(status_code=500, detail="State tracker not initialized") from None
+        state_tracker = service.state_trackers.get(instance_id)
+        if not state_tracker:
+            raise HTTPException(
+                status_code=500, detail="State tracker not initialized for this instance"
+            ) from None
 
-        entity_state = service.state_tracker.get_state(entity_id)
+        entity_state = await state_tracker.get_state(entity_id)
         if not entity_state:
-            raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Entity '{entity_id}' not found in instance '{instance_id}'"
+            )
 
         # Get integration for entity
-        integration_name = service.integration_discovery.get_integration_for_entity(entity_id)
+        integration_name = integration_discovery.get_integration_for_entity(entity_id)
 
         # Attempt healing
-        logger.info(f"Manual healing requested for entity: {entity_id}")
+        logger.info(f"[{instance_id}] Manual healing requested for entity: {entity_id}")
 
         try:
             # Create a health issue for manual healing
@@ -65,7 +78,7 @@ async def trigger_healing(
                 detected_at=datetime.now(UTC),
                 details={"source": "api_manual_trigger"},
             )
-            success = await service.healing_manager.heal(health_issue)
+            success = await healing_manager.heal(health_issue)
 
             return HealingActionResponse(
                 entity_id=entity_id,
@@ -77,7 +90,9 @@ async def trigger_healing(
             )
 
         except Exception as heal_error:
-            logger.error(f"Healing failed for {entity_id}: {heal_error}", exc_info=True)
+            logger.error(
+                f"[{instance_id}] Healing failed for {entity_id}: {heal_error}", exc_info=True
+            )
             return HealingActionResponse(
                 entity_id=entity_id,
                 integration=integration_name,
@@ -99,10 +114,11 @@ async def trigger_healing(
 
 @router.get("/healing/history", response_model=HealingHistoryResponse)
 async def get_healing_history(
+    instance_id: str = Query("default", description="Instance identifier"),
     limit: int = Query(50, ge=1, le=500, description="Maximum actions to return"),
     hours: int = Query(24, ge=1, le=168, description="Hours of history (1-168)"),
 ) -> HealingHistoryResponse:
-    """Get healing action history.
+    """Get healing action history for a specific instance.
 
     Returns a list of recent healing actions including:
     - Entity and integration information
@@ -110,17 +126,25 @@ async def get_healing_history(
     - Timestamps
 
     Args:
+        instance_id: Instance identifier (default: "default")
         limit: Maximum number of actions to return (1-500)
         hours: Hours of history to retrieve (default: 24, max: 168/7 days)
 
     Returns:
-        Healing action history with statistics
+        Healing action history with statistics for the specified instance
 
     Raises:
-        HTTPException: Service error (500)
+        HTTPException: Instance not found (404) or service error (500)
     """
     try:
         service = get_service()
+
+        # Validate instance exists
+        if instance_id not in service.healing_managers:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.healing_managers.keys())}",
+            ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
@@ -129,7 +153,7 @@ async def get_healing_history(
         end_time = datetime.now(UTC)
         start_time = end_time - timedelta(hours=hours)
 
-        # Query database for healing actions
+        # Query database for healing actions for this instance
         async with service.database.async_session() as session:
             from sqlalchemy import func, select
 
@@ -144,6 +168,7 @@ async def get_healing_history(
                     isouter=True,
                 )
                 .where(  # type: ignore[attr-defined]
+                    HealingAction.instance_id == instance_id,  # type: ignore[attr-defined]
                     HealingAction.timestamp >= start_time,  # type: ignore[attr-defined]
                     HealingAction.timestamp <= end_time,  # type: ignore[attr-defined]
                 )
@@ -161,6 +186,7 @@ async def get_healing_history(
                 func.count(HealingAction.id).label("total"),  # type: ignore[attr-defined]
                 func.sum(cast(HealingAction.success, Integer)).label("success"),  # type: ignore[attr-defined, arg-type]
             ).where(  # type: ignore[attr-defined]
+                HealingAction.instance_id == instance_id,  # type: ignore[attr-defined]
                 HealingAction.timestamp >= start_time,  # type: ignore[attr-defined]
                 HealingAction.timestamp <= end_time,  # type: ignore[attr-defined]
             )
@@ -195,6 +221,8 @@ async def get_healing_history(
             failure_count=failure_count,
         )
 
+    except HTTPException:
+        raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from None
