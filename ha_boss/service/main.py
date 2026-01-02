@@ -204,7 +204,6 @@ class HABossService:
                     ha_client=self.ha_clients[instance_id],
                     database=self.database,
                     config=self.config,
-                    instance_id=instance_id,
                 )
 
                 # Run initial discovery
@@ -236,16 +235,20 @@ class HABossService:
             await self._on_state_updated(instance_id, new_state, old_state)
 
         self.state_trackers[instance_id] = StateTracker(
-            database=self.database,
-            config=self.config,
             instance_id=instance_id,
+            database=self.database,
             on_state_updated=on_state_updated_wrapper,
         )
 
         # Fetch initial state from REST API
         states = await self.ha_clients[instance_id].get_states()
         for state_data in states:
-            await self.state_trackers[instance_id].update_state(state_data)
+            # Wrap REST API format in WebSocket event format
+            event_data = {
+                "entity_id": state_data.get("entity_id"),
+                "new_state": state_data,
+            }
+            await self.state_trackers[instance_id].update_state(event_data)
 
         logger.info(f"[{instance_id}] ✓ State tracker initialized with {len(states)} entities")
 
@@ -256,7 +259,6 @@ class HABossService:
             state_tracker=self.state_trackers[instance_id],
             database=self.database,
             on_issue_detected=lambda issue: self._on_health_issue(instance_id, issue),
-            instance_id=instance_id,
         )
         await self.health_monitors[instance_id].start()
         logger.info(f"[{instance_id}] ✓ Health monitor started")

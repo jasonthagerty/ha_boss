@@ -3,10 +3,8 @@
 These tests verify the complete service flow with minimal mocking,
 ensuring all components work together correctly.
 
-NOTE: These tests are temporarily skipped pending refactoring for multi-instance support.
-The service was refactored to use HAClient directly instead of create_ha_client helper,
-and these integration tests need substantial updates to work with the new architecture.
-TODO: Update these tests for multi-instance architecture (Issue TBD)
+Tests verify multi-instance service architecture with per-instance
+component dicts and backward-compatible properties.
 """
 
 import asyncio
@@ -17,9 +15,6 @@ import pytest
 
 from ha_boss.core.config import Config
 from ha_boss.service.main import HABossService, ServiceState
-
-# Skip all integration tests until refactored for multi-instance
-pytestmark = pytest.mark.skip(reason="Requires refactoring for multi-instance service architecture")
 
 
 @pytest.fixture
@@ -68,7 +63,7 @@ async def test_service_full_startup_and_shutdown(integration_config: Config) -> 
             "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
             new_callable=AsyncMock,
         ),
-        patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
+        patch("ha_boss.core.ha_client.HomeAssistantClient") as mock_ha_client_class,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
         # Set up Database mock
@@ -96,7 +91,7 @@ async def test_service_full_startup_and_shutdown(integration_config: Config) -> 
             ]
         )
         mock_client.close = AsyncMock()
-        mock_ha_client.return_value = mock_client
+        mock_ha_client_class.return_value = mock_client
 
         # Set up WebSocket mock
         mock_ws = AsyncMock()
@@ -143,7 +138,8 @@ async def test_service_full_startup_and_shutdown(integration_config: Config) -> 
         # Get status
         status = service.get_status()
         assert status["state"] == ServiceState.RUNNING
-        assert status["websocket_connected"] is True
+        # Multi-instance: websocket_connected is per-instance
+        assert status["instances"]["default"]["websocket_connected"] is True
 
         # Stop service
         await service.stop()
@@ -158,11 +154,11 @@ async def test_service_full_startup_and_shutdown(integration_config: Config) -> 
 @pytest.mark.asyncio
 async def test_service_handles_ha_unavailable(integration_config: Config) -> None:
     """Test service handles Home Assistant being unavailable."""
-    with patch("ha_boss.service.main.create_ha_client") as mock_ha_client:
+    with patch("ha_boss.core.ha_client.HomeAssistantClient") as mock_ha_client_class:
         # Simulate HA being unavailable
         mock_client = AsyncMock()
         mock_client.get_states = AsyncMock(side_effect=Exception("Connection refused"))
-        mock_ha_client.return_value = mock_client
+        mock_ha_client_class.return_value = mock_client
 
         service = HABossService(integration_config)
 
@@ -195,7 +191,7 @@ async def test_service_state_update_flow(integration_config: Config) -> None:
             "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
             new_callable=AsyncMock,
         ),
-        patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
+        patch("ha_boss.core.ha_client.HomeAssistantClient") as mock_ha_client_class,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
         # Set up Database mock
@@ -218,7 +214,7 @@ async def test_service_state_update_flow(integration_config: Config) -> None:
             ]
         )
         mock_client.close = AsyncMock()
-        mock_ha_client.return_value = mock_client
+        mock_ha_client_class.return_value = mock_client
 
         mock_ws = AsyncMock()
         mock_ws.connect = AsyncMock()
@@ -256,8 +252,8 @@ async def test_service_state_update_flow(integration_config: Config) -> None:
             }
         }
 
-        # Process the event
-        await service._on_websocket_state_changed(state_change_event)
+        # Process the event with instance_id
+        await service._on_websocket_state_changed("default", state_change_event)
 
         # Note: State tracker updates are mocked for persistence
         # The actual state handling logic is tested in state_tracker unit tests
@@ -288,7 +284,7 @@ async def test_service_healing_flow(integration_config: Config) -> None:
             "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
             new_callable=AsyncMock,
         ),
-        patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
+        patch("ha_boss.core.ha_client.HomeAssistantClient") as mock_ha_client_class,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
         # Set up Database mock
@@ -303,7 +299,7 @@ async def test_service_healing_flow(integration_config: Config) -> None:
         mock_client.get_states = AsyncMock(return_value=[])
         mock_client.close = AsyncMock()
         mock_client.call_service = AsyncMock(return_value=True)
-        mock_ha_client.return_value = mock_client
+        mock_ha_client_class.return_value = mock_client
 
         mock_ws = AsyncMock()
         mock_ws.connect = AsyncMock()
@@ -339,15 +335,15 @@ async def test_service_healing_flow(integration_config: Config) -> None:
         )
 
         # Mock healing manager to simulate successful heal
-        service.healing_manager.heal = AsyncMock(return_value=True)
+        service.healing_managers["default"].heal = AsyncMock(return_value=True)
 
-        # Trigger health issue callback
-        await service._on_health_issue(issue)
+        # Trigger health issue callback with instance_id
+        await service._on_health_issue("default", issue)
 
-        # Verify healing was attempted
-        assert service.healings_attempted == 1
-        assert service.healings_succeeded == 1
-        service.healing_manager.heal.assert_called_once_with(issue)
+        # Verify healing was attempted (per-instance statistics)
+        assert service.healings_attempted["default"] == 1
+        assert service.healings_succeeded["default"] == 1
+        service.healing_managers["default"].heal.assert_called_once_with(issue)
 
         # Clean up
         await service.stop()
@@ -374,7 +370,7 @@ async def test_service_graceful_shutdown_on_signal(integration_config: Config) -
             "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
             new_callable=AsyncMock,
         ),
-        patch("ha_boss.service.main.create_ha_client") as mock_ha_client,
+        patch("ha_boss.core.ha_client.HomeAssistantClient") as mock_ha_client_class,
         patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
     ):
         # Set up Database mock
@@ -388,7 +384,7 @@ async def test_service_graceful_shutdown_on_signal(integration_config: Config) -
         mock_client = AsyncMock()
         mock_client.get_states = AsyncMock(return_value=[])
         mock_client.close = AsyncMock()
-        mock_ha_client.return_value = mock_client
+        mock_ha_client_class.return_value = mock_client
 
         mock_ws = AsyncMock()
         mock_ws.connect = AsyncMock()
