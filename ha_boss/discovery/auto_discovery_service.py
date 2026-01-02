@@ -80,11 +80,9 @@ class AutoDiscoveryService:
             HA client for this instance
         """
         if instance.instance_id not in self._ha_clients:
-            # Create client with instance URL and token
+            # Create client with instance configuration
             self._ha_clients[instance.instance_id] = HomeAssistantClient(
-                base_url=instance.url,
-                token=instance.token,
-                session=self.session,
+                instance=instance, config=self.config
             )
         return self._ha_clients[instance.instance_id]
 
