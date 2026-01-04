@@ -3,7 +3,7 @@
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import (
@@ -54,7 +54,9 @@ async def list_instances() -> list[InstanceInfo]:
 
 
 @router.get("/status", response_model=ServiceStatusResponse)
-async def get_status(instance_id: str = "default") -> ServiceStatusResponse:
+async def get_status(
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> ServiceStatusResponse:
     """Get service status and statistics for a specific instance.
 
     Args:
@@ -195,7 +197,7 @@ def count_component_statuses(components: dict[str, dict[str, ComponentHealth]]) 
     return counts
 
 
-async def check_tier1_critical(service) -> dict[str, ComponentHealth]:
+async def check_tier1_critical(service, instance_id: str) -> dict[str, ComponentHealth]:
     """Check Tier 1 critical components (service cannot run without these).
 
     Components:
@@ -206,6 +208,7 @@ async def check_tier1_critical(service) -> dict[str, ComponentHealth]:
 
     Args:
         service: HABossService instance
+        instance_id: Instance identifier
 
     Returns:
         Dict of component name to ComponentHealth
@@ -217,21 +220,22 @@ async def check_tier1_critical(service) -> dict[str, ComponentHealth]:
         components["service_state"] = ComponentHealth(
             status="healthy",
             message="Service is running",
-            details={"state": service.state, "mode": service.config.mode},
+            details={"state": service.state, "mode": service.config.mode, "instance_id": instance_id},
         )
     else:
         components["service_state"] = ComponentHealth(
             status="unhealthy",
             message=f"Service is not running (state: {service.state})",
-            details={"state": service.state, "mode": service.config.mode},
+            details={"state": service.state, "mode": service.config.mode, "instance_id": instance_id},
         )
 
     # 2. Home Assistant REST Connection
+    ha_client = service.ha_clients.get(instance_id)
     ha_session_valid = (
-        service.ha_client is not None
-        and hasattr(service.ha_client, "_session")
-        and service.ha_client._session is not None
-        and not service.ha_client._session.closed
+        ha_client is not None
+        and hasattr(ha_client, "_session")
+        and ha_client._session is not None
+        and not ha_client._session.closed
     )
 
     if ha_session_valid:
@@ -239,8 +243,9 @@ async def check_tier1_critical(service) -> dict[str, ComponentHealth]:
             status="healthy",
             message="Home Assistant REST API connected",
             details={
-                "url": str(service.config.home_assistant.url),
+                "url": ha_client.base_url,
                 "session_valid": True,
+                "instance_id": instance_id,
             },
         )
     else:
@@ -248,8 +253,9 @@ async def check_tier1_critical(service) -> dict[str, ComponentHealth]:
             status="unhealthy",
             message="Home Assistant REST API not connected",
             details={
-                "url": str(service.config.home_assistant.url) if service.config else "unknown",
+                "url": ha_client.base_url if ha_client else "unknown",
                 "session_valid": False,
+                "instance_id": instance_id,
             },
         )
 
@@ -299,7 +305,7 @@ async def check_tier1_critical(service) -> dict[str, ComponentHealth]:
     return components
 
 
-async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
+async def check_tier2_essential(service, instance_id: str) -> dict[str, ComponentHealth]:
     """Check Tier 2 essential components (core functionality).
 
     Components:
@@ -310,6 +316,7 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
 
     Args:
         service: HABossService instance
+        instance_id: Instance identifier
 
     Returns:
         Dict of component name to ComponentHealth
@@ -317,32 +324,34 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
     components = {}
 
     # 5. WebSocket Connected
+    websocket_client = service.websocket_clients.get(instance_id)
     ws_connected = (
-        service.websocket_client is not None
-        and hasattr(service.websocket_client, "is_connected")
-        and service.websocket_client.is_connected()
+        websocket_client is not None
+        and hasattr(websocket_client, "is_connected")
+        and websocket_client.is_connected()
     )
 
     if ws_connected:
-        ws_running = getattr(service.websocket_client, "_running", False)
+        ws_running = getattr(websocket_client, "_running", False)
         components["websocket_connected"] = ComponentHealth(
             status="healthy",
             message="WebSocket connected to Home Assistant",
-            details={"connected": True, "running": ws_running},
+            details={"connected": True, "running": ws_running, "instance_id": instance_id},
         )
     else:
         components["websocket_connected"] = ComponentHealth(
             status="degraded",
             message="WebSocket not connected (can operate on REST polling)",
-            details={"connected": False, "running": False},
+            details={"connected": False, "running": False, "instance_id": instance_id},
         )
 
     # 6. State Tracker Initialized
     cache_size = 0
     db_monitored_count = 0
 
-    if service.state_tracker is not None and hasattr(service.state_tracker, "_cache"):
-        cache_size = len(service.state_tracker._cache)
+    state_tracker = service.state_trackers.get(instance_id)
+    if state_tracker is not None and hasattr(state_tracker, "_cache"):
+        cache_size = len(state_tracker._cache)
 
         # Also check database for monitored entities (more reliable than cache)
         try:
@@ -355,6 +364,7 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
                     select(func.count())
                     .select_from(Entity)
                     .where(Entity.is_monitored == True)  # noqa: E712
+                    .where(Entity.instance_id == instance_id)
                 )
                 count_value = result.scalar() or 0
                 # Ensure we got an integer (not a mock/coroutine)
@@ -396,38 +406,41 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
         )
 
     # 7. Integration Discovery Complete
+    integration_discovery = service.integration_discoveries.get(instance_id)
     discovery_complete = (
-        service.integration_discovery is not None
-        and hasattr(service.integration_discovery, "_entity_to_integration")
-        and len(service.integration_discovery._entity_to_integration) > 0
+        integration_discovery is not None
+        and hasattr(integration_discovery, "_entity_to_integration")
+        and len(integration_discovery._entity_to_integration) > 0
     )
 
     if discovery_complete:
-        mapping_count = len(service.integration_discovery._entity_to_integration)
-        integration_count = len(getattr(service.integration_discovery, "_integrations", {}))
+        mapping_count = len(integration_discovery._entity_to_integration)
+        integration_count = len(getattr(integration_discovery, "_integrations", {}))
         components["integration_discovery_complete"] = ComponentHealth(
             status="healthy",
             message=f"Integration discovery complete: {mapping_count} mappings",
             details={
                 "discovered_mappings": mapping_count,
                 "integrations": integration_count,
+                "instance_id": instance_id,
             },
         )
     else:
         components["integration_discovery_complete"] = ComponentHealth(
             status="degraded",
             message="Integration discovery not complete (healing limited)",
-            details={"discovered_mappings": 0, "integrations": 0},
+            details={"discovered_mappings": 0, "integrations": 0, "instance_id": instance_id},
         )
 
     # 8. Entity Discovery Complete
-    entity_discovery_complete = service.entity_discovery is not None and hasattr(
-        service.entity_discovery, "_monitored_set"
+    entity_discovery = service.entity_discoveries.get(instance_id)
+    entity_discovery_complete = entity_discovery is not None and hasattr(
+        entity_discovery, "_monitored_set"
     )
 
     if entity_discovery_complete:
-        monitored_count = len(service.entity_discovery._monitored_set)
-        auto_discovered_count = len(service.entity_discovery._auto_discovered_entities)
+        monitored_count = len(entity_discovery._monitored_set)
+        auto_discovered_count = len(entity_discovery._auto_discovered_entities)
 
         # Get last discovery refresh timestamp from database
         last_refresh = None
@@ -440,6 +453,7 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
                 result = await session.execute(
                     select(DiscoveryRefresh)
                     .where(DiscoveryRefresh.success == True)  # noqa: E712
+                    .where(DiscoveryRefresh.instance_id == instance_id)
                     .order_by(DiscoveryRefresh.timestamp.desc())
                     .limit(1)
                 )
@@ -463,13 +477,14 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
                 "monitored_entities": monitored_count,
                 "auto_discovered": auto_discovered_count,
                 "last_refresh": last_refresh.isoformat() if last_refresh else None,
+                "instance_id": instance_id,
             },
         )
     else:
         components["entity_discovery_complete"] = ComponentHealth(
             status="degraded",
             message="Entity discovery not complete",
-            details={"monitored_entities": 0, "auto_discovered": 0, "last_refresh": None},
+            details={"monitored_entities": 0, "auto_discovered": 0, "last_refresh": None, "instance_id": instance_id},
         )
 
     # 9. Event Loop Responsive
@@ -488,7 +503,7 @@ async def check_tier2_essential(service) -> dict[str, ComponentHealth]:
     return components
 
 
-async def check_tier3_operational(service) -> dict[str, ComponentHealth]:
+async def check_tier3_operational(service, instance_id: str) -> dict[str, ComponentHealth]:
     """Check Tier 3 operational components (health monitoring works).
 
     Components:
@@ -499,6 +514,7 @@ async def check_tier3_operational(service) -> dict[str, ComponentHealth]:
 
     Args:
         service: HABossService instance
+        instance_id: Instance identifier
 
     Returns:
         Dict of component name to ComponentHealth
@@ -506,28 +522,29 @@ async def check_tier3_operational(service) -> dict[str, ComponentHealth]:
     components = {}
 
     # 9. Health Monitor Running
+    health_monitor = service.health_monitors.get(instance_id)
     monitor_running = (
-        service.health_monitor is not None
-        and hasattr(service.health_monitor, "_running")
-        and service.health_monitor._running
+        health_monitor is not None
+        and hasattr(health_monitor, "_running")
+        and health_monitor._running
     )
 
     if monitor_running:
         monitor_task_alive = (
-            hasattr(service.health_monitor, "_monitor_task")
-            and service.health_monitor._monitor_task is not None
-            and not service.health_monitor._monitor_task.done()
+            hasattr(health_monitor, "_monitor_task")
+            and health_monitor._monitor_task is not None
+            and not health_monitor._monitor_task.done()
         )
         components["health_monitor_running"] = ComponentHealth(
             status="healthy",
             message="Health monitor loop running",
-            details={"running": True, "monitor_task_alive": monitor_task_alive},
+            details={"running": True, "monitor_task_alive": monitor_task_alive, "instance_id": instance_id},
         )
     else:
         components["health_monitor_running"] = ComponentHealth(
             status="degraded",
             message="Health monitor not running (won't detect new issues)",
-            details={"running": False, "monitor_task_alive": False},
+            details={"running": False, "monitor_task_alive": False, "instance_id": instance_id},
         )
 
     # 10. Health Events Recordable (same as database accessible)
@@ -537,55 +554,57 @@ async def check_tier3_operational(service) -> dict[str, ComponentHealth]:
         components["health_events_recordable"] = ComponentHealth(
             status="healthy",
             message="Health events can be persisted to database",
-            details={"persistence_enabled": True},
+            details={"persistence_enabled": True, "instance_id": instance_id},
         )
     else:
         components["health_events_recordable"] = ComponentHealth(
             status="degraded",
             message="Health events cannot be persisted",
-            details={"persistence_enabled": False},
+            details={"persistence_enabled": False, "instance_id": instance_id},
         )
 
     # 11. State History Recording
-    tracker_active = service.state_tracker is not None
+    state_tracker = service.state_trackers.get(instance_id)
+    tracker_active = state_tracker is not None
 
     if tracker_active:
         components["state_history_recording"] = ComponentHealth(
             status="healthy",
             message="State history recording active",
-            details={"tracking_enabled": True},
+            details={"tracking_enabled": True, "instance_id": instance_id},
         )
     else:
         components["state_history_recording"] = ComponentHealth(
             status="degraded",
             message="State history not recording (losing pattern data)",
-            details={"tracking_enabled": False},
+            details={"tracking_enabled": False, "instance_id": instance_id},
         )
 
     # 12. Notification Service
+    notification_manager = service.notification_managers.get(instance_id)
     notification_initialized = (
-        service.notification_manager is not None
-        and hasattr(service.notification_manager, "ha_client")
-        and service.notification_manager.ha_client is not None
+        notification_manager is not None
+        and hasattr(notification_manager, "ha_client")
+        and notification_manager.ha_client is not None
     )
 
     if notification_initialized:
         components["notification_service"] = ComponentHealth(
             status="healthy",
             message="Notification service initialized",
-            details={"manager_initialized": True, "ha_channel_enabled": True},
+            details={"manager_initialized": True, "ha_channel_enabled": True, "instance_id": instance_id},
         )
     else:
         components["notification_service"] = ComponentHealth(
             status="degraded",
             message="Notification service not initialized (alerts won't work)",
-            details={"manager_initialized": False, "ha_channel_enabled": False},
+            details={"manager_initialized": False, "ha_channel_enabled": False, "instance_id": instance_id},
         )
 
     return components
 
 
-async def check_tier4_healing(service) -> dict[str, ComponentHealth]:
+async def check_tier4_healing(service, instance_id: str) -> dict[str, ComponentHealth]:
     """Check Tier 4 healing components (auto-healing capability).
 
     Components:
@@ -595,6 +614,7 @@ async def check_tier4_healing(service) -> dict[str, ComponentHealth]:
 
     Args:
         service: HABossService instance
+        instance_id: Instance identifier
 
     Returns:
         Dict of component name to ComponentHealth
@@ -603,31 +623,32 @@ async def check_tier4_healing(service) -> dict[str, ComponentHealth]:
 
     # 13. Healing Manager Initialized
     healing_enabled = service.config and service.config.healing.enabled
-    healing_manager_ready = service.healing_manager is not None
+    healing_manager = service.healing_managers.get(instance_id)
+    healing_manager_ready = healing_manager is not None
 
     if healing_enabled and healing_manager_ready:
         components["healing_manager_initialized"] = ComponentHealth(
             status="healthy",
             message="Healing manager initialized and enabled",
-            details={"enabled": True, "manager_initialized": True},
+            details={"enabled": True, "manager_initialized": True, "instance_id": instance_id},
         )
     elif healing_manager_ready and not healing_enabled:
         components["healing_manager_initialized"] = ComponentHealth(
             status="degraded",
             message="Healing disabled (operating in monitor-only mode)",
-            details={"enabled": False, "manager_initialized": True},
+            details={"enabled": False, "manager_initialized": True, "instance_id": instance_id},
         )
     else:
         components["healing_manager_initialized"] = ComponentHealth(
             status="degraded",
             message="Healing manager not initialized",
-            details={"enabled": healing_enabled, "manager_initialized": False},
+            details={"enabled": healing_enabled, "manager_initialized": False, "instance_id": instance_id},
         )
 
     # 14. Circuit Breakers Operational
     # Count integrations with circuit breakers open
-    if service.healing_manager and hasattr(service.healing_manager, "_failure_count"):
-        failure_counts = service.healing_manager._failure_count
+    if healing_manager and hasattr(healing_manager, "_failure_count"):
+        failure_counts = healing_manager._failure_count
         circuit_breaker_threshold = (
             service.config.healing.circuit_breaker_threshold if service.config else 3
         )
@@ -646,6 +667,7 @@ async def check_tier4_healing(service) -> dict[str, ComponentHealth]:
                     "total_integrations": total_integrations,
                     "circuit_breaker_open": open_circuit_breakers,
                     "threshold": circuit_breaker_threshold,
+                    "instance_id": instance_id,
                 },
             )
         else:
@@ -656,13 +678,14 @@ async def check_tier4_healing(service) -> dict[str, ComponentHealth]:
                     "total_integrations": total_integrations,
                     "circuit_breaker_open": open_circuit_breakers,
                     "threshold": circuit_breaker_threshold,
+                    "instance_id": instance_id,
                 },
             )
     else:
         components["circuit_breakers_operational"] = ComponentHealth(
             status="unknown",
             message="Circuit breaker status unknown",
-            details={},
+            details={"instance_id": instance_id},
         )
 
     # 15. Healing Actions Recordable (same as database accessible)
@@ -760,7 +783,9 @@ async def check_tier5_intelligence(service) -> dict[str, ComponentHealth]:
 
 
 @router.get("/health", response_model=EnhancedHealthCheckResponse)
-async def health_check(response: Response) -> EnhancedHealthCheckResponse:
+async def health_check(
+    response: Response, instance_id: str = Query("default", description="Instance identifier")
+) -> EnhancedHealthCheckResponse:
     """Comprehensive health check endpoint for monitoring and orchestration.
 
     Performs tier-based health checks across 22 components organized into 5 tiers:
@@ -770,24 +795,35 @@ async def health_check(response: Response) -> EnhancedHealthCheckResponse:
     - Tier 4 (Healing): Auto-healing capability
     - Tier 5 (Intelligence): Optional AI features
 
+    Args:
+        instance_id: Instance identifier (default: "default")
+
     HTTP Status Codes:
     - 200 OK: Status is "healthy" or "degraded" (service functional)
     - 503 Service Unavailable: Status is "unhealthy" (critical failure)
 
     Returns:
-        Comprehensive health status with component-level detail
+        Comprehensive health status with component-level detail for the specified instance
 
     Raises:
-        Never raises - always returns a valid response (may be unhealthy)
+        HTTPException: Instance not found (404)
+        Never raises otherwise - always returns a valid response (may be unhealthy)
     """
     try:
         service = get_service()
 
+        # Validate instance exists
+        if instance_id not in service.ha_clients:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
+            )
+
         # Check all tiers
-        critical = await check_tier1_critical(service)
-        essential = await check_tier2_essential(service)
-        operational = await check_tier3_operational(service)
-        healing = await check_tier4_healing(service)
+        critical = await check_tier1_critical(service, instance_id)
+        essential = await check_tier2_essential(service, instance_id)
+        operational = await check_tier3_operational(service, instance_id)
+        healing = await check_tier4_healing(service, instance_id)
         intelligence = await check_tier5_intelligence(service)
 
         # Organize components by tier
