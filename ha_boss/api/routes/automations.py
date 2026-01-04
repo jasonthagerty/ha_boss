@@ -26,7 +26,8 @@ router = APIRouter()
 
 @router.post("/automations/analyze", response_model=AutomationAnalysisResponse)
 async def analyze_automation(
-    request: AutomationAnalysisRequest, instance_id: str = Query("default", description="Instance identifier")
+    request: AutomationAnalysisRequest,
+    instance_id: str = Query("default", description="Instance identifier"),
 ) -> AutomationAnalysisResponse:
     """Analyze an existing Home Assistant automation for a specific instance.
 
@@ -131,7 +132,8 @@ async def analyze_automation(
 
 @router.post("/automations/generate", response_model=AutomationGenerateResponse)
 async def generate_automation(
-    request: AutomationGenerateRequest, instance_id: str = Query("default", description="Instance identifier")
+    request: AutomationGenerateRequest,
+    instance_id: str = Query("default", description="Instance identifier"),
 ) -> AutomationGenerateResponse:
     """Generate a new automation from natural language description for a specific instance.
 
@@ -234,7 +236,8 @@ async def generate_automation(
 
 @router.post("/automations/create", response_model=AutomationCreateResponse)
 async def create_automation(
-    request: AutomationCreateRequest, instance_id: str = Query("default", description="Instance identifier")
+    request: AutomationCreateRequest,
+    instance_id: str = Query("default", description="Instance identifier"),
 ) -> AutomationCreateResponse:
     """Create an automation in Home Assistant for a specific instance.
 

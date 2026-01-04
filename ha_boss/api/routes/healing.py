@@ -61,7 +61,8 @@ async def trigger_healing(
         entity_state = await state_tracker.get_state(entity_id)
         if not entity_state:
             raise HTTPException(
-                status_code=404, detail=f"Entity '{entity_id}' not found in instance '{instance_id}'"
+                status_code=404,
+                detail=f"Entity '{entity_id}' not found in instance '{instance_id}'",
             )
 
         # Get integration for entity

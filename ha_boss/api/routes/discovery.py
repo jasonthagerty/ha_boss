@@ -129,7 +129,9 @@ async def get_discovery_stats(
         async with service.database.async_session() as session:
             # Count automations
             total_automations_result = await session.execute(
-                select(func.count(Automation.entity_id)).where(Automation.instance_id == instance_id)
+                select(func.count(Automation.entity_id)).where(
+                    Automation.instance_id == instance_id
+                )
             )
             total_automations = total_automations_result.scalar() or 0
 

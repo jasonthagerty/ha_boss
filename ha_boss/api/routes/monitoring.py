@@ -132,7 +132,8 @@ async def get_entity(
 
         if not state:
             raise HTTPException(
-                status_code=404, detail=f"Entity '{entity_id}' not found in instance '{instance_id}'"
+                status_code=404,
+                detail=f"Entity '{entity_id}' not found in instance '{instance_id}'",
             ) from None
 
         return EntityStateResponse(

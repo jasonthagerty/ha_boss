@@ -220,13 +220,21 @@ async def check_tier1_critical(service, instance_id: str) -> dict[str, Component
         components["service_state"] = ComponentHealth(
             status="healthy",
             message="Service is running",
-            details={"state": service.state, "mode": service.config.mode, "instance_id": instance_id},
+            details={
+                "state": service.state,
+                "mode": service.config.mode,
+                "instance_id": instance_id,
+            },
         )
     else:
         components["service_state"] = ComponentHealth(
             status="unhealthy",
             message=f"Service is not running (state: {service.state})",
-            details={"state": service.state, "mode": service.config.mode, "instance_id": instance_id},
+            details={
+                "state": service.state,
+                "mode": service.config.mode,
+                "instance_id": instance_id,
+            },
         )
 
     # 2. Home Assistant REST Connection
@@ -484,7 +492,12 @@ async def check_tier2_essential(service, instance_id: str) -> dict[str, Componen
         components["entity_discovery_complete"] = ComponentHealth(
             status="degraded",
             message="Entity discovery not complete",
-            details={"monitored_entities": 0, "auto_discovered": 0, "last_refresh": None, "instance_id": instance_id},
+            details={
+                "monitored_entities": 0,
+                "auto_discovered": 0,
+                "last_refresh": None,
+                "instance_id": instance_id,
+            },
         )
 
     # 9. Event Loop Responsive
@@ -538,7 +551,11 @@ async def check_tier3_operational(service, instance_id: str) -> dict[str, Compon
         components["health_monitor_running"] = ComponentHealth(
             status="healthy",
             message="Health monitor loop running",
-            details={"running": True, "monitor_task_alive": monitor_task_alive, "instance_id": instance_id},
+            details={
+                "running": True,
+                "monitor_task_alive": monitor_task_alive,
+                "instance_id": instance_id,
+            },
         )
     else:
         components["health_monitor_running"] = ComponentHealth(
@@ -592,13 +609,21 @@ async def check_tier3_operational(service, instance_id: str) -> dict[str, Compon
         components["notification_service"] = ComponentHealth(
             status="healthy",
             message="Notification service initialized",
-            details={"manager_initialized": True, "ha_channel_enabled": True, "instance_id": instance_id},
+            details={
+                "manager_initialized": True,
+                "ha_channel_enabled": True,
+                "instance_id": instance_id,
+            },
         )
     else:
         components["notification_service"] = ComponentHealth(
             status="degraded",
             message="Notification service not initialized (alerts won't work)",
-            details={"manager_initialized": False, "ha_channel_enabled": False, "instance_id": instance_id},
+            details={
+                "manager_initialized": False,
+                "ha_channel_enabled": False,
+                "instance_id": instance_id,
+            },
         )
 
     return components
@@ -642,7 +667,11 @@ async def check_tier4_healing(service, instance_id: str) -> dict[str, ComponentH
         components["healing_manager_initialized"] = ComponentHealth(
             status="degraded",
             message="Healing manager not initialized",
-            details={"enabled": healing_enabled, "manager_initialized": False, "instance_id": instance_id},
+            details={
+                "enabled": healing_enabled,
+                "manager_initialized": False,
+                "instance_id": instance_id,
+            },
         )
 
     # 14. Circuit Breakers Operational
