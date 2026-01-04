@@ -41,6 +41,15 @@
 
                 <!-- Status and Settings -->
                 <div class="flex items-center space-x-4">
+                    <!-- Instance Selector -->
+                    <div class="flex items-center space-x-2">
+                        <label for="instanceSelector" class="text-sm text-gray-600">Instance:</label>
+                        <select id="instanceSelector"
+                                class="rounded-md border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="default">default</option>
+                        </select>
+                    </div>
+
                     <!-- Connection Status Indicator -->
                     <div id="statusIndicator" class="flex items-center space-x-2">
                         <div id="statusDot" class="w-3 h-3 rounded-full bg-gray-400"></div>
