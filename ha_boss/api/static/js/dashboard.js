@@ -75,7 +75,20 @@ class Dashboard {
       });
     } catch (error) {
       console.error('Failed to load instances:', error);
-      this.showToast('Failed to load instances', 'error');
+      this.showToast('Failed to load instances - using default', 'error');
+
+      // Fallback: Add default instance to keep dashboard functional
+      const selector = document.getElementById('instanceSelector');
+      selector.innerHTML = '';
+      const defaultOption = document.createElement('option');
+      defaultOption.value = 'default';
+      defaultOption.textContent = 'default (unknown)';
+      defaultOption.selected = true;
+      selector.appendChild(defaultOption);
+
+      // Ensure we're using the default instance
+      this.currentInstance = 'default';
+      this.api.setInstance('default');
     }
   }
 

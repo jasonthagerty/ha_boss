@@ -169,9 +169,12 @@ export class APIClient {
   /**
    * Get integration reliability statistics
    * GET /api/patterns/reliability
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
    */
-  async getReliability() {
-    return this.request('GET', '/patterns/reliability');
+  async getReliability(instanceId = null) {
+    const params = new URLSearchParams();
+    this.addInstanceParam(params, instanceId);
+    return this.request('GET', `/patterns/reliability?${params}`);
   }
 
   /**
@@ -179,9 +182,11 @@ export class APIClient {
    * GET /api/patterns/failures
    * @param {number} limit - Maximum failures to return (1-500, default: 50)
    * @param {number} hours - Hours of history (1-168, default: 24)
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
    */
-  async getFailures(limit = 50, hours = 24) {
+  async getFailures(limit = 50, hours = 24, instanceId = null) {
     const params = new URLSearchParams({ limit, hours });
+    this.addInstanceParam(params, instanceId);
     return this.request('GET', `/patterns/failures?${params}`);
   }
 
@@ -190,9 +195,11 @@ export class APIClient {
    * GET /api/patterns/summary
    * @param {number} days - Days to summarize (1-30, default: 7)
    * @param {boolean} ai - Include AI-generated insights (default: false)
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
    */
-  async getSummary(days = 7, ai = false) {
+  async getSummary(days = 7, ai = false, instanceId = null) {
     const params = new URLSearchParams({ days, ai });
+    this.addInstanceParam(params, instanceId);
     return this.request('GET', `/patterns/summary?${params}`);
   }
 
@@ -202,9 +209,12 @@ export class APIClient {
    * Analyze an existing automation with AI
    * POST /api/automations/analyze
    * @param {string} automationId - Automation ID to analyze
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
    */
-  async analyzeAutomation(automationId) {
-    return this.request('POST', '/automations/analyze', {
+  async analyzeAutomation(automationId, instanceId = null) {
+    const params = new URLSearchParams();
+    this.addInstanceParam(params, instanceId);
+    return this.request('POST', `/automations/analyze?${params}`, {
       body: JSON.stringify({ automation_id: automationId })
     });
   }
@@ -214,9 +224,12 @@ export class APIClient {
    * POST /api/automations/generate
    * @param {string} description - Natural language description
    * @param {string} mode - Automation mode (default: 'single')
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
    */
-  async generateAutomation(description, mode = 'single') {
-    return this.request('POST', '/automations/generate', {
+  async generateAutomation(description, mode = 'single', instanceId = null) {
+    const params = new URLSearchParams();
+    this.addInstanceParam(params, instanceId);
+    return this.request('POST', `/automations/generate?${params}`, {
       body: JSON.stringify({ description, mode })
     });
   }
@@ -238,9 +251,12 @@ export class APIClient {
    * Manually trigger healing for a specific entity
    * POST /api/healing/{entity_id}
    * @param {string} entityId - Entity ID to heal
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
    */
-  async triggerHealing(entityId) {
-    return this.request('POST', `/healing/${encodeURIComponent(entityId)}`);
+  async triggerHealing(entityId, instanceId = null) {
+    const params = new URLSearchParams();
+    this.addInstanceParam(params, instanceId);
+    return this.request('POST', `/healing/${encodeURIComponent(entityId)}?${params}`);
   }
 
   /**
@@ -248,9 +264,11 @@ export class APIClient {
    * GET /api/healing/history
    * @param {number} limit - Maximum actions to return (1-500, default: 50)
    * @param {number} hours - Hours of history (1-168, default: 24)
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
    */
-  async getHealingHistory(limit = 50, hours = 24) {
+  async getHealingHistory(limit = 50, hours = 24, instanceId = null) {
     const params = new URLSearchParams({ limit, hours });
+    this.addInstanceParam(params, instanceId);
     return this.request('GET', `/healing/history?${params}`);
   }
 
