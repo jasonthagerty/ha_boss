@@ -15,10 +15,11 @@ def mock_service():
     service = MagicMock()
     service.state = "running"
     service.start_time = datetime.now(UTC)
-    service.health_checks_performed = 100
-    service.healings_attempted = 10
-    service.healings_succeeded = 8
-    service.healings_failed = 2
+    # Multi-instance statistics (dicts keyed by instance_id)
+    service.health_checks_performed = {"default": 100}
+    service.healings_attempted = {"default": 10}
+    service.healings_succeeded = {"default": 8}
+    service.healings_failed = {"default": 2}
 
     # Mock config
     service.config = MagicMock()
@@ -37,48 +38,70 @@ def mock_service():
     service.config.intelligence.claude_enabled = False
     service.config.intelligence.claude_api_key = None
 
-    # Mock HA Client with session
-    service.ha_client = MagicMock()
-    service.ha_client._session = MagicMock()
-    service.ha_client._session.closed = False
+    # Mock HA Client with session (multi-instance)
+    ha_client = MagicMock()
+    ha_client._session = MagicMock()
+    ha_client._session.closed = False
+    ha_client.base_url = "http://homeassistant.local:8123"
+    service.ha_clients = {"default": ha_client}
+    # Backward compatibility property
+    service.ha_client = ha_client
 
-    # Mock WebSocket client
-    service.websocket_client = MagicMock()
-    service.websocket_client.is_connected = MagicMock(return_value=True)
-    service.websocket_client._running = True
+    # Mock WebSocket client (multi-instance)
+    websocket_client = MagicMock()
+    websocket_client.is_connected = MagicMock(return_value=True)
+    websocket_client._running = True
+    service.websocket_clients = {"default": websocket_client}
+    # Backward compatibility property
+    service.websocket_client = websocket_client
 
     # Mock database with engine
     service.database = MagicMock()
     service.database.engine = MagicMock()
 
-    # Mock state tracker with cache
-    service.state_tracker = MagicMock()
-    service.state_tracker._cache = {"sensor.test": MagicMock(), "sensor.test2": MagicMock()}
-    service.state_tracker.get_all_states = AsyncMock(
+    # Mock state tracker with cache (multi-instance)
+    state_tracker = MagicMock()
+    state_tracker._cache = {"sensor.test": MagicMock(), "sensor.test2": MagicMock()}
+    state_tracker.get_all_states = AsyncMock(
         return_value={"sensor.test": MagicMock(), "sensor.test2": MagicMock()}
     )
+    service.state_trackers = {"default": state_tracker}
+    # Backward compatibility property
+    service.state_tracker = state_tracker
 
-    # Mock integration discovery
-    service.integration_discovery = MagicMock()
-    service.integration_discovery._entity_to_integration = {
+    # Mock integration discovery (multi-instance)
+    integration_discovery = MagicMock()
+    integration_discovery._entity_to_integration = {
         "sensor.test": "sensor",
         "sensor.test2": "sensor",
     }
-    service.integration_discovery._integrations = {"sensor": MagicMock()}
+    integration_discovery._integrations = {"sensor": MagicMock()}
+    service.integration_discoveries = {"default": integration_discovery}
+    # Backward compatibility property
+    service.integration_discovery = integration_discovery
 
-    # Mock health monitor
-    service.health_monitor = MagicMock()
-    service.health_monitor._running = True
-    service.health_monitor._monitor_task = MagicMock()
-    service.health_monitor._monitor_task.done = MagicMock(return_value=False)
+    # Mock health monitor (multi-instance)
+    health_monitor = MagicMock()
+    health_monitor._running = True
+    health_monitor._monitor_task = MagicMock()
+    health_monitor._monitor_task.done = MagicMock(return_value=False)
+    service.health_monitors = {"default": health_monitor}
+    # Backward compatibility property
+    service.health_monitor = health_monitor
 
-    # Mock notification manager
-    service.notification_manager = MagicMock()
-    service.notification_manager.ha_client = MagicMock()
+    # Mock notification manager (multi-instance)
+    notification_manager = MagicMock()
+    notification_manager.ha_client = ha_client
+    service.notification_managers = {"default": notification_manager}
+    # Backward compatibility property
+    service.notification_manager = notification_manager
 
-    # Mock healing manager
-    service.healing_manager = MagicMock()
-    service.healing_manager._failure_count = {}
+    # Mock healing manager (multi-instance)
+    healing_manager = MagicMock()
+    healing_manager._failure_count = {}
+    service.healing_managers = {"default": healing_manager}
+    # Backward compatibility property
+    service.healing_manager = healing_manager
 
     return service
 

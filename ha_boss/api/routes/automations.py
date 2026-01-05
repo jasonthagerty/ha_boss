@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import (
@@ -25,8 +25,11 @@ router = APIRouter()
 
 
 @router.post("/automations/analyze", response_model=AutomationAnalysisResponse)
-async def analyze_automation(request: AutomationAnalysisRequest) -> AutomationAnalysisResponse:
-    """Analyze an existing Home Assistant automation.
+async def analyze_automation(
+    request: AutomationAnalysisRequest,
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> AutomationAnalysisResponse:
+    """Analyze an existing Home Assistant automation for a specific instance.
 
     Uses AI to analyze an automation and provide:
     - Detailed analysis of the automation's purpose and logic
@@ -35,19 +38,23 @@ async def analyze_automation(request: AutomationAnalysisRequest) -> AutomationAn
 
     Args:
         request: Automation analysis request with automation ID
+        instance_id: Instance identifier (default: "default")
 
     Returns:
         Analysis result with suggestions
 
     Raises:
-        HTTPException: Service error (500) or automation not found (404)
+        HTTPException: Instance not found (404), automation not found (404), or service error (500)
     """
     try:
         service = get_service()
 
-        if not service.ha_client:
+        # Validate instance exists and get HA client
+        ha_client = service.ha_clients.get(instance_id)
+        if not ha_client:
             raise HTTPException(
-                status_code=500, detail="Home Assistant client not initialized"
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
             ) from None
 
         # Check if LLM features are configured
@@ -86,7 +93,7 @@ async def analyze_automation(request: AutomationAnalysisRequest) -> AutomationAn
 
         # Create analyzer
         analyzer = AutomationAnalyzer(
-            ha_client=service.ha_client,
+            ha_client=ha_client,
             config=service.config,
             llm_router=llm_router,
         )
@@ -124,8 +131,11 @@ async def analyze_automation(request: AutomationAnalysisRequest) -> AutomationAn
 
 
 @router.post("/automations/generate", response_model=AutomationGenerateResponse)
-async def generate_automation(request: AutomationGenerateRequest) -> AutomationGenerateResponse:
-    """Generate a new automation from natural language description.
+async def generate_automation(
+    request: AutomationGenerateRequest,
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> AutomationGenerateResponse:
+    """Generate a new automation from natural language description for a specific instance.
 
     Uses AI to generate a complete Home Assistant automation YAML from
     a natural language description. The generated automation is validated
@@ -133,19 +143,23 @@ async def generate_automation(request: AutomationGenerateRequest) -> AutomationG
 
     Args:
         request: Automation generation request with description and mode
+        instance_id: Instance identifier (default: "default")
 
     Returns:
         Generated automation with YAML and validation results
 
     Raises:
-        HTTPException: Service error (500) or generation failed (400)
+        HTTPException: Instance not found (404) or generation failed (400)
     """
     try:
         service = get_service()
 
-        if not service.ha_client:
+        # Validate instance exists and get HA client
+        ha_client = service.ha_clients.get(instance_id)
+        if not ha_client:
             raise HTTPException(
-                status_code=500, detail="Home Assistant client not initialized"
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
             ) from None
 
         # Check if LLM features are configured
@@ -184,7 +198,7 @@ async def generate_automation(request: AutomationGenerateRequest) -> AutomationG
 
         # Create generator
         generator = AutomationGenerator(
-            ha_client=service.ha_client,
+            ha_client=ha_client,
             config=service.config,
             llm_router=llm_router,
         )
@@ -221,27 +235,34 @@ async def generate_automation(request: AutomationGenerateRequest) -> AutomationG
 
 
 @router.post("/automations/create", response_model=AutomationCreateResponse)
-async def create_automation(request: AutomationCreateRequest) -> AutomationCreateResponse:
-    """Create an automation in Home Assistant.
+async def create_automation(
+    request: AutomationCreateRequest,
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> AutomationCreateResponse:
+    """Create an automation in Home Assistant for a specific instance.
 
     Takes a validated automation YAML and creates it in Home Assistant
     via the REST API.
 
     Args:
         request: Automation creation request with YAML content
+        instance_id: Instance identifier (default: "default")
 
     Returns:
         Creation result with automation ID if successful
 
     Raises:
-        HTTPException: Service error (500) or creation failed (400)
+        HTTPException: Instance not found (404) or creation failed (400)
     """
     try:
         service = get_service()
 
-        if not service.ha_client:
+        # Validate instance exists and get HA client
+        ha_client = service.ha_clients.get(instance_id)
+        if not ha_client:
             raise HTTPException(
-                status_code=500, detail="Home Assistant client not initialized"
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
             ) from None
 
         # Parse and create automation
@@ -253,7 +274,7 @@ async def create_automation(request: AutomationCreateRequest) -> AutomationCreat
             raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}") from e
 
         # Create automation in HA
-        result = await service.ha_client.create_automation(automation_dict)
+        result = await ha_client.create_automation(automation_dict)
 
         if result.get("success"):
             return AutomationCreateResponse(

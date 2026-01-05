@@ -11,13 +11,34 @@ from ha_boss.api.app import create_app
 @pytest.fixture
 def mock_service_with_auth():
     """Create a mock HA Boss service with authentication enabled."""
+    from datetime import UTC, datetime
+
     service = MagicMock()
     service.state = "running"
-    service.ha_client = MagicMock()
-    service.state_tracker = MagicMock()
-    service.state_tracker.get_all_states = AsyncMock(return_value={})
-    service.websocket_client = MagicMock()
-    service.websocket_client.is_connected = MagicMock(return_value=True)
+    service.start_time = datetime.now(UTC)
+
+    # Multi-instance statistics
+    service.health_checks_performed = {"default": 0}
+    service.healings_attempted = {"default": 0}
+    service.healings_succeeded = {"default": 0}
+    service.healings_failed = {"default": 0}
+
+    # Multi-instance structure
+    ha_client = MagicMock()
+    service.ha_clients = {"default": ha_client}
+    service.ha_client = ha_client  # Backward compatibility
+
+    state_tracker = MagicMock()
+    state_tracker.get_all_states = AsyncMock(return_value={})
+    state_tracker._cache = {}
+    service.state_trackers = {"default": state_tracker}
+    service.state_tracker = state_tracker  # Backward compatibility
+
+    websocket_client = MagicMock()
+    websocket_client.is_connected = MagicMock(return_value=True)
+    service.websocket_clients = {"default": websocket_client}
+    service.websocket_client = websocket_client  # Backward compatibility
+
     service.database = MagicMock()
 
     # Enable auth
@@ -67,13 +88,34 @@ def test_auth_invalid_key(client_with_auth):
 
 def test_auth_disabled():
     """Test that requests work without API key when auth is disabled."""
+    from datetime import UTC, datetime
+
     mock_service = MagicMock()
     mock_service.state = "running"
-    mock_service.ha_client = MagicMock()
-    mock_service.state_tracker = MagicMock()
-    mock_service.state_tracker.get_all_states = AsyncMock(return_value={})
-    mock_service.websocket_client = MagicMock()
-    mock_service.websocket_client.is_connected = MagicMock(return_value=True)
+    mock_service.start_time = datetime.now(UTC)
+
+    # Multi-instance statistics
+    mock_service.health_checks_performed = {"default": 0}
+    mock_service.healings_attempted = {"default": 0}
+    mock_service.healings_succeeded = {"default": 0}
+    mock_service.healings_failed = {"default": 0}
+
+    # Multi-instance structure
+    ha_client = MagicMock()
+    mock_service.ha_clients = {"default": ha_client}
+    mock_service.ha_client = ha_client
+
+    state_tracker = MagicMock()
+    state_tracker.get_all_states = AsyncMock(return_value={})
+    state_tracker._cache = {}
+    mock_service.state_trackers = {"default": state_tracker}
+    mock_service.state_tracker = state_tracker
+
+    websocket_client = MagicMock()
+    websocket_client.is_connected = MagicMock(return_value=True)
+    mock_service.websocket_clients = {"default": websocket_client}
+    mock_service.websocket_client = websocket_client
+
     mock_service.database = MagicMock()
 
     # Disable auth

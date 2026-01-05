@@ -18,8 +18,10 @@ router = APIRouter()
 
 
 @router.get("/patterns/reliability", response_model=list[IntegrationReliabilityResponse])
-async def get_reliability_stats() -> list[IntegrationReliabilityResponse]:
-    """Get integration reliability statistics.
+async def get_reliability_stats(
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> list[IntegrationReliabilityResponse]:
+    """Get integration reliability statistics for a specific instance.
 
     Returns reliability metrics for all integrations including:
     - Total entities per integration
@@ -28,22 +30,33 @@ async def get_reliability_stats() -> list[IntegrationReliabilityResponse]:
     - Reliability percentage
     - Last failure timestamp
 
+    Args:
+        instance_id: Instance identifier (default: "default")
+
     Returns:
-        List of integration reliability statistics
+        List of integration reliability statistics for the specified instance
 
     Raises:
-        HTTPException: Service not initialized or database unavailable (500)
+        HTTPException: Instance not found (404) or service error (500)
     """
     try:
         service = get_service()
+
+        # Validate instance exists
+        pattern_collector = service.pattern_collectors.get(instance_id)
+        if pattern_collector is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.pattern_collectors.keys())}",
+            ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
 
         # Use the reliability analyzer if available
-        if service.pattern_collector and hasattr(service.pattern_collector, "analyzer"):
-            analyzer = service.pattern_collector.analyzer
-            stats = await analyzer.get_integration_reliability()
+        if pattern_collector and hasattr(pattern_collector, "analyzer"):
+            analyzer = pattern_collector.analyzer
+            stats = await analyzer.get_integration_reliability(instance_id=instance_id)
 
             # Convert to response models
             reliability_list = []
@@ -67,6 +80,8 @@ async def get_reliability_stats() -> list[IntegrationReliabilityResponse]:
         # Return empty list until data model is updated
         return []
 
+    except HTTPException:
+        raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from None
@@ -79,10 +94,11 @@ async def get_reliability_stats() -> list[IntegrationReliabilityResponse]:
 
 @router.get("/patterns/failures", response_model=list[FailureEventResponse])
 async def get_failure_events(
+    instance_id: str = Query("default", description="Instance identifier"),
     limit: int = Query(50, ge=1, le=500, description="Maximum failures to return"),
     hours: int = Query(24, ge=1, le=168, description="Hours of history (1-168)"),
 ) -> list[FailureEventResponse]:
-    """Get failure event timeline.
+    """Get failure event timeline for a specific instance.
 
     Returns a list of recent failure events including:
     - Entity and integration information
@@ -90,17 +106,25 @@ async def get_failure_events(
     - Resolution status and timestamps
 
     Args:
+        instance_id: Instance identifier (default: "default")
         limit: Maximum number of failures to return (1-500)
         hours: Hours of history to retrieve (default: 24, max: 168/7 days)
 
     Returns:
-        List of failure events
+        List of failure events for the specified instance
 
     Raises:
-        HTTPException: Service error (500)
+        HTTPException: Instance not found (404) or service error (500)
     """
     try:
         service = get_service()
+
+        # Validate instance exists
+        if instance_id not in service.pattern_collectors:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.pattern_collectors.keys())}",
+            ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
@@ -109,7 +133,7 @@ async def get_failure_events(
         end_time = datetime.now(UTC)
         start_time = end_time - timedelta(hours=hours)
 
-        # Query database for failure events
+        # Query database for failure events for this instance
         async with service.database.async_session() as session:
             from sqlalchemy import select
 
@@ -118,6 +142,7 @@ async def get_failure_events(
             stmt = (
                 select(HealthEvent)  # type: ignore[attr-defined]
                 .where(  # type: ignore[attr-defined]
+                    HealthEvent.instance_id == instance_id,  # type: ignore[attr-defined]
                     HealthEvent.timestamp >= start_time,  # type: ignore[attr-defined]
                     HealthEvent.timestamp <= end_time,  # type: ignore[attr-defined]
                 )
@@ -145,6 +170,8 @@ async def get_failure_events(
 
         return failures
 
+    except HTTPException:
+        raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from None
@@ -155,10 +182,11 @@ async def get_failure_events(
 
 @router.get("/patterns/summary", response_model=WeeklySummaryResponse)
 async def get_weekly_summary(
+    instance_id: str = Query("default", description="Instance identifier"),
     days: int = Query(7, ge=1, le=30, description="Days to summarize (1-30)"),
     ai: bool = Query(False, description="Include AI-generated insights"),
 ) -> WeeklySummaryResponse:
-    """Get weekly summary statistics.
+    """Get weekly summary statistics for a specific instance.
 
     Returns aggregated statistics for the specified time period including:
     - Health check and failure counts
@@ -167,17 +195,26 @@ async def get_weekly_summary(
     - Optional AI-generated insights and recommendations
 
     Args:
+        instance_id: Instance identifier (default: "default")
         days: Number of days to summarize (default: 7, max: 30)
         ai: Include AI-generated insights (requires AI configuration)
 
     Returns:
-        Weekly summary statistics
+        Weekly summary statistics for the specified instance
 
     Raises:
-        HTTPException: Service error (500)
+        HTTPException: Instance not found (404) or service error (500)
     """
     try:
         service = get_service()
+
+        # Validate instance exists
+        pattern_collector = service.pattern_collectors.get(instance_id)
+        if pattern_collector is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.pattern_collectors.keys())}",
+            ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
@@ -186,7 +223,7 @@ async def get_weekly_summary(
         end_date = datetime.now(UTC)
         start_date = end_date - timedelta(days=days)
 
-        # Query database for summary stats
+        # Query database for summary stats for this instance
         async with service.database.async_session() as session:
             from sqlalchemy import func, select
 
@@ -194,6 +231,7 @@ async def get_weekly_summary(
 
             # Total failures
             failure_stmt = select(func.count(HealthEvent.id)).where(  # type: ignore[attr-defined]
+                HealthEvent.instance_id == instance_id,  # type: ignore[attr-defined]
                 HealthEvent.timestamp >= start_date,  # type: ignore[attr-defined]
                 HealthEvent.timestamp <= end_date,  # type: ignore[attr-defined]
             )
@@ -209,6 +247,7 @@ async def get_weekly_summary(
                     "successful_healings"
                 ),
             ).where(  # type: ignore[attr-defined]
+                HealingAction.instance_id == instance_id,  # type: ignore[attr-defined]
                 HealingAction.timestamp >= start_date,  # type: ignore[attr-defined]
                 HealingAction.timestamp <= end_date,  # type: ignore[attr-defined]
             )
@@ -228,16 +267,14 @@ async def get_weekly_summary(
 
         # Generate AI insights if requested
         ai_insights = None
-        if (
-            ai
-            and service.pattern_collector
-            and hasattr(service.pattern_collector, "summary_generator")
-        ):
+        if ai and pattern_collector and hasattr(pattern_collector, "summary_generator"):
             try:
-                summary_generator = service.pattern_collector.summary_generator
-                ai_insights = await summary_generator.generate_summary(days=days)
+                summary_generator = pattern_collector.summary_generator
+                ai_insights = await summary_generator.generate_summary(
+                    days=days, instance_id=instance_id
+                )
             except Exception as e:
-                logger.warning(f"Failed to generate AI insights: {e}")
+                logger.warning(f"[{instance_id}] Failed to generate AI insights: {e}")
                 ai_insights = None
 
         return WeeklySummaryResponse(
@@ -251,6 +288,8 @@ async def get_weekly_summary(
             ai_insights=ai_insights,
         )
 
+    except HTTPException:
+        raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from None

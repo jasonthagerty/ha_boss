@@ -13,6 +13,8 @@ class Dashboard {
     this.charts = ChartManager;
     this.currentTab = 'overview';
     this.pollingIntervals = {};
+    this.instances = [];
+    this.currentInstance = this.api.currentInstance;
     this.statusHistory = {
       timestamps: [],
       attempted: [],
@@ -35,6 +37,9 @@ class Dashboard {
     // Setup event listeners
     this.setupEventListeners();
 
+    // Load instances
+    await this.loadInstances();
+
     // Check API key and connection
     await this.checkApiKey();
 
@@ -48,9 +53,74 @@ class Dashboard {
   }
 
   /**
+   * Load available instances
+   */
+  async loadInstances() {
+    try {
+      this.instances = await this.api.getInstances();
+      console.log('Loaded instances:', this.instances);
+
+      // Update instance selector
+      const selector = document.getElementById('instanceSelector');
+      selector.innerHTML = '';
+
+      this.instances.forEach(instance => {
+        const option = document.createElement('option');
+        option.value = instance.instance_id;
+        option.textContent = `${instance.instance_id} (${instance.state})`;
+        if (instance.instance_id === this.currentInstance) {
+          option.selected = true;
+        }
+        selector.appendChild(option);
+      });
+    } catch (error) {
+      console.error('Failed to load instances:', error);
+      this.showToast('Failed to load instances - using default', 'error');
+
+      // Fallback: Add default instance to keep dashboard functional
+      const selector = document.getElementById('instanceSelector');
+      selector.innerHTML = '';
+      const defaultOption = document.createElement('option');
+      defaultOption.value = 'default';
+      defaultOption.textContent = 'default (unknown)';
+      defaultOption.selected = true;
+      selector.appendChild(defaultOption);
+
+      // Ensure we're using the default instance
+      this.currentInstance = 'default';
+      this.api.setInstance('default');
+    }
+  }
+
+  /**
+   * Handle instance selection change
+   */
+  async onInstanceChange(instanceId) {
+    console.log('Switching to instance:', instanceId);
+    this.currentInstance = instanceId;
+    this.api.setInstance(instanceId);
+
+    // Clear status history when switching instances
+    this.statusHistory = {
+      timestamps: [],
+      attempted: [],
+      succeeded: [],
+      failed: []
+    };
+
+    // Reload current tab
+    await this.switchTab(this.currentTab);
+  }
+
+  /**
    * Setup all event listeners
    */
   setupEventListeners() {
+    // Instance selector
+    document.getElementById('instanceSelector').addEventListener('change', (e) => {
+      this.onInstanceChange(e.target.value);
+    });
+
     // Tab navigation
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {

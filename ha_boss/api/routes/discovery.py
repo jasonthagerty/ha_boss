@@ -34,32 +34,39 @@ router = APIRouter()
 @router.post("/discovery/refresh", response_model=DiscoveryRefreshResponse)
 async def trigger_discovery_refresh(
     request: DiscoveryRefreshRequest = DiscoveryRefreshRequest(),
+    instance_id: str = Query("default", description="Instance identifier"),
 ) -> DiscoveryRefreshResponse:
-    """Trigger manual entity discovery refresh.
+    """Trigger manual entity discovery refresh for a specific instance.
 
     Scans all enabled automations, scenes, and scripts to discover
     entities being used. Updates the monitored entity set.
 
     Args:
         request: Refresh request with optional trigger source
+        instance_id: Instance identifier (default: "default")
 
     Returns:
-        Discovery refresh results with statistics
+        Discovery refresh results with statistics for the specified instance
 
     Raises:
-        HTTPException: Auto-discovery disabled (400) or service error (500)
+        HTTPException: Instance not found (404), auto-discovery disabled (400), or service error (500)
     """
     try:
         service = get_service()
 
-        if not service.entity_discovery:
-            raise HTTPException(status_code=400, detail="Auto-discovery is not enabled") from None
+        # Validate instance exists and get entity discovery
+        entity_discovery = service.entity_discoveries.get(instance_id)
+        if not entity_discovery:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.entity_discoveries.keys())}",
+            ) from None
 
         # Record start time
         start_time = datetime.now(UTC)
 
         # Trigger discovery refresh
-        stats = await service.entity_discovery.discover_and_refresh(
+        stats = await entity_discovery.discover_and_refresh(
             trigger_type="manual", trigger_source=request.trigger_source
         )
 
@@ -87,54 +94,81 @@ async def trigger_discovery_refresh(
 
 
 @router.get("/discovery/stats", response_model=DiscoveryStatsResponse)
-async def get_discovery_stats() -> DiscoveryStatsResponse:
-    """Get current discovery statistics.
+async def get_discovery_stats(
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> DiscoveryStatsResponse:
+    """Get current discovery statistics for a specific instance.
 
     Returns statistics about discovered automations, scenes, scripts,
     and entities, along with refresh scheduling information.
 
+    Args:
+        instance_id: Instance identifier (default: "default")
+
     Returns:
-        Discovery statistics
+        Discovery statistics for the specified instance
 
     Raises:
-        HTTPException: Service error (500)
+        HTTPException: Instance not found (404) or service error (500)
     """
     try:
         service = get_service()
 
+        # Validate instance exists
+        state_tracker = service.state_trackers.get(instance_id)
+        if not state_tracker:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.state_trackers.keys())}",
+            ) from None
+
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
 
-        # Get counts from database
+        # Get counts from database for this instance
         async with service.database.async_session() as session:
             # Count automations
             total_automations_result = await session.execute(
-                select(func.count(Automation.entity_id))
+                select(func.count(Automation.entity_id)).where(
+                    Automation.instance_id == instance_id
+                )
             )
             total_automations = total_automations_result.scalar() or 0
 
             enabled_automations_result = await session.execute(
-                select(func.count(Automation.entity_id)).where(Automation.state == "on")
+                select(func.count(Automation.entity_id)).where(
+                    Automation.state == "on", Automation.instance_id == instance_id
+                )
             )
             enabled_automations = enabled_automations_result.scalar() or 0
 
             # Count scenes
-            total_scenes_result = await session.execute(select(func.count(Scene.entity_id)))
+            total_scenes_result = await session.execute(
+                select(func.count(Scene.entity_id)).where(Scene.instance_id == instance_id)
+            )
             total_scenes = total_scenes_result.scalar() or 0
 
             # Count scripts
-            total_scripts_result = await session.execute(select(func.count(Script.entity_id)))
+            total_scripts_result = await session.execute(
+                select(func.count(Script.entity_id)).where(Script.instance_id == instance_id)
+            )
             total_scripts = total_scripts_result.scalar() or 0
 
-            # Count unique entities from junction tables
+            # Count unique entities from junction tables for this instance
             automation_entities = await session.execute(
-                select(func.count(func.distinct(AutomationEntity.entity_id)))
+                select(func.count(func.distinct(AutomationEntity.entity_id))).where(
+                    AutomationEntity.instance_id == instance_id
+                )
             )
             scene_entities = await session.execute(
-                select(func.count(func.distinct(SceneEntity.entity_id)))
+                select(func.count(func.distinct(SceneEntity.entity_id))).where(
+                    SceneEntity.instance_id == instance_id
+                )
             )
             script_entities = await session.execute(
-                select(func.count(func.distinct(ScriptEntity.entity_id)))
+                select(func.count(func.distinct(ScriptEntity.entity_id))).where(
+                    ScriptEntity.instance_id == instance_id
+                )
             )
 
             # Total unique entities (rough estimate - may have overlap)
@@ -144,9 +178,10 @@ async def get_discovery_stats() -> DiscoveryStatsResponse:
                 + (script_entities.scalar() or 0)
             )
 
-            # Get last refresh timestamp
+            # Get last refresh timestamp for this instance
             last_refresh_result = await session.execute(
                 select(DiscoveryRefresh.timestamp)
+                .where(DiscoveryRefresh.instance_id == instance_id)
                 .order_by(DiscoveryRefresh.timestamp.desc())
                 .limit(1)
             )
@@ -154,9 +189,8 @@ async def get_discovery_stats() -> DiscoveryStatsResponse:
 
         # Get monitored entity count from state tracker
         monitored_count = 0
-        if service.state_tracker:
-            all_states = await service.state_tracker.get_all_states()
-            monitored_count = len(all_states)
+        all_states = await state_tracker.get_all_states()
+        monitored_count = len(all_states)
 
         # Calculate next refresh time
         next_refresh = None
@@ -189,35 +223,44 @@ async def get_discovery_stats() -> DiscoveryStatsResponse:
 
 @router.get("/automations", response_model=list[AutomationSummary])
 async def list_automations(
+    instance_id: str = Query("default", description="Instance identifier"),
     state: str | None = Query(None, description="Filter by state (on/off)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum automations to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> list[AutomationSummary]:
-    """List all discovered automations.
+    """List all discovered automations for a specific instance.
 
     Returns a paginated list of automations discovered by the auto-discovery
     system, with optional filtering by state.
 
     Args:
+        instance_id: Instance identifier (default: "default")
         state: Optional state filter (on/off)
         limit: Maximum number of automations to return (1-1000)
         offset: Pagination offset
 
     Returns:
-        List of automation summaries
+        List of automation summaries for the specified instance
 
     Raises:
-        HTTPException: Service error (500)
+        HTTPException: Instance not found (404) or service error (500)
     """
     try:
         service = get_service()
+
+        # Validate instance exists
+        if instance_id not in service.state_trackers:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.state_trackers.keys())}",
+            ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
 
         async with service.database.async_session() as session:
-            # Build query
-            query = select(Automation)
+            # Build query with instance filter
+            query = select(Automation).where(Automation.instance_id == instance_id)
 
             # Apply state filter
             if state:
@@ -236,7 +279,8 @@ async def list_automations(
                 # Count entities used by this automation
                 entity_count_result = await session.execute(
                     select(func.count(func.distinct(AutomationEntity.entity_id))).where(
-                        AutomationEntity.automation_id == automation.entity_id
+                        AutomationEntity.automation_id == automation.entity_id,
+                        AutomationEntity.instance_id == instance_id,
                     )
                 )
                 entity_count = entity_count_result.scalar() or 0
@@ -264,42 +308,58 @@ async def list_automations(
 
 
 @router.get("/automations/{automation_id:path}", response_model=AutomationDetailResponse)
-async def get_automation_details(automation_id: str) -> AutomationDetailResponse:
-    """Get detailed information about a specific automation.
+async def get_automation_details(
+    automation_id: str, instance_id: str = Query("default", description="Instance identifier")
+) -> AutomationDetailResponse:
+    """Get detailed information about a specific automation for a specific instance.
 
     Returns full automation details including all entities grouped by
     relationship type (trigger/condition/action).
 
     Args:
         automation_id: Automation entity ID (e.g., 'automation.bedroom_lights')
+        instance_id: Instance identifier (default: "default")
 
     Returns:
-        Detailed automation information with entities
+        Detailed automation information with entities for the specified instance
 
     Raises:
-        HTTPException: Automation not found (404) or service error (500)
+        HTTPException: Instance or automation not found (404) or service error (500)
     """
     try:
         service = get_service()
+
+        # Validate instance exists
+        if instance_id not in service.state_trackers:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.state_trackers.keys())}",
+            ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
 
         async with service.database.async_session() as session:
-            # Get automation
+            # Get automation for this instance
             result = await session.execute(
-                select(Automation).where(Automation.entity_id == automation_id)
+                select(Automation).where(
+                    Automation.entity_id == automation_id, Automation.instance_id == instance_id
+                )
             )
             automation = result.scalar_one_or_none()
 
             if not automation:
                 raise HTTPException(
-                    status_code=404, detail=f"Automation '{automation_id}' not found"
+                    status_code=404,
+                    detail=f"Automation '{automation_id}' not found in instance '{instance_id}'",
                 ) from None
 
-            # Get entities grouped by relationship type
+            # Get entities grouped by relationship type for this instance
             entities_result = await session.execute(
-                select(AutomationEntity).where(AutomationEntity.automation_id == automation_id)
+                select(AutomationEntity).where(
+                    AutomationEntity.automation_id == automation_id,
+                    AutomationEntity.instance_id == instance_id,
+                )
             )
             entity_records = entities_result.scalars().all()
 
@@ -342,33 +402,46 @@ async def get_automation_details(automation_id: str) -> AutomationDetailResponse
 
 
 @router.get("/entities/{entity_id:path}/usage", response_model=EntityAutomationsResponse)
-async def get_entity_usage(entity_id: str) -> EntityAutomationsResponse:
-    """Get automation/scene/script usage for a specific entity.
+async def get_entity_usage(
+    entity_id: str, instance_id: str = Query("default", description="Instance identifier")
+) -> EntityAutomationsResponse:
+    """Get automation/scene/script usage for a specific entity in a specific instance.
 
     Returns all automations, scenes, and scripts that use this entity,
     enabling reverse-lookup queries.
 
     Args:
         entity_id: Entity ID (e.g., 'sensor.temperature')
+        instance_id: Instance identifier (default: "default")
 
     Returns:
-        Entity usage information across automations/scenes/scripts
+        Entity usage information across automations/scenes/scripts for the specified instance
 
     Raises:
-        HTTPException: Service error (500)
+        HTTPException: Instance not found (404) or service error (500)
     """
     try:
         service = get_service()
+
+        # Validate instance exists
+        if instance_id not in service.state_trackers:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.state_trackers.keys())}",
+            ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
 
         async with service.database.async_session() as session:
-            # Get automations using this entity
+            # Get automations using this entity in this instance
             automation_results = await session.execute(
                 select(AutomationEntity, Automation)
                 .join(Automation, AutomationEntity.automation_id == Automation.entity_id)
-                .where(AutomationEntity.entity_id == entity_id)
+                .where(
+                    AutomationEntity.entity_id == entity_id,
+                    AutomationEntity.instance_id == instance_id,
+                )
             )
             automation_records = automation_results.all()
 
@@ -382,11 +455,11 @@ async def get_entity_usage(entity_id: str) -> EntityAutomationsResponse:
                 for record in automation_records
             ]
 
-            # Get scenes using this entity
+            # Get scenes using this entity in this instance
             scene_results = await session.execute(
                 select(SceneEntity, Scene)
                 .join(Scene, SceneEntity.scene_id == Scene.entity_id)
-                .where(SceneEntity.entity_id == entity_id)
+                .where(SceneEntity.entity_id == entity_id, SceneEntity.instance_id == instance_id)
             )
             scene_records = scene_results.all()
 
@@ -400,11 +473,11 @@ async def get_entity_usage(entity_id: str) -> EntityAutomationsResponse:
                 for record in scene_records
             ]
 
-            # Get scripts using this entity
+            # Get scripts using this entity in this instance
             script_results = await session.execute(
                 select(ScriptEntity, Script)
                 .join(Script, ScriptEntity.script_id == Script.entity_id)
-                .where(ScriptEntity.entity_id == entity_id)
+                .where(ScriptEntity.entity_id == entity_id, ScriptEntity.instance_id == instance_id)
             )
             script_records = script_results.all()
 
