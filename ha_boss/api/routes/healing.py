@@ -37,12 +37,18 @@ async def trigger_healing(
     try:
         service = get_service()
 
-        # Validate instance exists and get per-instance components
+        # Validate instance exists (use ha_clients as authoritative source)
+        if instance_id not in service.ha_clients:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
+            ) from None
+
+        # Get per-instance components
         healing_manager = service.healing_managers.get(instance_id)
         if not healing_manager:
             raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.healing_managers.keys())}",
+                status_code=500, detail="Healing manager not initialized for this instance"
             ) from None
 
         integration_discovery = service.integration_discoveries.get(instance_id)

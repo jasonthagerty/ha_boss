@@ -174,11 +174,11 @@ async def get_entity_history(
     try:
         service = get_service()
 
-        # Validate instance exists
-        if instance_id not in service.state_trackers:
+        # Validate instance exists (use ha_clients as authoritative source)
+        if instance_id not in service.ha_clients:
             raise HTTPException(
                 status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.state_trackers.keys())}",
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
             ) from None
 
         if not service.database:
