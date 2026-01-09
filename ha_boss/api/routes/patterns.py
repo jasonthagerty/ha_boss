@@ -42,16 +42,18 @@ async def get_reliability_stats(
     try:
         service = get_service()
 
-        # Validate instance exists
-        pattern_collector = service.pattern_collectors.get(instance_id)
-        if pattern_collector is None:
+        # Validate instance exists (use ha_clients as authoritative source)
+        if instance_id not in service.ha_clients:
             raise HTTPException(
                 status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.pattern_collectors.keys())}",
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
             ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
+
+        # Get pattern collector for this instance
+        pattern_collector = service.pattern_collectors.get(instance_id)
 
         # Use the reliability analyzer if available
         if pattern_collector and hasattr(pattern_collector, "analyzer"):
@@ -208,16 +210,18 @@ async def get_weekly_summary(
     try:
         service = get_service()
 
-        # Validate instance exists
-        pattern_collector = service.pattern_collectors.get(instance_id)
-        if pattern_collector is None:
+        # Validate instance exists (use ha_clients as authoritative source)
+        if instance_id not in service.ha_clients:
             raise HTTPException(
                 status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.pattern_collectors.keys())}",
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
             ) from None
 
         if not service.database:
             raise HTTPException(status_code=500, detail="Database not initialized") from None
+
+        # Get pattern collector for this instance (for AI summary generation)
+        pattern_collector = service.pattern_collectors.get(instance_id)
 
         # Calculate time range
         end_date = datetime.now(UTC)

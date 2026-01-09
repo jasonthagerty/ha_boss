@@ -54,13 +54,17 @@ async def trigger_discovery_refresh(
     try:
         service = get_service()
 
-        # Validate instance exists and get entity discovery
-        entity_discovery = service.entity_discoveries.get(instance_id)
-        if not entity_discovery:
+        # Validate instance exists (use ha_clients as authoritative source)
+        if instance_id not in service.ha_clients:
             raise HTTPException(
                 status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.entity_discoveries.keys())}",
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
             ) from None
+
+        # Get entity discovery for this instance
+        entity_discovery = service.entity_discoveries.get(instance_id)
+        if not entity_discovery:
+            raise HTTPException(status_code=500, detail="Entity discovery not initialized") from None
 
         # Record start time
         start_time = datetime.now(UTC)
