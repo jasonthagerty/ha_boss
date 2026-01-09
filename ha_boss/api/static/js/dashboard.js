@@ -97,6 +97,11 @@ class Dashboard {
    */
   async onInstanceChange(instanceId) {
     console.log('Switching to instance:', instanceId);
+
+    // Stop all polling to prevent race conditions with old instance_id
+    this.stopPolling();
+
+    // Switch to new instance
     this.currentInstance = instanceId;
     this.api.setInstance(instanceId);
 
@@ -108,8 +113,11 @@ class Dashboard {
       failed: []
     };
 
-    // Reload current tab
+    // Reload current tab with new instance
     await this.switchTab(this.currentTab);
+
+    // Restart polling with new instance_id
+    this.startPolling();
   }
 
   /**
