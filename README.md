@@ -10,6 +10,7 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 ## ✨ Key Features
 
 - **🔍 Real-time Monitoring** - WebSocket connection for instant state updates
+- **🏠 Multi-Instance Support** - Manage multiple Home Assistant instances from one deployment
 - **🎯 Auto-Discovery** - Automatically finds entities from automations/scenes/scripts
 - **🔧 Auto-Healing** - Automatically reloads failed integrations with circuit breakers
 - **🛡️ Safety First** - Dry-run mode, graceful degradation, automatic reconnection
@@ -114,6 +115,7 @@ haboss automation generate "Turn on lights when motion detected"
 ## 📚 Documentation
 
 - **[Installation](https://github.com/jasonthagerty/ha_boss/wiki/Installation)** - Setup and configuration
+- **[Multi-Instance](https://github.com/jasonthagerty/ha_boss/wiki/Multi-Instance)** - Managing multiple HA instances
 - **[Auto-Discovery](https://github.com/jasonthagerty/ha_boss/wiki/Auto-Discovery)** - Automatic entity detection
 - **[CLI Reference](https://github.com/jasonthagerty/ha_boss/wiki/CLI-Commands)** - All commands
 - **[Configuration](https://github.com/jasonthagerty/ha_boss/wiki/Configuration)** - Settings explained
