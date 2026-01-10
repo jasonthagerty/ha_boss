@@ -64,7 +64,9 @@ async def trigger_discovery_refresh(
         # Get entity discovery for this instance
         entity_discovery = service.entity_discoveries.get(instance_id)
         if not entity_discovery:
-            raise HTTPException(status_code=500, detail="Entity discovery not initialized") from None
+            raise HTTPException(
+                status_code=500, detail="Entity discovery not initialized"
+            ) from None
 
         # Record start time
         start_time = datetime.now(UTC)
