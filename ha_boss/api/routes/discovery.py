@@ -65,7 +65,7 @@ async def trigger_discovery_refresh(
         entity_discovery = service.entity_discoveries.get(instance_id)
         if not entity_discovery:
             raise HTTPException(
-                status_code=500, detail="Entity discovery not initialized"
+                status_code=503, detail="Entity discovery not initialized"
             ) from None
 
         # Record start time
@@ -93,7 +93,7 @@ async def trigger_discovery_refresh(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error during discovery refresh: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Discovery refresh failed") from None
@@ -129,7 +129,7 @@ async def get_discovery_stats(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         # Get counts from database for this instance
         async with service.database.async_session() as session:
@@ -221,7 +221,7 @@ async def get_discovery_stats(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error getting discovery stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get discovery stats") from None
@@ -262,7 +262,7 @@ async def list_automations(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         async with service.database.async_session() as session:
             # Build query with instance filter
@@ -307,7 +307,7 @@ async def list_automations(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error listing automations: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list automations") from None
@@ -343,7 +343,7 @@ async def get_automation_details(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         async with service.database.async_session() as session:
             # Get automation for this instance
@@ -401,7 +401,7 @@ async def get_automation_details(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error getting automation details: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get automation details") from None
@@ -437,7 +437,7 @@ async def get_entity_usage(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         async with service.database.async_session() as session:
             # Get automations using this entity in this instance
@@ -509,7 +509,7 @@ async def get_entity_usage(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error getting entity usage: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get entity usage") from None

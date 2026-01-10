@@ -50,7 +50,7 @@ async def list_instances() -> list[InstanceInfo]:
 
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
 
 
 @router.get("/status", response_model=ServiceStatusResponse)
@@ -147,7 +147,7 @@ async def get_status(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
 
 
 def determine_overall_status(components: dict[str, dict[str, ComponentHealth]]) -> str:

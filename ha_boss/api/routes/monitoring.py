@@ -97,7 +97,7 @@ async def list_entities(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
 
 
 @router.get("/entities/{entity_id:path}", response_model=EntityStateResponse)
@@ -149,7 +149,7 @@ async def get_entity(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
 
 
 @router.get("/entities/{entity_id:path}/history", response_model=EntityHistoryResponse)
@@ -182,7 +182,7 @@ async def get_entity_history(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         # Calculate time range
         end_time = datetime.now(UTC)
@@ -236,7 +236,7 @@ async def get_entity_history(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error retrieving entity history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve entity history") from None
