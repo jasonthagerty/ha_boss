@@ -124,7 +124,7 @@ async def analyze_automation(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error analyzing automation: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to analyze automation") from None
@@ -228,7 +228,7 @@ async def generate_automation(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error generating automation: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate automation") from None
@@ -293,7 +293,7 @@ async def create_automation(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error creating automation: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create automation") from None

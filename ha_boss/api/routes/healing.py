@@ -48,20 +48,20 @@ async def trigger_healing(
         healing_manager = service.healing_managers.get(instance_id)
         if not healing_manager:
             raise HTTPException(
-                status_code=500, detail="Healing manager not initialized for this instance"
+                status_code=503, detail="Healing manager not initialized for this instance"
             ) from None
 
         integration_discovery = service.integration_discoveries.get(instance_id)
         if not integration_discovery:
             raise HTTPException(
-                status_code=500, detail="Integration discovery not initialized for this instance"
+                status_code=503, detail="Integration discovery not initialized for this instance"
             ) from None
 
         # Get entity state
         state_tracker = service.state_trackers.get(instance_id)
         if not state_tracker:
             raise HTTPException(
-                status_code=500, detail="State tracker not initialized for this instance"
+                status_code=503, detail="State tracker not initialized for this instance"
             ) from None
 
         entity_state = await state_tracker.get_state(entity_id)
@@ -113,7 +113,7 @@ async def trigger_healing(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error triggering healing: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to trigger healing") from None
@@ -154,7 +154,7 @@ async def get_healing_history(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         # Calculate time range
         end_time = datetime.now(UTC)
@@ -232,7 +232,7 @@ async def get_healing_history(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error retrieving healing history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve healing history") from None

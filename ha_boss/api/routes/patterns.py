@@ -50,7 +50,7 @@ async def get_reliability_stats(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         # Get pattern collector for this instance
         pattern_collector = service.pattern_collectors.get(instance_id)
@@ -86,7 +86,7 @@ async def get_reliability_stats(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error retrieving reliability stats: {e}", exc_info=True)
         raise HTTPException(
@@ -129,7 +129,7 @@ async def get_failure_events(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         # Calculate time range
         end_time = datetime.now(UTC)
@@ -176,7 +176,7 @@ async def get_failure_events(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error retrieving failure events: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve failure events") from None
@@ -218,7 +218,7 @@ async def get_weekly_summary(
             ) from None
 
         if not service.database:
-            raise HTTPException(status_code=500, detail="Database not initialized") from None
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         # Get pattern collector for this instance (for AI summary generation)
         pattern_collector = service.pattern_collectors.get(instance_id)
@@ -296,7 +296,7 @@ async def get_weekly_summary(
         raise
     except RuntimeError as e:
         logger.error(f"Service not initialized: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error(f"Error generating weekly summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate weekly summary") from None
