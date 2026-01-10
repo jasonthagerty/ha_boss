@@ -6,6 +6,7 @@ HA Boss provides a comprehensive REST API for monitoring, managing, and analyzin
 
 - [Overview](#overview)
 - [Getting Started](#getting-started)
+- [Multi-Instance Support](#multi-instance-support)
 - [Design](#design)
 - [Development](#development)
 - [API Reference](#api-reference)
@@ -98,6 +99,60 @@ curl http://localhost:8000/api/status
 # Health check
 curl http://localhost:8000/api/health
 ```
+
+---
+
+## Multi-Instance Support
+
+HA Boss supports managing multiple Home Assistant instances from a single deployment. All API endpoints accept an optional `instance_id` query parameter to specify which instance to query.
+
+### Quick Example
+
+```bash
+# List all configured instances
+curl http://localhost:8000/api/instances
+
+# Get status for specific instance
+curl http://localhost:8000/api/status?instance_id=home
+
+# Get status for vacation home instance
+curl http://localhost:8000/api/status?instance_id=vacation
+```
+
+### Default Behavior
+
+- If `instance_id` is omitted, requests use the `"default"` instance
+- Maintains backward compatibility with single-instance deployments
+- All endpoints support multi-instance via query parameter
+
+### Instance Management
+
+**GET /api/instances** - List all configured instances
+
+```json
+[
+  {
+    "instance_id": "home",
+    "url": "http://home-assistant:8123",
+    "state": "connected",
+    "websocket_connected": true,
+    "monitored_entities": 127
+  },
+  {
+    "instance_id": "vacation",
+    "url": "http://vacation-ha:8123",
+    "state": "disconnected",
+    "websocket_connected": false,
+    "monitored_entities": 45
+  }
+]
+```
+
+**📖 See [Multi-Instance Documentation](Multi-Instance) for complete details on:**
+- Configuration and setup
+- Dashboard usage with instance selector
+- Migration from single-instance
+- Examples and best practices
 
 ---
 
