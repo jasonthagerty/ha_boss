@@ -279,17 +279,30 @@ async def list_automations(
             result = await session.execute(query)
             automations = result.scalars().all()
 
-            # Build response with entity counts
+            # Optimize: Get all entity counts in single query (avoid N+1)
+            if automations:
+                automation_ids = [a.entity_id for a in automations]
+                entity_counts_result = await session.execute(
+                    select(
+                        AutomationEntity.automation_id,
+                        func.count(func.distinct(AutomationEntity.entity_id)).label("entity_count"),
+                    )
+                    .where(
+                        AutomationEntity.instance_id == instance_id,
+                        AutomationEntity.automation_id.in_(automation_ids),
+                    )
+                    .group_by(AutomationEntity.automation_id)
+                )
+                entity_counts = {
+                    row.automation_id: row.entity_count for row in entity_counts_result
+                }
+            else:
+                entity_counts = {}
+
+            # Build response with pre-fetched entity counts
             response = []
             for automation in automations:
-                # Count entities used by this automation
-                entity_count_result = await session.execute(
-                    select(func.count(func.distinct(AutomationEntity.entity_id))).where(
-                        AutomationEntity.automation_id == automation.entity_id,
-                        AutomationEntity.instance_id == instance_id,
-                    )
-                )
-                entity_count = entity_count_result.scalar() or 0
+                entity_count = entity_counts.get(automation.entity_id, 0)
 
                 response.append(
                     AutomationSummary(
