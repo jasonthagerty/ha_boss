@@ -5,11 +5,54 @@ import logging
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from ha_boss.api.app import get_service
 from ha_boss.api.websocket_manager import get_websocket_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _validate_origin(websocket: WebSocket, allowed_origins: list[str]) -> bool:
+    """Validate WebSocket origin header against allowed origins.
+
+    Args:
+        websocket: WebSocket connection
+        allowed_origins: List of allowed origins (supports "*" wildcard)
+
+    Returns:
+        True if origin is valid, False otherwise
+    """
+    # Get origin from headers
+    origin = websocket.headers.get("origin")
+
+    # If no origin header, reject (browsers always send origin for WebSockets)
+    if not origin:
+        logger.warning("WebSocket connection rejected: missing origin header")
+        return False
+
+    # Check if wildcard is allowed
+    if "*" in allowed_origins:
+        return True
+
+    # Check if origin matches any allowed origins
+    # Handle both exact match and subdomain patterns
+    for allowed in allowed_origins:
+        # Exact match
+        if origin == allowed:
+            return True
+
+        # Pattern match (e.g., "http://localhost:*" matches "http://localhost:8080")
+        if "*" in allowed:
+            # Simple wildcard matching - replace * with .*
+            import re
+
+            pattern = allowed.replace("*", ".*")
+            if re.match(f"^{pattern}$", origin):
+                return True
+
+    logger.warning(f"WebSocket connection rejected: origin '{origin}' not in allowed list")
+    return False
 
 
 @router.websocket("/ws")
@@ -21,6 +64,10 @@ async def websocket_endpoint(
 
     Clients connect to this endpoint to receive real-time updates for entity states,
     health status, healing actions, and instance connection changes.
+
+    Security:
+        - Origin validation enabled (checks against api.cors_origins configuration)
+        - Connections from unauthorized origins are rejected with code 1008
 
     Args:
         websocket: WebSocket connection
@@ -41,6 +88,16 @@ async def websocket_endpoint(
         {"type": "subscribe", "subscriptions": ["status", "entities", "health"]}
         {"type": "ping"}
     """
+    # Validate origin header
+    service = get_service()
+    config = service.config
+    allowed_origins = config.api.cors_origins
+
+    if not _validate_origin(websocket, allowed_origins):
+        # Reject connection with code 1008 (policy violation)
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
+
     manager = get_websocket_manager()
 
     try:
@@ -74,14 +131,9 @@ async def websocket_endpoint(
                     )
 
                 elif message_type == "switch_instance":
-                    # Switch to different instance
+                    # Switch to different instance atomically to avoid race conditions
                     new_instance_id = message.get("instance_id", "default")
-
-                    # Disconnect from current instance
-                    await manager.disconnect(websocket)
-
-                    # Connect to new instance
-                    await manager.connect(websocket, new_instance_id)
+                    await manager.switch_instance(websocket, new_instance_id)
 
                 else:
                     logger.warning(f"Unknown message type from {id(websocket)}: {message_type}")
