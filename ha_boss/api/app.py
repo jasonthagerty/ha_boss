@@ -173,7 +173,15 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
 
     # Register routes with optional authentication
     from ha_boss.api.dependencies import verify_api_key
-    from ha_boss.api.routes import automations, discovery, healing, monitoring, patterns, status
+    from ha_boss.api.routes import (
+        automations,
+        discovery,
+        healing,
+        monitoring,
+        patterns,
+        status,
+        websocket,
+    )
 
     # Add authentication dependency if enabled
     dependencies = []
@@ -199,6 +207,10 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
     app.include_router(
         discovery.router, prefix="/api", tags=["Discovery"], dependencies=dependencies
     )
+
+    # WebSocket endpoint (no auth - same-origin only)
+    app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])
+    logger.info("WebSocket endpoint available at: ws://localhost:8000/api/ws")
 
     # Static file serving for dashboard
     static_dir = Path(__file__).parent / "static"

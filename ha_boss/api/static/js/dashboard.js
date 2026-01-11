@@ -22,6 +22,11 @@ class Dashboard {
       failed: []
     };
 
+    // WebSocket support (graceful fallback to polling if not available)
+    this.ws = null;
+    this.useWebSocket = true; // Try WebSocket first
+    this.wsConnected = false;
+
     // Initialize dayjs relative time plugin
     if (typeof dayjs !== 'undefined' && dayjs.extend) {
       dayjs.extend(window.dayjs_plugin_relativeTime);
@@ -40,16 +45,127 @@ class Dashboard {
     // Load instances
     await this.loadInstances();
 
+    // Initialize WebSocket (try first)
+    if (this.useWebSocket) {
+      this.initWebSocket();
+    }
+
     // Check API key and connection
     await this.checkApiKey();
 
     // Load initial tab
     await this.loadOverviewTab();
 
-    // Start polling
+    // Start polling (WebSocket will reduce polling frequency)
     this.startPolling();
 
     console.log('Dashboard initialized successfully');
+  }
+
+  /**
+   * Initialize WebSocket connection for real-time updates
+   */
+  initWebSocket() {
+    if (typeof WebSocketClient === 'undefined') {
+      console.warn('WebSocket client not available, falling back to polling');
+      this.useWebSocket = false;
+      return;
+    }
+
+    try {
+      const baseUrl = window.location.origin;
+      this.ws = new WebSocketClient(baseUrl, this.currentInstance);
+
+      // Connection state handlers
+      this.ws.onConnected = () => {
+        console.log('✓ WebSocket connected');
+        this.wsConnected = true;
+        this.showToast('Real-time updates enabled', 'success');
+        // Reduce polling frequency when WebSocket is connected
+        this.adjustPollingForWebSocket();
+      };
+
+      this.ws.onDisconnected = () => {
+        console.log('WebSocket disconnected, using polling');
+        this.wsConnected = false;
+        // Resume normal polling when WebSocket disconnects
+        this.stopPolling();
+        this.startPolling();
+      };
+
+      this.ws.onError = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      // Register event handlers for real-time updates
+      this.setupWebSocketHandlers();
+
+      // Connect
+      this.ws.connect();
+
+    } catch (error) {
+      console.error('Failed to initialize WebSocket:', error);
+      this.useWebSocket = false;
+    }
+  }
+
+  /**
+   * Setup WebSocket event handlers
+   */
+  setupWebSocketHandlers() {
+    // Entity state changes
+    this.ws.on('entity_state_changed', (message) => {
+      console.log('Entity state changed:', message.entity_id);
+      // Refresh monitoring tab if active
+      if (this.currentTab === 'monitoring') {
+        this.loadMonitoringTab();
+      }
+    });
+
+    // Health status updates
+    this.ws.on('health_status', (message) => {
+      console.log('Health status update received');
+      this.refreshStatus();
+    });
+
+    // Healing actions
+    this.ws.on('healing_action', (message) => {
+      console.log('Healing action:', message.action);
+      this.showToast(`Healing action: ${message.action.entity_id}`, 'info');
+      // Refresh healing tab if active
+      if (this.currentTab === 'healing') {
+        this.loadHealingHistory();
+      }
+    });
+
+    // Instance connection status
+    this.ws.on('instance_connection', (message) => {
+      console.log('Instance connection status:', message.connected);
+      this.showToast(
+        `Instance ${message.instance_id} ${message.connected ? 'connected' : 'disconnected'}`,
+        message.connected ? 'success' : 'warning'
+      );
+      this.loadInstances();
+    });
+
+    // Connected confirmation
+    this.ws.on('connected', (message) => {
+      console.log('WebSocket connected to instance:', message.instance_id);
+    });
+  }
+
+  /**
+   * Adjust polling intervals when WebSocket is active
+   */
+  adjustPollingForWebSocket() {
+    // When WebSocket is connected, reduce polling frequency significantly
+    // Keep minimal polling as a sanity check
+    this.stopPolling();
+
+    // Very infrequent polling as fallback (every 5 minutes)
+    this.pollingIntervals.status = setInterval(() => this.refreshStatus(), 300000);
+
+    // Tab-specific polling remains off - WebSocket handles it
   }
 
   /**
