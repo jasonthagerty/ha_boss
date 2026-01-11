@@ -81,6 +81,11 @@ class HABossService:
         self.healings_succeeded: dict[str, int] = {}
         self.healings_failed: dict[str, int] = {}
 
+        # WebSocket broadcast throttling (per instance, per entity)
+        # Key: f"{instance_id}:{entity_id}", Value: last broadcast timestamp
+        self._last_ws_broadcasts: dict[str, datetime] = {}
+        self._ws_broadcast_min_interval: float = 1.0  # Minimum 1 second between broadcasts
+
     def _get_default_instance_id(self) -> str:
         """Get the default instance ID (first instance or 'default').
 
@@ -701,20 +706,42 @@ Access the web dashboard at `/dashboard` for a visual interface.
             new_state: New entity state
             old_state: Previous state (if any)
         """
-        # Emit WebSocket event for real-time dashboard updates
+        # Emit WebSocket event for real-time dashboard updates (with rate limiting)
         try:
             from ha_boss.api.websocket_manager import get_websocket_manager
 
-            ws_manager = get_websocket_manager()
-            await ws_manager.broadcast_entity_state(
-                instance_id=instance_id,
-                entity_id=new_state.entity_id,
-                state={
-                    "state": new_state.state,
-                    "last_updated": new_state.last_updated.isoformat(),
-                    "attributes": new_state.attributes,
-                },
+            # Check if we should broadcast (rate limiting)
+            broadcast_key = f"{instance_id}:{new_state.entity_id}"
+            now = datetime.now(UTC)
+            last_broadcast = self._last_ws_broadcasts.get(broadcast_key)
+
+            # Always broadcast if state value changed (not just attributes)
+            state_changed = old_state is None or old_state.state != new_state.state
+
+            # Otherwise, check throttle interval
+            should_broadcast = state_changed or (
+                last_broadcast is None
+                or (now - last_broadcast).total_seconds() >= self._ws_broadcast_min_interval
             )
+
+            if should_broadcast:
+                ws_manager = get_websocket_manager()
+                await ws_manager.broadcast_entity_state(
+                    instance_id=instance_id,
+                    entity_id=new_state.entity_id,
+                    state={
+                        "state": new_state.state,
+                        "last_updated": new_state.last_updated.isoformat(),
+                        "attributes": new_state.attributes,
+                    },
+                )
+                self._last_ws_broadcasts[broadcast_key] = now
+            else:
+                logger.debug(
+                    f"[{instance_id}] Throttled WebSocket broadcast for {new_state.entity_id} "
+                    f"(last broadcast {(now - last_broadcast).total_seconds():.1f}s ago)"
+                )
+
         except Exception as e:
             logger.debug(f"[{instance_id}] Failed to broadcast state change: {e}")
 
