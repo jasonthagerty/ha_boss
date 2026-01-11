@@ -314,6 +314,19 @@ class HABossService:
             await self.websocket_clients[instance_id].subscribe_events("call_service")
 
         logger.info(f"[{instance_id}] ✓ WebSocket connected and subscribed")
+
+        # Emit WebSocket event for instance connection
+        try:
+            from ha_boss.api.websocket_manager import get_websocket_manager
+
+            ws_manager = get_websocket_manager()
+            await ws_manager.broadcast_instance_connection(
+                instance_id=instance_id,
+                connected=True,
+            )
+        except Exception as e:
+            logger.debug(f"[{instance_id}] Failed to broadcast instance connection: {e}")
+
         logger.info(f"[{instance_id}] ✅ Instance initialization complete")
 
     async def start(self) -> None:
@@ -688,6 +701,23 @@ Access the web dashboard at `/dashboard` for a visual interface.
             new_state: New entity state
             old_state: Previous state (if any)
         """
+        # Emit WebSocket event for real-time dashboard updates
+        try:
+            from ha_boss.api.websocket_manager import get_websocket_manager
+
+            ws_manager = get_websocket_manager()
+            await ws_manager.broadcast_entity_state(
+                instance_id=instance_id,
+                entity_id=new_state.entity_id,
+                state={
+                    "state": new_state.state,
+                    "last_updated": new_state.last_updated.isoformat(),
+                    "attributes": new_state.attributes,
+                },
+            )
+        except Exception as e:
+            logger.debug(f"[{instance_id}] Failed to broadcast state change: {e}")
+
         # Trigger health check for this specific entity on the correct instance
         health_monitor = self.health_monitors.get(instance_id)
         if health_monitor:
@@ -717,6 +747,23 @@ Access the web dashboard at `/dashboard` for a visual interface.
             f"[{instance_id}] Health issue detected: {issue.entity_id} - {issue.issue_type} "
             f"(detected at {issue.detected_at})"
         )
+
+        # Emit WebSocket event for health status update
+        try:
+            from ha_boss.api.websocket_manager import get_websocket_manager
+
+            ws_manager = get_websocket_manager()
+            await ws_manager.broadcast_health_status(
+                instance_id=instance_id,
+                health={
+                    "entity_id": issue.entity_id,
+                    "issue_type": issue.issue_type,
+                    "detected_at": issue.detected_at.isoformat(),
+                    "details": issue.details,
+                },
+            )
+        except Exception as e:
+            logger.debug(f"[{instance_id}] Failed to broadcast health status: {e}")
 
         # Skip healing for recovery events
         if issue.issue_type == "recovered":
@@ -806,9 +853,48 @@ Access the web dashboard at `/dashboard` for a visual interface.
                     self.healings_succeeded[instance_id] = (
                         self.healings_succeeded.get(instance_id, 0) + 1
                     )
+
+                    # Emit WebSocket event for successful healing action
+                    try:
+                        from ha_boss.api.websocket_manager import get_websocket_manager
+
+                        ws_manager = get_websocket_manager()
+                        await ws_manager.broadcast_healing_action(
+                            instance_id=instance_id,
+                            action={
+                                "entity_id": issue.entity_id,
+                                "action": "heal",
+                                "success": True,
+                                "issue_type": issue.issue_type,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
+                    except Exception as e:
+                        logger.debug(f"[{instance_id}] Failed to broadcast healing action: {e}")
+
                 else:
                     logger.warning(f"[{instance_id}] ✗ Healing failed for {issue.entity_id}")
                     self.healings_failed[instance_id] = self.healings_failed.get(instance_id, 0) + 1
+
+                    # Emit WebSocket event for failed healing action
+                    try:
+                        from ha_boss.api.websocket_manager import get_websocket_manager
+
+                        ws_manager = get_websocket_manager()
+                        await ws_manager.broadcast_healing_action(
+                            instance_id=instance_id,
+                            action={
+                                "entity_id": issue.entity_id,
+                                "action": "heal",
+                                "success": False,
+                                "issue_type": issue.issue_type,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "error": f"Healing failed after {self.config.healing.max_attempts} attempts",
+                            },
+                        )
+                    except Exception as e:
+                        logger.debug(f"[{instance_id}] Failed to broadcast healing action: {e}")
+
                     # Escalate to notifications
                     if escalation_manager:
                         await escalation_manager.notify_healing_failure(
@@ -919,6 +1005,21 @@ Access the web dashboard at `/dashboard` for a visual interface.
             if websocket_client:
                 try:
                     await websocket_client.stop()
+
+                    # Emit WebSocket event for instance disconnection
+                    try:
+                        from ha_boss.api.websocket_manager import get_websocket_manager
+
+                        ws_manager = get_websocket_manager()
+                        await ws_manager.broadcast_instance_connection(
+                            instance_id=instance_id,
+                            connected=False,
+                        )
+                    except Exception as e:
+                        logger.debug(
+                            f"[{instance_id}] Failed to broadcast instance disconnection: {e}"
+                        )
+
                 except Exception as e:
                     logger.error(f"[{instance_id}] Error stopping WebSocket: {e}")
 
