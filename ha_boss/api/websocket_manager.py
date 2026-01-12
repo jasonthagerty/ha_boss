@@ -86,6 +86,59 @@ class WebSocketManager:
 
             logger.info(f"WebSocket disconnected: {id(websocket)} from instance '{instance_id}'")
 
+    async def switch_instance(self, websocket: WebSocket, new_instance_id: str) -> None:
+        """Atomically switch a WebSocket connection to a different instance.
+
+        This method ensures no race condition occurs during instance switching
+        by holding the lock throughout the entire operation. This prevents
+        message loss or messages being sent to the wrong instance during the switch.
+
+        Args:
+            websocket: WebSocket connection to switch
+            new_instance_id: New instance ID to switch to
+        """
+        async with self._lock:
+            if websocket not in self._connections:
+                logger.warning(f"Cannot switch instance for unknown websocket {id(websocket)}")
+                return
+
+            # Get current instance
+            old_instance_id = self._connections[websocket]["instance_id"]
+
+            # No-op if already on this instance
+            if old_instance_id == new_instance_id:
+                logger.debug(
+                    f"WebSocket {id(websocket)} already on instance '{new_instance_id}', skipping switch"
+                )
+                return
+
+            # Remove from old instance subscriptions
+            if old_instance_id in self._instance_subscriptions:
+                self._instance_subscriptions[old_instance_id].discard(websocket)
+                if not self._instance_subscriptions[old_instance_id]:
+                    del self._instance_subscriptions[old_instance_id]
+
+            # Update instance_id in connection info
+            self._connections[websocket]["instance_id"] = new_instance_id
+
+            # Add to new instance subscriptions
+            self._instance_subscriptions[new_instance_id].add(websocket)
+
+            logger.info(
+                f"WebSocket {id(websocket)} switched from instance '{old_instance_id}' to '{new_instance_id}'"
+            )
+
+        # Send confirmation message (outside of critical section to avoid deadlock)
+        await self._send_to_client(
+            websocket,
+            {
+                "type": "instance_switched",
+                "old_instance_id": old_instance_id,
+                "new_instance_id": new_instance_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        )
+
     async def broadcast_to_instance(self, instance_id: str, message: dict[str, Any]) -> None:
         """Broadcast message to all clients subscribed to an instance.
 
