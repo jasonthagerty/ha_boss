@@ -22,6 +22,10 @@ class Dashboard {
       failed: []
     };
 
+    // Per-instance history cache (max 100 data points per instance)
+    this.statusHistoryCache = {};
+    this.maxHistoryPoints = 100;
+
     // WebSocket support (graceful fallback to polling if not available)
     this.ws = null;
     this.useWebSocket = true; // Try WebSocket first
@@ -217,12 +221,31 @@ class Dashboard {
     // Stop all polling to prevent race conditions with old instance_id
     this.stopPolling();
 
+    // Save current instance history to cache
+    if (this.currentInstance) {
+      this.statusHistoryCache[this.currentInstance] = {
+        timestamps: [...this.statusHistory.timestamps],
+        attempted: [...this.statusHistory.attempted],
+        succeeded: [...this.statusHistory.succeeded],
+        failed: [...this.statusHistory.failed]
+      };
+
+      // Apply cache size limit (max 100 data points per instance)
+      const cache = this.statusHistoryCache[this.currentInstance];
+      if (cache.timestamps.length > this.maxHistoryPoints) {
+        cache.timestamps = cache.timestamps.slice(-this.maxHistoryPoints);
+        cache.attempted = cache.attempted.slice(-this.maxHistoryPoints);
+        cache.succeeded = cache.succeeded.slice(-this.maxHistoryPoints);
+        cache.failed = cache.failed.slice(-this.maxHistoryPoints);
+      }
+    }
+
     // Switch to new instance
     this.currentInstance = instanceId;
     this.api.setInstance(instanceId);
 
-    // Clear status history when switching instances
-    this.statusHistory = {
+    // Restore history for new instance (or initialize if first time)
+    this.statusHistory = this.statusHistoryCache[instanceId] || {
       timestamps: [],
       attempted: [],
       succeeded: [],
