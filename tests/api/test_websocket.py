@@ -121,6 +121,9 @@ class TestWebSocketManager:
         # Connect
         await manager.connect(ws, "default")
 
+        # Update subscriptions to include healing
+        await manager.update_subscription(ws, {"status", "entities", "health", "healing"})
+
         # Broadcast healing action
         await manager.broadcast_healing_action(
             instance_id="default",
