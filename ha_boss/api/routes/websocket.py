@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
@@ -44,10 +45,8 @@ def _validate_origin(websocket: WebSocket, allowed_origins: list[str]) -> bool:
 
         # Pattern match (e.g., "http://localhost:*" matches "http://localhost:8080")
         if "*" in allowed:
-            # Simple wildcard matching - replace * with .*
-            import re
-
-            pattern = allowed.replace("*", ".*")
+            # Escape regex special chars, then replace \* with .*
+            pattern = re.escape(allowed).replace(r"\*", ".*")
             if re.match(f"^{pattern}$", origin):
                 return True
 
@@ -131,9 +130,14 @@ async def websocket_endpoint(
                     )
 
                 elif message_type == "switch_instance":
-                    # Switch to different instance atomically to avoid race conditions
+                    # Switch to different instance
                     new_instance_id = message.get("instance_id", "default")
-                    await manager.switch_instance(websocket, new_instance_id)
+
+                    # Disconnect from current instance
+                    await manager.disconnect(websocket)
+
+                    # Connect to new instance
+                    await manager.connect(websocket, new_instance_id)
 
                 else:
                     logger.warning(f"Unknown message type from {id(websocket)}: {message_type}")
