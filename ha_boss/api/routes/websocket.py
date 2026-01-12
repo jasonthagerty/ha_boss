@@ -130,14 +130,9 @@ async def websocket_endpoint(
                     )
 
                 elif message_type == "switch_instance":
-                    # Switch to different instance
+                    # Switch to different instance atomically to avoid race conditions
                     new_instance_id = message.get("instance_id", "default")
-
-                    # Disconnect from current instance
-                    await manager.disconnect(websocket)
-
-                    # Connect to new instance
-                    await manager.connect(websocket, new_instance_id)
+                    await manager.switch_instance(websocket, new_instance_id)
 
                 else:
                     logger.warning(f"Unknown message type from {id(websocket)}: {message_type}")

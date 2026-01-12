@@ -86,6 +86,59 @@ class WebSocketManager:
 
             logger.info(f"WebSocket disconnected: {id(websocket)} from instance '{instance_id}'")
 
+    async def switch_instance(self, websocket: WebSocket, new_instance_id: str) -> None:
+        """Atomically switch a WebSocket connection to a different instance.
+
+        This method ensures no race condition occurs during instance switching
+        by holding the lock throughout the entire operation. This prevents
+        message loss or messages being sent to the wrong instance during the switch.
+
+        Args:
+            websocket: WebSocket connection to switch
+            new_instance_id: New instance ID to switch to
+        """
+        async with self._lock:
+            if websocket not in self._connections:
+                logger.warning(f"Cannot switch instance for unknown websocket {id(websocket)}")
+                return
+
+            # Get current instance
+            old_instance_id = self._connections[websocket]["instance_id"]
+
+            # No-op if already on this instance
+            if old_instance_id == new_instance_id:
+                logger.debug(
+                    f"WebSocket {id(websocket)} already on instance '{new_instance_id}', skipping switch"
+                )
+                return
+
+            # Remove from old instance subscriptions
+            if old_instance_id in self._instance_subscriptions:
+                self._instance_subscriptions[old_instance_id].discard(websocket)
+                if not self._instance_subscriptions[old_instance_id]:
+                    del self._instance_subscriptions[old_instance_id]
+
+            # Update instance_id in connection info
+            self._connections[websocket]["instance_id"] = new_instance_id
+
+            # Add to new instance subscriptions
+            self._instance_subscriptions[new_instance_id].add(websocket)
+
+            logger.info(
+                f"WebSocket {id(websocket)} switched from instance '{old_instance_id}' to '{new_instance_id}'"
+            )
+
+        # Send confirmation message (outside of critical section to avoid deadlock)
+        await self._send_to_client(
+            websocket,
+            {
+                "type": "instance_switched",
+                "old_instance_id": old_instance_id,
+                "new_instance_id": new_instance_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        )
+
     async def broadcast_to_instance(self, instance_id: str, message: dict[str, Any]) -> None:
         """Broadcast message to all clients subscribed to an instance.
 
@@ -114,7 +167,9 @@ class WebSocketManager:
     async def broadcast_entity_state(
         self, instance_id: str, entity_id: str, state: dict[str, Any]
     ) -> None:
-        """Broadcast entity state change.
+        """Broadcast entity state change to subscribed clients.
+
+        Only sends to clients with 'entities' or '*' subscription.
 
         Args:
             instance_id: Instance identifier
@@ -128,10 +183,14 @@ class WebSocketManager:
             "state": state,
             "timestamp": datetime.now(UTC).isoformat(),
         }
-        await self.broadcast_to_instance(instance_id, message)
+        await self._broadcast_with_subscription_filter(
+            instance_id, message, required_subscription="entities"
+        )
 
     async def broadcast_health_status(self, instance_id: str, health: dict[str, Any]) -> None:
-        """Broadcast health status change.
+        """Broadcast health status change to subscribed clients.
+
+        Only sends to clients with 'health' or '*' subscription.
 
         Args:
             instance_id: Instance identifier
@@ -143,10 +202,14 @@ class WebSocketManager:
             "health": health,
             "timestamp": datetime.now(UTC).isoformat(),
         }
-        await self.broadcast_to_instance(instance_id, message)
+        await self._broadcast_with_subscription_filter(
+            instance_id, message, required_subscription="health"
+        )
 
     async def broadcast_healing_action(self, instance_id: str, action: dict[str, Any]) -> None:
-        """Broadcast healing action.
+        """Broadcast healing action to subscribed clients.
+
+        Only sends to clients with 'healing' or '*' subscription.
 
         Args:
             instance_id: Instance identifier
@@ -158,10 +221,14 @@ class WebSocketManager:
             "action": action,
             "timestamp": datetime.now(UTC).isoformat(),
         }
-        await self.broadcast_to_instance(instance_id, message)
+        await self._broadcast_with_subscription_filter(
+            instance_id, message, required_subscription="healing"
+        )
 
     async def broadcast_instance_connection(self, instance_id: str, connected: bool) -> None:
-        """Broadcast instance connection status change.
+        """Broadcast instance connection status change to all clients.
+
+        Connection status is critical - sent to all clients regardless of subscriptions.
 
         Args:
             instance_id: Instance identifier
@@ -173,7 +240,40 @@ class WebSocketManager:
             "connected": connected,
             "timestamp": datetime.now(UTC).isoformat(),
         }
+        # No filtering - connection status is critical
         await self.broadcast_to_instance(instance_id, message)
+
+    async def _broadcast_with_subscription_filter(
+        self, instance_id: str, message: dict[str, Any], required_subscription: str
+    ) -> None:
+        """Broadcast message to clients with required subscription.
+
+        Args:
+            instance_id: Instance identifier
+            message: Message to broadcast
+            required_subscription: Subscription key required to receive message
+                                 (clients with '*' always receive)
+        """
+        if instance_id not in self._instance_subscriptions:
+            return
+
+        # Get snapshot of clients (avoid holding lock during sends)
+        async with self._lock:
+            clients = list(self._instance_subscriptions[instance_id])
+
+        # Filter clients by subscription and broadcast
+        disconnected = []
+        for websocket in clients:
+            # Check if client has required subscription or wildcard
+            subscriptions = self._connections[websocket]["subscriptions"]
+            if required_subscription in subscriptions or "*" in subscriptions:
+                success = await self._send_to_client(websocket, message)
+                if not success:
+                    disconnected.append(websocket)
+
+        # Clean up disconnected clients
+        for websocket in disconnected:
+            await self.disconnect(websocket)
 
     async def update_subscription(self, websocket: WebSocket, subscriptions: set[str]) -> None:
         """Update client subscriptions.
