@@ -146,7 +146,7 @@ async def get_status(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
 
 

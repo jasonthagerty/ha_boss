@@ -85,10 +85,10 @@ async def get_reliability_stats(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error retrieving reliability stats: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error retrieving reliability stats: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve reliability statistics"
         ) from None
@@ -175,10 +175,10 @@ async def get_failure_events(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error retrieving failure events: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error retrieving failure events: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve failure events") from None
 
 
@@ -295,8 +295,8 @@ async def get_weekly_summary(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error generating weekly summary: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error generating weekly summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate weekly summary") from None

@@ -112,10 +112,10 @@ async def trigger_healing(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error triggering healing: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error triggering healing: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to trigger healing") from None
 
 
@@ -231,8 +231,8 @@ async def get_healing_history(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error retrieving healing history: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error retrieving healing history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve healing history") from None
