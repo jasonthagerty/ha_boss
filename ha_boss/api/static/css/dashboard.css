@@ -231,6 +231,43 @@ table tr {
   background-color: #ef4444;
 }
 
+/* ==================== Instance Selector ==================== */
+
+#instanceSelector {
+  font-weight: 500;
+  cursor: pointer;
+}
+
+#instanceSelector:disabled {
+  cursor: wait;
+}
+
+/* Style instance options based on state (limited browser support) */
+#instanceSelector option[data-state="connected"] {
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+#instanceSelector option[data-state="disconnected"] {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+#instanceSelector option[data-state="unknown"] {
+  background-color: rgba(251, 191, 36, 0.1);
+}
+
+/* Instance selector hover effect */
+#instanceSelector:hover:not(:disabled) {
+  border-color: #3b82f6;
+}
+
+/* Loading state for instance selector */
+#instanceSelector.loading {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="%233b82f6" d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1rem;
+}
+
 /* ==================== Code Blocks ==================== */
 
 pre {

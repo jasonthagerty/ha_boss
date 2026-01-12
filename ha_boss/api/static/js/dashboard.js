@@ -183,7 +183,29 @@ class Dashboard {
       this.instances.forEach(instance => {
         const option = document.createElement('option');
         option.value = instance.instance_id;
-        option.textContent = `${instance.instance_id} (${instance.state})`;
+
+        // Add visual state indicator
+        const stateIcon = {
+          connected: '🟢',
+          disconnected: '🔴',
+          unknown: '🟡'
+        }[instance.state] || '🟡';
+
+        option.textContent = `${stateIcon} ${instance.instance_id}`;
+
+        // Add tooltip with instance details
+        const tooltipParts = [
+          `Instance: ${instance.instance_id}`,
+          `Status: ${instance.state}`,
+        ];
+        if (instance.monitored_entities !== undefined) {
+          tooltipParts.push(`Entities: ${instance.monitored_entities}`);
+        }
+        option.title = tooltipParts.join('\n');
+
+        // Add data attributes for CSS styling
+        option.dataset.state = instance.state;
+
         if (instance.instance_id === this.currentInstance) {
           option.selected = true;
         }
@@ -198,7 +220,9 @@ class Dashboard {
       selector.innerHTML = '';
       const defaultOption = document.createElement('option');
       defaultOption.value = 'default';
-      defaultOption.textContent = 'default (unknown)';
+      defaultOption.textContent = '🟡 default';
+      defaultOption.title = 'Instance: default\nStatus: unknown';
+      defaultOption.dataset.state = 'unknown';
       defaultOption.selected = true;
       selector.appendChild(defaultOption);
 
@@ -214,26 +238,52 @@ class Dashboard {
   async onInstanceChange(instanceId) {
     console.log('Switching to instance:', instanceId);
 
-    // Stop all polling to prevent race conditions with old instance_id
-    this.stopPolling();
+    const selector = document.getElementById('instanceSelector');
 
-    // Switch to new instance
-    this.currentInstance = instanceId;
-    this.api.setInstance(instanceId);
+    try {
+      // Disable selector and show loading state
+      selector.disabled = true;
+      selector.classList.add('opacity-50', 'cursor-wait');
 
-    // Clear status history when switching instances
-    this.statusHistory = {
-      timestamps: [],
-      attempted: [],
-      succeeded: [],
-      failed: []
-    };
+      // Show loading toast
+      this.showToast(`Switching to instance: ${instanceId}...`, 'info', 2000);
 
-    // Reload current tab with new instance
-    await this.switchTab(this.currentTab);
+      // Stop all polling to prevent race conditions with old instance_id
+      this.stopPolling();
 
-    // Restart polling with new instance_id
-    this.startPolling();
+      // Switch to new instance
+      this.currentInstance = instanceId;
+      this.api.setInstance(instanceId);
+
+      // Clear status history when switching instances
+      this.statusHistory = {
+        timestamps: [],
+        attempted: [],
+        succeeded: [],
+        failed: []
+      };
+
+      // Reload current tab with new instance
+      await this.switchTab(this.currentTab);
+
+      // Restart polling with new instance_id
+      this.startPolling();
+
+      // Show success toast
+      this.showToast(`Switched to instance: ${instanceId}`, 'success');
+
+    } catch (error) {
+      console.error('Error switching instance:', error);
+      this.showToast(`Failed to switch instance: ${error.message}`, 'error');
+
+      // Revert selector to previous instance on error
+      selector.value = this.currentInstance;
+
+    } finally {
+      // Re-enable selector
+      selector.disabled = false;
+      selector.classList.remove('opacity-50', 'cursor-wait');
+    }
   }
 
   /**
