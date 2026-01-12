@@ -192,10 +192,17 @@ api:
   host: "0.0.0.0"
   port: 8000
 
-  # CORS settings (for web dashboards)
+  # CORS settings (for web dashboards and WebSocket origin validation)
+  # IMPORTANT: WebSocket connections are validated against these origins
+  # for security. Restrict in production to prevent cross-site attacks.
   cors_enabled: true
   cors_origins:
-    - "*"  # Allow all origins (restrict in production if needed)
+    - "*"  # Allow all origins (SECURITY WARNING: only use in trusted networks!)
+    # Production examples:
+    # - "http://localhost:8000"        # Same-origin only
+    # - "http://homeassistant.local:8123"  # Home Assistant dashboard
+    # - "https://my-domain.com"        # External dashboard
+    # - "http://localhost:*"           # Wildcard port matching
 
   # Optional: API key authentication
   auth_enabled: false

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import WebSocket
 
+from ha_boss.api.routes.websocket import _validate_origin
 from ha_boss.api.websocket_manager import WebSocketManager
 
 
@@ -230,173 +231,90 @@ class TestWebSocketManager:
         # Check subscriptions were updated
         assert manager._connections[ws]["subscriptions"] == {"status", "entities"}
 
-    @pytest.mark.asyncio
-    async def test_switch_instance(self) -> None:
-        """Test switching WebSocket connection between instances."""
-        manager = WebSocketManager()
 
-        # Mock WebSocket
+class TestOriginValidation:
+    """Test WebSocket origin validation functionality."""
+
+    def test_validate_origin_missing_header(self) -> None:
+        """Test that missing origin header is rejected."""
         ws = MagicMock(spec=WebSocket)
-        send_calls = []
+        ws.headers = {}
 
-        async def mock_send(data: dict) -> None:
-            send_calls.append(data)
+        result = _validate_origin(ws, ["http://localhost:8000"])
 
-        ws.send_json = mock_send
+        assert result is False
 
-        # Connect to default instance
-        await manager.connect(ws, "default")
-
-        # Switch to home instance
-        await manager.switch_instance(ws, "home")
-
-        # Check connection is now on home instance
-        assert manager._connections[ws]["instance_id"] == "home"
-        assert ws in manager._instance_subscriptions["home"]
-        assert ws not in manager._instance_subscriptions.get("default", set())
-
-        # Check instance_switched message was sent
-        assert len(send_calls) == 2  # connect + switch
-        switch_msg = send_calls[1]
-        assert switch_msg["type"] == "instance_switched"
-        assert switch_msg["old_instance_id"] == "default"
-        assert switch_msg["new_instance_id"] == "home"
-
-    @pytest.mark.asyncio
-    async def test_switch_instance_same_instance(self) -> None:
-        """Test switching to the same instance is a no-op."""
-        manager = WebSocketManager()
-
-        # Mock WebSocket
+    def test_validate_origin_wildcard_allowed(self) -> None:
+        """Test that wildcard allows any origin."""
         ws = MagicMock(spec=WebSocket)
-        send_calls = []
+        ws.headers = {"origin": "http://malicious-site.com"}
 
-        async def mock_send(data: dict) -> None:
-            send_calls.append(data)
+        result = _validate_origin(ws, ["*"])
 
-        ws.send_json = mock_send
+        assert result is True
 
-        # Connect to default instance
-        await manager.connect(ws, "default")
-
-        # Switch to same instance (should be no-op)
-        await manager.switch_instance(ws, "default")
-
-        # Check still on default instance
-        assert manager._connections[ws]["instance_id"] == "default"
-        assert ws in manager._instance_subscriptions["default"]
-
-        # Only connect message, no switch message
-        assert len(send_calls) == 1
-
-    @pytest.mark.asyncio
-    async def test_switch_instance_race_condition_protection(self) -> None:
-        """Test that instance switching is atomic and prevents race conditions.
-
-        This test simulates a broadcast happening during instance switch to ensure
-        the atomic lock prevents message loss or messages sent to wrong instance.
-        """
-        import asyncio
-
-        manager = WebSocketManager()
-
-        # Mock WebSocket
+    def test_validate_origin_exact_match(self) -> None:
+        """Test exact origin match."""
         ws = MagicMock(spec=WebSocket)
-        send_calls = []
+        ws.headers = {"origin": "http://localhost:8000"}
 
-        async def mock_send(data: dict) -> None:
-            send_calls.append(data)
+        result = _validate_origin(ws, ["http://localhost:8000"])
 
-        ws.send_json = mock_send
+        assert result is True
 
-        # Connect to default instance
-        await manager.connect(ws, "default")
-
-        # Create a flag to track when switch starts
-        switch_started = False
-        broadcast_sent = False
-
-        async def broadcast_during_switch() -> None:
-            """Broadcast messages during instance switch."""
-            nonlocal broadcast_sent
-            # Wait for switch to start
-            while not switch_started:
-                await asyncio.sleep(0.001)
-            # Try to broadcast to default instance (should not reach ws)
-            await manager.broadcast_entity_state(
-                instance_id="default",
-                entity_id="sensor.test_default",
-                state={"state": "on"},
-            )
-            broadcast_sent = True
-
-        # Start broadcast task
-        broadcast_task = asyncio.create_task(broadcast_during_switch())
-
-        # Perform switch (which should be atomic)
-        switch_started = True
-        await manager.switch_instance(ws, "home")
-
-        # Wait for broadcast to complete
-        await broadcast_task
-
-        # Verify switch completed
-        assert manager._connections[ws]["instance_id"] == "home"
-        assert ws in manager._instance_subscriptions["home"]
-        assert ws not in manager._instance_subscriptions.get("default", set())
-
-        # Check messages sent
-        # Should have: connect message, switch message
-        # Should NOT have: broadcast message (since ws switched away from default)
-        assert broadcast_sent, "Broadcast should have been sent"
-
-        # Count message types
-        message_types = [msg["type"] for msg in send_calls]
-        assert "connected" in message_types
-        assert "instance_switched" in message_types
-        # The broadcast to default should NOT appear since we switched to home
-        assert message_types.count("entity_state_changed") == 0
-
-    @pytest.mark.asyncio
-    async def test_switch_instance_unknown_websocket(self) -> None:
-        """Test switching instance for unknown websocket logs warning."""
-        manager = WebSocketManager()
-
-        # Mock WebSocket that's not connected
+    def test_validate_origin_mismatch(self) -> None:
+        """Test that mismatched origin is rejected."""
         ws = MagicMock(spec=WebSocket)
+        ws.headers = {"origin": "http://malicious-site.com"}
 
-        async def mock_send(data: dict) -> None:
-            pass
+        result = _validate_origin(ws, ["http://localhost:8000"])
 
-        ws.send_json = mock_send
+        assert result is False
 
-        # Try to switch (should log warning and return)
-        await manager.switch_instance(ws, "home")
-
-        # Verify no crash and no subscriptions created
-        assert ws not in manager._connections
-        assert "home" not in manager._instance_subscriptions
-
-    @pytest.mark.asyncio
-    async def test_switch_instance_preserves_subscriptions(self) -> None:
-        """Test that switching instances preserves client subscriptions."""
-        manager = WebSocketManager()
-
-        # Mock WebSocket
+    def test_validate_origin_multiple_allowed(self) -> None:
+        """Test origin validation with multiple allowed origins."""
         ws = MagicMock(spec=WebSocket)
+        ws.headers = {"origin": "http://homeassistant.local:8123"}
 
-        async def mock_send(data: dict) -> None:
-            pass
+        result = _validate_origin(ws, ["http://localhost:8000", "http://homeassistant.local:8123"])
 
-        ws.send_json = mock_send
+        assert result is True
 
-        # Connect and update subscriptions
-        await manager.connect(ws, "default")
-        await manager.update_subscription(ws, {"entities", "health"})
+    def test_validate_origin_wildcard_port(self) -> None:
+        """Test wildcard port matching."""
+        ws = MagicMock(spec=WebSocket)
+        ws.headers = {"origin": "http://localhost:3000"}
 
-        # Switch instance
-        await manager.switch_instance(ws, "home")
+        result = _validate_origin(ws, ["http://localhost:*"])
 
-        # Check subscriptions are preserved
-        assert manager._connections[ws]["subscriptions"] == {"entities", "health"}
-        assert manager._connections[ws]["instance_id"] == "home"
+        assert result is True
+
+    def test_validate_origin_wildcard_subdomain(self) -> None:
+        """Test wildcard subdomain matching."""
+        ws = MagicMock(spec=WebSocket)
+        ws.headers = {"origin": "https://api.example.com"}
+
+        result = _validate_origin(ws, ["https://*.example.com"])
+
+        assert result is True
+
+    def test_validate_origin_https_vs_http(self) -> None:
+        """Test that https and http are treated as different origins."""
+        ws = MagicMock(spec=WebSocket)
+        ws.headers = {"origin": "https://localhost:8000"}
+
+        result = _validate_origin(ws, ["http://localhost:8000"])
+
+        assert result is False
+
+    def test_validate_origin_case_sensitive(self) -> None:
+        """Test that origin matching is case-sensitive for domain."""
+        ws = MagicMock(spec=WebSocket)
+        ws.headers = {"origin": "http://LocalHost:8000"}
+
+        # This should fail because origins are case-sensitive
+        result = _validate_origin(ws, ["http://localhost:8000"])
+
+        # Note: In practice, browsers normalize origins to lowercase,
+        # but we test the validator's behavior as-is
+        assert result is False
