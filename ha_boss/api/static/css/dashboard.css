@@ -262,7 +262,8 @@ table tr {
 
 /* Loading state for instance selector */
 #instanceSelector.loading {
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="%233b82f6" d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>');
+  /* Base64-encoded spinner SVG for better browser compatibility */
+  background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSIjM2I4MmY2IiBkPSJNMTIgMnY0bTAgMTJ2NE00LjkzIDQuOTNsMi44MyAyLjgzbTguNDggOC40OGwyLjgzIDIuODNNMiAxMmg0bTEyIDBoNE00LjkzIDE5LjA3bDIuODMtMi44M204LjQ4LTguNDhsMi44My0yLjgzIi8+PC9zdmc+Cg==');
   background-repeat: no-repeat;
   background-position: right 0.5rem center;
   background-size: 1rem;

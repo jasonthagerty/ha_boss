@@ -243,7 +243,7 @@ class Dashboard {
     try {
       // Disable selector and show loading state
       selector.disabled = true;
-      selector.classList.add('opacity-50', 'cursor-wait');
+      selector.classList.add('opacity-50', 'cursor-wait', 'loading');
 
       // Show loading toast
       this.showToast(`Switching to instance: ${instanceId}...`, 'info', 2000);
@@ -282,7 +282,7 @@ class Dashboard {
     } finally {
       // Re-enable selector
       selector.disabled = false;
-      selector.classList.remove('opacity-50', 'cursor-wait');
+      selector.classList.remove('opacity-50', 'cursor-wait', 'loading');
     }
   }
 
