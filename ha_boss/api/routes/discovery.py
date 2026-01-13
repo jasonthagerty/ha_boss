@@ -92,10 +92,10 @@ async def trigger_discovery_refresh(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error during discovery refresh: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error during discovery refresh: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Discovery refresh failed") from None
 
 
@@ -220,10 +220,10 @@ async def get_discovery_stats(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error getting discovery stats: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error getting discovery stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get discovery stats") from None
 
 
@@ -319,10 +319,10 @@ async def list_automations(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error listing automations: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error listing automations: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list automations") from None
 
 
@@ -413,10 +413,10 @@ async def get_automation_details(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error getting automation details: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error getting automation details: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get automation details") from None
 
 
@@ -521,8 +521,8 @@ async def get_entity_usage(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error getting entity usage: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error getting entity usage: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get entity usage") from None
