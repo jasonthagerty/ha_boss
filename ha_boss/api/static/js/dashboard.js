@@ -242,6 +242,8 @@ class Dashboard {
   async onInstanceChange(instanceId) {
     console.log('Switching to instance:', instanceId);
 
+    // Save previous instance for error recovery
+    const previousInstance = this.currentInstance;
     const selector = document.getElementById('instanceSelector');
 
     try {
@@ -252,6 +254,25 @@ class Dashboard {
       // Show loading toast
       this.showToast(`Switching to instance: ${instanceId}...`, 'info', 2000);
 
+      // Save current instance history to cache BEFORE switching
+      if (this.currentInstance) {
+        this.statusHistoryCache[this.currentInstance] = {
+          timestamps: [...this.statusHistory.timestamps],
+          attempted: [...this.statusHistory.attempted],
+          succeeded: [...this.statusHistory.succeeded],
+          failed: [...this.statusHistory.failed]
+        };
+
+        // Apply cache size limit (max 100 data points per instance)
+        const cache = this.statusHistoryCache[this.currentInstance];
+        if (cache.timestamps.length > this.maxHistoryPoints) {
+          cache.timestamps = cache.timestamps.slice(-this.maxHistoryPoints);
+          cache.attempted = cache.attempted.slice(-this.maxHistoryPoints);
+          cache.succeeded = cache.succeeded.slice(-this.maxHistoryPoints);
+          cache.failed = cache.failed.slice(-this.maxHistoryPoints);
+        }
+      }
+
       // Stop all polling to prevent race conditions with old instance_id
       this.stopPolling();
 
@@ -259,8 +280,8 @@ class Dashboard {
       this.currentInstance = instanceId;
       this.api.setInstance(instanceId);
 
-      // Clear status history when switching instances
-      this.statusHistory = {
+      // Restore history for new instance (or initialize if first time)
+      this.statusHistory = this.statusHistoryCache[instanceId] || {
         timestamps: [],
         attempted: [],
         succeeded: [],
@@ -280,8 +301,10 @@ class Dashboard {
       console.error('Error switching instance:', error);
       this.showToast(`Failed to switch instance: ${error.message}`, 'error');
 
-      // Revert selector to previous instance on error
-      selector.value = this.currentInstance;
+      // Revert to PREVIOUS instance on error
+      selector.value = previousInstance;
+      this.currentInstance = previousInstance;
+      this.api.setInstance(previousInstance);
 
     } finally {
       // Re-enable selector
