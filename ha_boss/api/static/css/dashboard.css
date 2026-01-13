@@ -231,6 +231,44 @@ table tr {
   background-color: #ef4444;
 }
 
+/* ==================== Instance Selector ==================== */
+
+#instanceSelector {
+  font-weight: 500;
+  cursor: pointer;
+}
+
+#instanceSelector:disabled {
+  cursor: wait;
+}
+
+/* Style instance options based on state (limited browser support) */
+#instanceSelector option[data-state="connected"] {
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+#instanceSelector option[data-state="disconnected"] {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+#instanceSelector option[data-state="unknown"] {
+  background-color: rgba(251, 191, 36, 0.1);
+}
+
+/* Instance selector hover effect */
+#instanceSelector:hover:not(:disabled) {
+  border-color: #3b82f6;
+}
+
+/* Loading state for instance selector */
+#instanceSelector.loading {
+  /* Base64-encoded spinner SVG for better browser compatibility */
+  background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSIjM2I4MmY2IiBkPSJNMTIgMnY0bTAgMTJ2NE00LjkzIDQuOTNsMi44MyAyLjgzbTguNDggOC40OGwyLjgzIDIuODNNMiAxMmg0bTEyIDBoNE00LjkzIDE5LjA3bDIuODMtMi44M204LjQ4LTguNDhsMi44My0yLjgzIi8+PC9zdmc+Cg==');
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1rem;
+}
+
 /* ==================== Code Blocks ==================== */
 
 pre {

@@ -187,7 +187,29 @@ class Dashboard {
       this.instances.forEach(instance => {
         const option = document.createElement('option');
         option.value = instance.instance_id;
-        option.textContent = `${instance.instance_id} (${instance.state})`;
+
+        // Add visual state indicator
+        const stateIcon = {
+          connected: '🟢',
+          disconnected: '🔴',
+          unknown: '🟡'
+        }[instance.state] || '🟡';
+
+        option.textContent = `${stateIcon} ${instance.instance_id}`;
+
+        // Add tooltip with instance details
+        const tooltipParts = [
+          `Instance: ${instance.instance_id}`,
+          `Status: ${instance.state}`,
+        ];
+        if (instance.monitored_entities !== undefined) {
+          tooltipParts.push(`Entities: ${instance.monitored_entities}`);
+        }
+        option.title = tooltipParts.join('\n');
+
+        // Add data attributes for CSS styling
+        option.dataset.state = instance.state;
+
         if (instance.instance_id === this.currentInstance) {
           option.selected = true;
         }
@@ -202,7 +224,9 @@ class Dashboard {
       selector.innerHTML = '';
       const defaultOption = document.createElement('option');
       defaultOption.value = 'default';
-      defaultOption.textContent = 'default (unknown)';
+      defaultOption.textContent = '🟡 default';
+      defaultOption.title = 'Instance: default\nStatus: unknown';
+      defaultOption.dataset.state = 'unknown';
       defaultOption.selected = true;
       selector.appendChild(defaultOption);
 
@@ -218,45 +242,75 @@ class Dashboard {
   async onInstanceChange(instanceId) {
     console.log('Switching to instance:', instanceId);
 
-    // Stop all polling to prevent race conditions with old instance_id
-    this.stopPolling();
+    // Save previous instance for error recovery
+    const previousInstance = this.currentInstance;
+    const selector = document.getElementById('instanceSelector');
 
-    // Save current instance history to cache
-    if (this.currentInstance) {
-      this.statusHistoryCache[this.currentInstance] = {
-        timestamps: [...this.statusHistory.timestamps],
-        attempted: [...this.statusHistory.attempted],
-        succeeded: [...this.statusHistory.succeeded],
-        failed: [...this.statusHistory.failed]
+    try {
+      // Disable selector and show loading state
+      selector.disabled = true;
+      selector.classList.add('opacity-50', 'cursor-wait', 'loading');
+
+      // Show loading toast
+      this.showToast(`Switching to instance: ${instanceId}...`, 'info', 2000);
+
+      // Save current instance history to cache BEFORE switching
+      if (this.currentInstance) {
+        this.statusHistoryCache[this.currentInstance] = {
+          timestamps: [...this.statusHistory.timestamps],
+          attempted: [...this.statusHistory.attempted],
+          succeeded: [...this.statusHistory.succeeded],
+          failed: [...this.statusHistory.failed]
+        };
+
+        // Apply cache size limit (max 100 data points per instance)
+        const cache = this.statusHistoryCache[this.currentInstance];
+        if (cache.timestamps.length > this.maxHistoryPoints) {
+          cache.timestamps = cache.timestamps.slice(-this.maxHistoryPoints);
+          cache.attempted = cache.attempted.slice(-this.maxHistoryPoints);
+          cache.succeeded = cache.succeeded.slice(-this.maxHistoryPoints);
+          cache.failed = cache.failed.slice(-this.maxHistoryPoints);
+        }
+      }
+
+      // Stop all polling to prevent race conditions with old instance_id
+      this.stopPolling();
+
+      // Switch to new instance
+      this.currentInstance = instanceId;
+      this.api.setInstance(instanceId);
+
+      // Restore history for new instance (or initialize if first time)
+      this.statusHistory = this.statusHistoryCache[instanceId] || {
+        timestamps: [],
+        attempted: [],
+        succeeded: [],
+        failed: []
       };
 
-      // Apply cache size limit (max 100 data points per instance)
-      const cache = this.statusHistoryCache[this.currentInstance];
-      if (cache.timestamps.length > this.maxHistoryPoints) {
-        cache.timestamps = cache.timestamps.slice(-this.maxHistoryPoints);
-        cache.attempted = cache.attempted.slice(-this.maxHistoryPoints);
-        cache.succeeded = cache.succeeded.slice(-this.maxHistoryPoints);
-        cache.failed = cache.failed.slice(-this.maxHistoryPoints);
-      }
+      // Reload current tab with new instance
+      await this.switchTab(this.currentTab);
+
+      // Restart polling with new instance_id
+      this.startPolling();
+
+      // Show success toast
+      this.showToast(`Switched to instance: ${instanceId}`, 'success');
+
+    } catch (error) {
+      console.error('Error switching instance:', error);
+      this.showToast(`Failed to switch instance: ${error.message}`, 'error');
+
+      // Revert to PREVIOUS instance on error
+      selector.value = previousInstance;
+      this.currentInstance = previousInstance;
+      this.api.setInstance(previousInstance);
+
+    } finally {
+      // Re-enable selector
+      selector.disabled = false;
+      selector.classList.remove('opacity-50', 'cursor-wait', 'loading');
     }
-
-    // Switch to new instance
-    this.currentInstance = instanceId;
-    this.api.setInstance(instanceId);
-
-    // Restore history for new instance (or initialize if first time)
-    this.statusHistory = this.statusHistoryCache[instanceId] || {
-      timestamps: [],
-      attempted: [],
-      succeeded: [],
-      failed: []
-    };
-
-    // Reload current tab with new instance
-    await this.switchTab(this.currentTab);
-
-    // Restart polling with new instance_id
-    this.startPolling();
   }
 
   /**
