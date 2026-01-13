@@ -96,7 +96,7 @@ async def list_entities(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
 
 
@@ -148,7 +148,7 @@ async def get_entity(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
 
 
@@ -235,8 +235,8 @@ async def get_entity_history(
     except HTTPException:
         raise
     except RuntimeError as e:
-        logger.error(f"Service not initialized: {e}")
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
-        logger.error(f"Error retrieving entity history: {e}", exc_info=True)
+        logger.error(f"[{instance_id}] Error retrieving entity history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve entity history") from None

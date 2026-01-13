@@ -22,6 +22,10 @@ class Dashboard {
       failed: []
     };
 
+    // Per-instance history cache (max 100 data points per instance)
+    this.statusHistoryCache = {};
+    this.maxHistoryPoints = 100;
+
     // WebSocket support (graceful fallback to polling if not available)
     this.ws = null;
     this.useWebSocket = true; // Try WebSocket first
