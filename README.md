@@ -158,10 +158,82 @@ haboss automation generate "Turn on lights when motion detected"
 
 ## 🔐 Security
 
-- Tokens stored in `.env` (never committed)
-- Non-root Docker user (haboss:1000, mcpuser:1001)
-- Works fully offline with local LLM
-- Optional Claude API for advanced features
+### Authentication
+
+**Optional API Key Authentication:**
+```yaml
+api:
+  auth_enabled: true
+  api_keys:
+    - "your-secret-api-key-here"
+```
+
+When enabled, all API requests require the `X-API-Key` header:
+```bash
+curl -H "X-API-Key: your-secret-api-key-here" http://localhost:8000/api/status
+```
+
+**Default**: Authentication is disabled. Only enable on trusted networks or with HTTPS.
+
+### Multi-Instance Security Model
+
+HA Boss uses a **trust-based security model** for multi-instance deployments:
+
+- **Shared API Key Pool** - All configured API keys grant access to all instances
+- **No Per-Instance Authorization** - Any authenticated user can access any configured instance
+- **Instance Isolation** - Handled at the deployment level (see below)
+
+**Recommended Deployment Patterns:**
+
+**Single-Tenant (One User/Household):**
+```yaml
+# Monitor multiple properties with shared access
+home_assistant:
+  instances:
+    - instance_id: "home"
+      url: "http://home.local:8123"
+    - instance_id: "cabin"
+      url: "http://cabin.local:8123"
+
+api:
+  api_keys: ["shared-family-key"]  # All family members access all instances
+```
+
+**Multi-Tenant (Managed Service Provider):**
+
+For complete isolation between customers, deploy separate HA Boss containers:
+
+```bash
+# Customer A - separate container
+docker run -e HA_URL=http://customer-a.local:8123 \
+           -e HA_TOKEN=customer-a-token \
+           -e API_KEYS=customer-a-api-key \
+           ghcr.io/jasonthagerty/ha-boss:latest
+
+# Customer B - separate container
+docker run -e HA_URL=http://customer-b.local:8123 \
+           -e HA_TOKEN=customer-b-token \
+           -e API_KEYS=customer-b-api-key \
+           ghcr.io/jasonthagerty/ha-boss:latest
+```
+
+**Benefits of Separate Deployments:**
+- ✅ Complete data isolation between tenants
+- ✅ Independent scaling and resource allocation
+- ✅ No shared API keys or access concerns
+- ✅ Independent updates and rollbacks
+- ✅ Simplified security model
+
+> **Note:** Instance-level authorization (per-instance API keys) may be added in a future release if user demand emerges. See [Issue #144](https://github.com/jasonthagerty/ha_boss/issues/144) for discussion.
+
+### Other Security Features
+
+- **Token Storage** - Home Assistant tokens stored in `.env` (never committed to git)
+- **Non-Root Containers** - Docker runs as non-root users (haboss:1000, mcpuser:1001)
+- **Offline Operation** - Works fully offline with local LLM (Ollama)
+- **Optional Cloud API** - Claude API only used when explicitly configured
+- **CORS Protection** - Configurable allowed origins for browser requests
+- **HTTPS Support** - Optional `require_https` setting for API endpoints
 
 ## 📦 Docker Images
 
