@@ -620,66 +620,12 @@ class TestAutomationCommands:
 
         assert result.exit_code == 0
 
-    @patch("ha_boss.cli.commands.load_config")
-    @patch("ha_boss.cli.commands.create_ha_client")
-    @patch("ha_boss.automation.generator.AutomationGenerator")
-    def test_generate_automation(self, mock_generator_class, mock_client, mock_load, mock_config):
-        """Test automation generation command."""
-        mock_load.return_value = mock_config
-        mock_ha_client = AsyncMock()
-        mock_client.return_value = mock_ha_client
-
-        # Mock generator
-        mock_generator = AsyncMock()
-        mock_generator.generate_automation = AsyncMock(
-            return_value={"alias": "Generated Automation", "trigger": [], "action": []}
-        )
-        mock_generator_class.return_value = mock_generator
-
-        prompt = "Turn on lights when motion detected"
-        result = runner.invoke(app, ["automation", "generate", prompt])
-
-        # Just check it doesn't crash - actual generation is complex
-        assert result.exit_code in [0, 1]  # May fail due to missing config but shouldn't crash
-
-    @patch("ha_boss.cli.commands.load_config")
-    @patch("ha_boss.cli.commands.create_ha_client")
-    @patch("ha_boss.automation.generator.AutomationGenerator")
-    def test_generate_automation_dry_run(
-        self, mock_generator_class, mock_client, mock_load, mock_config
-    ):
-        """Test automation generation in dry-run mode."""
-        mock_load.return_value = mock_config
-        mock_ha_client = AsyncMock()
-        mock_client.return_value = mock_ha_client
-
-        # Mock generator
-        mock_generator = AsyncMock()
-        mock_generator.generate_automation = AsyncMock(
-            return_value={"alias": "Test Automation", "trigger": [], "action": []}
-        )
-        mock_generator_class.return_value = mock_generator
-
-        prompt = "Test automation"
-        result = runner.invoke(app, ["automation", "generate", prompt, "--mode", "dry_run"])
-
-        # Just check it doesn't crash
-        assert result.exit_code in [0, 1]
-
     def test_automation_analyze_help(self):
         """Test automation analyze command help output."""
         result = runner.invoke(app, ["automation", "analyze", "--help"])
 
         assert result.exit_code == 0
         assert "analyze" in result.stdout.lower()
-        assert "automation" in result.stdout.lower()
-
-    def test_automation_generate_help(self):
-        """Test automation generate command help output."""
-        result = runner.invoke(app, ["automation", "generate", "--help"])
-
-        assert result.exit_code == 0
-        assert "generate" in result.stdout.lower()
         assert "automation" in result.stdout.lower()
 
     def test_automation_help(self):
@@ -689,16 +635,6 @@ class TestAutomationCommands:
         assert result.exit_code == 0
         assert "automation" in result.stdout.lower()
         assert "analyze" in result.stdout.lower()
-        assert "generate" in result.stdout.lower()
-
-    def test_generate_automation_requires_prompt(self):
-        """Test that generate automation command requires prompt."""
-        result = runner.invoke(app, ["automation", "generate"])
-
-        assert result.exit_code != 0
-        # Check for missing argument error
-        output_lower = (result.stdout + str(result.stderr if result.stderr else "")).lower()
-        assert "missing argument" in output_lower or "required" in output_lower
 
 
 class TestConfigValidateErrors:
