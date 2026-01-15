@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen)](https://github.com/jasonthagerty/ha_boss)
 
-A standalone Python service that monitors Home Assistant instances, automatically heals integration failures, and provides AI-powered automation management. HA Boss acts as an intelligent watchdog for your smart home, detecting issues before they become problems and fixing them automatically.
+A standalone Python service that monitors Home Assistant instances, automatically heals integration failures, and provides AI-powered automation analysis and optimization. HA Boss acts as an intelligent watchdog for your smart home, detecting issues before they become problems and fixing them automatically.
 
 ## ✨ Key Features
 
@@ -15,7 +15,7 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 - **🔧 Auto-Healing** - Automatically reloads failed integrations with circuit breakers
 - **🛡️ Safety First** - Dry-run mode, graceful degradation, automatic reconnection
 - **📊 Pattern Analysis** - Tracks reliability metrics and failure patterns
-- **🤖 AI Intelligence** - Local LLM (Ollama) + Claude API for automation generation
+- **🤖 AI Intelligence** - Local LLM (Ollama) + Claude API for automation analysis and optimization
 - **🔌 MCP Server** - Exposes capabilities to AI agents via Model Context Protocol
 - **🐳 Docker-First** - Production-ready with multi-stage builds and health checks
 - **💻 Rich CLI** - Beautiful terminal UI for management and analysis
@@ -107,9 +107,8 @@ haboss patterns reliability        # Integration reliability
 haboss patterns failures           # Failure timeline
 haboss patterns weekly-summary     # AI weekly report
 
-# Automation
+# Automation Analysis
 haboss automation analyze bedroom_lights
-haboss automation generate "Turn on lights when motion detected"
 ```
 
 ## 📚 Documentation
@@ -131,10 +130,12 @@ haboss automation generate "Turn on lights when motion detected"
 
 - ✅ **Phase 1** - Real-time monitoring, auto-healing, Docker deployment
 - ✅ **Phase 2** - Reliability tracking, CLI reports, database schema
-- ✅ **Phase 3** - Local LLM, Claude integration, automation generation
+- ✅ **Phase 3** - Local LLM, Claude integration, automation analysis and optimization
 - ✅ **MCP Server** - Model Context Protocol interface for AI agents
 
 **Test Coverage:** 81% (528 tests) | **Docker Images:** Multi-arch (amd64, arm64)
+
+> **Note:** HA Boss focuses on automation optimization based on real-world monitoring data. For natural language automation generation, Home Assistant is developing a native feature which will provide better integration with the core platform.
 
 ## 🏗️ Architecture
 

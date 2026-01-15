@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from ha_boss.automation.analyzer import AutomationAnalyzer
-from ha_boss.automation.generator import AutomationGenerator
 from ha_boss.core.config import (
     Config,
     DatabaseConfig,
@@ -472,45 +471,6 @@ async def test_automation_analysis_latency(
 
 
 # ============================================================================
-# Automation Generation Performance Tests
-# ============================================================================
-
-
-@pytest.mark.performance
-@pytest.mark.asyncio
-@pytest.mark.skipif(not CLAUDE_AVAILABLE, reason="Claude API required for generation")
-async def test_automation_generation_latency(
-    perf_config: Config,
-    mock_ha_client: HomeAssistantClient,
-    claude_client: ClaudeClient,
-) -> None:
-    """Test that automation generation completes in < 15s.
-
-    Acceptance: Automation generation via Claude should complete in < 15s (target: 8s).
-    """
-    llm_router = LLMRouter(ollama_client=None, claude_client=claude_client, local_only=False)
-    generator = AutomationGenerator(
-        ha_client=mock_ha_client,
-        config=perf_config,
-        llm_router=llm_router,
-    )
-
-    prompt = "Turn on bedroom light when motion detected, only at night"
-
-    # Benchmark generation
-    start_time = time.perf_counter()
-    result = await generator.generate_from_prompt(prompt)
-    end_time = time.perf_counter()
-
-    latency_s = end_time - start_time
-
-    # Assertions
-    assert result is not None, "Automation should be generated"
-    assert latency_s < 15.0, f"Automation generation took {latency_s:.2f}s (expected < 15s)"
-
-    print(f"\n✓ Automation generation: {latency_s:.2f}s (target: < 15s)")
-
-
 # ============================================================================
 # End-to-End Performance Tests
 # ============================================================================
