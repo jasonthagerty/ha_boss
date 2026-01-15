@@ -11,7 +11,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from ha_boss.core.exceptions import DatabaseError
 
 # Current database schema version
-CURRENT_DB_VERSION = 3
+CURRENT_DB_VERSION = 4
 
 
 class Base(DeclarativeBase):
@@ -500,6 +500,73 @@ class DiscoveryRefresh(Base):
     def __repr__(self) -> str:
         status = "success" if self.success else "failed"
         return f"<DiscoveryRefresh({self.trigger_type}, {status}, {self.timestamp})>"
+
+
+class AutomationExecution(Base):
+    """Track automation executions for pattern analysis.
+
+    Records each time an automation runs, including success/failure,
+    trigger type, and execution duration. Used by AutomationAnalyzer
+    to provide usage-based optimization recommendations.
+    """
+
+    __tablename__ = "automation_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    executed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    trigger_type: Mapped[str | None] = mapped_column(String(100))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index(
+            "idx_automation_executions_instance_automation",
+            "instance_id",
+            "automation_id",
+        ),
+        Index("idx_automation_executions_executed_at", "executed_at"),
+    )
+
+    def __repr__(self) -> str:
+        status = "success" if self.success else "failed"
+        return f"<AutomationExecution({self.instance_id}:{self.automation_id}, {status}, {self.executed_at})>"
+
+
+class AutomationServiceCall(Base):
+    """Track service calls made by automations.
+
+    Records each service call triggered by an automation, including
+    response times and success status. Used to identify slow or
+    unreliable service calls in optimization analysis.
+    """
+
+    __tablename__ = "automation_service_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    service_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    entity_id: Mapped[str | None] = mapped_column(String(255))
+    called_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    response_time_ms: Mapped[int | None] = mapped_column(Integer)
+    success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        Index(
+            "idx_automation_service_calls_instance_automation",
+            "instance_id",
+            "automation_id",
+        ),
+        Index("idx_automation_service_calls_called_at", "called_at"),
+        Index("idx_automation_service_calls_service_name", "service_name"),
+    )
+
+    def __repr__(self) -> str:
+        status = "success" if self.success else "failed"
+        return f"<AutomationServiceCall({self.instance_id}:{self.automation_id} -> {self.service_name}, {status})>"
 
 
 class Database:
