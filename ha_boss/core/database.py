@@ -1,5 +1,6 @@
 """Database models and management for HA Boss."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from ha_boss.core.exceptions import DatabaseError
+
+logger = logging.getLogger(__name__)
 
 # Current database schema version
 CURRENT_DB_VERSION = 4
@@ -515,7 +518,7 @@ class AutomationExecution(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    executed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    executed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     trigger_type: Mapped[str | None] = mapped_column(String(100))
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -548,9 +551,9 @@ class AutomationServiceCall(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    service_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    service_name: Mapped[str] = mapped_column(String(255), nullable=False)
     entity_id: Mapped[str | None] = mapped_column(String(255))
-    called_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    called_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     response_time_ms: Mapped[int | None] = mapped_column(Integer)
     success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -605,6 +608,9 @@ class Database:
 
             # Set initial version if this is a new database
             await self._ensure_version()
+
+            # Run any pending migrations for existing databases
+            await self._run_migrations()
         except Exception as e:
             raise DatabaseError(f"Failed to initialize database: {e}") from e
 
@@ -623,6 +629,49 @@ class Database:
                 )
                 session.add(new_version)
                 await session.commit()
+
+    async def _run_migrations(self) -> None:
+        """Run pending database migrations.
+
+        Checks current database version and runs migrations sequentially
+        to bring database up to CURRENT_DB_VERSION.
+
+        Raises:
+            DatabaseError: If migration fails
+        """
+        current_version = await self.get_version()
+
+        if current_version is None:
+            # Database not initialized yet, nothing to migrate
+            return
+
+        if current_version >= CURRENT_DB_VERSION:
+            # Already at current version
+            return
+
+        logger.info(f"Running migrations from v{current_version} to v{CURRENT_DB_VERSION}")
+
+        try:
+            # Run migrations sequentially
+            if current_version == 3 and CURRENT_DB_VERSION >= 4:
+                from ha_boss.core.migrations.v4_add_automation_tracking import (
+                    migrate_v3_to_v4,
+                )
+
+                logger.info("Running migration: v3 → v4")
+                async with self.async_session() as session:
+                    await migrate_v3_to_v4(session)
+                logger.info("Migration v3 → v4 completed successfully")
+
+            # Future migrations can be added here:
+            # if current_version <= 4 and CURRENT_DB_VERSION >= 5:
+            #     from ha_boss.core.migrations.v5_... import migrate_v4_to_v5
+            #     async with self.async_session() as session:
+            #         await migrate_v4_to_v5(session)
+
+        except Exception as e:
+            logger.error(f"Migration failed: {e}", exc_info=True)
+            raise DatabaseError(f"Failed to run migrations: {e}") from e
 
     async def get_version(self) -> int | None:
         """Get current database schema version.
