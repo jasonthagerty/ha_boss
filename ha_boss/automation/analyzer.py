@@ -2,10 +2,14 @@
 
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
+from sqlalchemy import func, select
+
 from ha_boss.core.config import Config
+from ha_boss.core.database import AutomationExecution, AutomationServiceCall, Database
 from ha_boss.core.ha_client import HomeAssistantClient
 from ha_boss.intelligence.llm_router import LLMRouter, TaskComplexity
 
@@ -31,6 +35,18 @@ class Suggestion:
 
 
 @dataclass
+class UsageStatistics:
+    """Usage statistics for an automation."""
+
+    execution_count: int = 0
+    failure_count: int = 0
+    avg_duration_ms: float | None = None
+    service_call_count: int = 0
+    most_common_trigger: str | None = None
+    last_executed: datetime | None = None
+
+
+@dataclass
 class AnalysisResult:
     """Result of analyzing an automation."""
 
@@ -43,6 +59,7 @@ class AnalysisResult:
     suggestions: list[Suggestion] = field(default_factory=list)
     ai_analysis: str | None = None
     raw_attributes: dict[str, Any] = field(default_factory=dict)
+    usage_stats: UsageStatistics | None = None
 
     @property
     def has_issues(self) -> bool:
@@ -64,6 +81,8 @@ class AutomationAnalyzer:
         self,
         ha_client: HomeAssistantClient,
         config: Config,
+        instance_id: str,
+        database: Database | None = None,
         llm_router: LLMRouter | None = None,
     ) -> None:
         """Initialize automation analyzer.
@@ -71,10 +90,14 @@ class AutomationAnalyzer:
         Args:
             ha_client: Home Assistant API client
             config: HA Boss configuration
+            instance_id: Home Assistant instance identifier
+            database: Optional database for usage tracking
             llm_router: Optional LLM router for AI-powered suggestions
         """
         self.ha_client = ha_client
         self.config = config
+        self.instance_id = instance_id
+        self.database = database
         self.llm_router = llm_router
 
     async def get_automations(self) -> list[dict[str, Any]]:
@@ -608,3 +631,218 @@ Be concise. Each suggestion should be 1-2 sentences."""
         if result:
             return result.suggestions
         return []
+
+    async def get_usage_statistics(
+        self, automation_id: str, days: int = 30
+    ) -> UsageStatistics | None:
+        """Get usage statistics for an automation.
+
+        Args:
+            automation_id: Automation entity ID
+            days: Number of days to look back (default: 30)
+
+        Returns:
+            Usage statistics or None if database unavailable
+        """
+        if not self.database:
+            return None
+
+        # Calculate time window
+        since = datetime.now(UTC) - timedelta(days=days)
+
+        try:
+            async with self.database.async_session() as session:
+                # Query execution stats
+                exec_result = await session.execute(
+                    select(
+                        func.count(AutomationExecution.id).label("count"),
+                        func.sum(
+                            func.cast(AutomationExecution.success == False, int)  # noqa: E712
+                        ).label("failures"),
+                        func.avg(AutomationExecution.duration_ms).label("avg_duration"),
+                        func.max(AutomationExecution.executed_at).label("last_executed"),
+                    ).where(
+                        AutomationExecution.instance_id == self.instance_id,
+                        AutomationExecution.automation_id == automation_id,
+                        AutomationExecution.executed_at >= since,
+                    )
+                )
+                exec_stats = exec_result.one()
+
+                # Query most common trigger type
+                trigger_result = await session.execute(
+                    select(
+                        AutomationExecution.trigger_type,
+                        func.count(AutomationExecution.id).label("count"),
+                    )
+                    .where(
+                        AutomationExecution.instance_id == self.instance_id,
+                        AutomationExecution.automation_id == automation_id,
+                        AutomationExecution.executed_at >= since,
+                    )
+                    .group_by(AutomationExecution.trigger_type)
+                    .order_by(func.count(AutomationExecution.id).desc())
+                    .limit(1)
+                )
+                trigger_row = trigger_result.first()
+
+                # Query service call count
+                service_result = await session.execute(
+                    select(func.count(AutomationServiceCall.id)).where(
+                        AutomationServiceCall.instance_id == self.instance_id,
+                        AutomationServiceCall.automation_id == automation_id,
+                        AutomationServiceCall.called_at >= since,
+                    )
+                )
+                service_count = service_result.scalar() or 0
+
+                return UsageStatistics(
+                    execution_count=exec_stats.count or 0,
+                    failure_count=exec_stats.failures or 0,
+                    avg_duration_ms=exec_stats.avg_duration,
+                    service_call_count=service_count,
+                    most_common_trigger=trigger_row[0] if trigger_row else None,
+                    last_executed=exec_stats.last_executed,
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to query usage statistics for {automation_id}: {e}")
+            return None
+
+    async def analyze_with_usage(
+        self,
+        automation_id: str,
+        include_ai: bool = True,
+        days: int = 30,
+    ) -> AnalysisResult | None:
+        """Analyze automation with usage-based recommendations.
+
+        Args:
+            automation_id: Automation entity ID
+            include_ai: Whether to include AI analysis
+            days: Number of days for usage statistics
+
+        Returns:
+            Analysis result with usage-based suggestions
+        """
+        # Get base analysis
+        result = await self.analyze_automation(automation_id, include_ai=include_ai)
+        if not result:
+            return None
+
+        # Add usage statistics if database available
+        if self.database:
+            usage_stats = await self.get_usage_statistics(automation_id, days=days)
+            if usage_stats:
+                result.usage_stats = usage_stats
+
+                # Add usage-based suggestions
+                usage_suggestions = self._usage_based_suggestions(usage_stats, result)
+                result.suggestions.extend(usage_suggestions)
+
+        return result
+
+    def _usage_based_suggestions(
+        self, usage: UsageStatistics, analysis: AnalysisResult
+    ) -> list[Suggestion]:
+        """Generate usage-based optimization suggestions.
+
+        Args:
+            usage: Usage statistics
+            analysis: Base analysis result
+
+        Returns:
+            List of usage-based suggestions
+        """
+        suggestions: list[Suggestion] = []
+
+        # 1. High execution frequency
+        if usage.execution_count > 100:
+            executions_per_day = usage.execution_count / 30  # Assuming 30 days
+            if executions_per_day > 100:
+                suggestions.append(
+                    Suggestion(
+                        title="Very high execution frequency",
+                        description=(
+                            f"This automation runs ~{int(executions_per_day)} times per day. "
+                            "Consider adding rate limiting or consolidating triggers."
+                        ),
+                        severity=SuggestionSeverity.WARNING,
+                        category="usage",
+                    )
+                )
+
+        # 2. High failure rate
+        if usage.execution_count > 0:
+            failure_rate = (usage.failure_count / usage.execution_count) * 100
+            if failure_rate > 10:
+                suggestions.append(
+                    Suggestion(
+                        title="High failure rate",
+                        description=(
+                            f"This automation fails {failure_rate:.1f}% of the time "
+                            f"({usage.failure_count}/{usage.execution_count} executions). "
+                            "Review error handling and conditions."
+                        ),
+                        severity=SuggestionSeverity.ERROR,
+                        category="usage",
+                    )
+                )
+
+        # 3. Slow execution
+        if usage.avg_duration_ms and usage.avg_duration_ms > 5000:
+            suggestions.append(
+                Suggestion(
+                    title="Slow execution time",
+                    description=(
+                        f"Average execution time is {usage.avg_duration_ms/1000:.1f}s. "
+                        "Consider optimizing delays, service calls, or conditions."
+                    ),
+                    severity=SuggestionSeverity.WARNING,
+                    category="usage",
+                )
+            )
+
+        # 4. Many service calls
+        if usage.execution_count > 0:
+            calls_per_execution = usage.service_call_count / usage.execution_count
+            if calls_per_execution > 5:
+                suggestions.append(
+                    Suggestion(
+                        title="High service call volume",
+                        description=(
+                            f"Averages {calls_per_execution:.1f} service calls per execution. "
+                            "Consider batching operations or using scenes/scripts."
+                        ),
+                        severity=SuggestionSeverity.INFO,
+                        category="usage",
+                    )
+                )
+
+        # 5. Inactive automation
+        if usage.execution_count == 0:
+            suggestions.append(
+                Suggestion(
+                    title="Automation never executed",
+                    description=(
+                        "This automation hasn't run in the past 30 days. "
+                        "Verify triggers are working or consider disabling."
+                    ),
+                    severity=SuggestionSeverity.WARNING,
+                    category="usage",
+                )
+            )
+        elif usage.execution_count < 5:
+            suggestions.append(
+                Suggestion(
+                    title="Rarely executed automation",
+                    description=(
+                        f"Only executed {usage.execution_count} times in 30 days. "
+                        "Verify this matches expected behavior."
+                    ),
+                    severity=SuggestionSeverity.INFO,
+                    category="usage",
+                )
+            )
+
+        return suggestions
