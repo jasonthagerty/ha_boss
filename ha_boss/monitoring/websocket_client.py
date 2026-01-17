@@ -17,6 +17,7 @@ from ha_boss.core.exceptions import (
 
 if TYPE_CHECKING:
     from ha_boss.discovery.entity_discovery import EntityDiscoveryService
+    from ha_boss.monitoring.automation_tracker import AutomationTracker
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class WebSocketClient:
         instance: HomeAssistantInstance,
         config: Config,
         entity_discovery: "EntityDiscoveryService | None" = None,
+        automation_tracker: "AutomationTracker | None" = None,
         on_state_changed: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         """Initialize WebSocket client.
@@ -41,6 +43,7 @@ class WebSocketClient:
             instance: Home Assistant instance configuration (URL, token, instance_id)
             config: HA Boss configuration for connection settings
             entity_discovery: Optional entity discovery service for reload event handling
+            automation_tracker: Optional automation tracker for usage tracking
             on_state_changed: Async callback for state_changed events
         """
         # Build WebSocket URL from HTTP URL
@@ -51,6 +54,7 @@ class WebSocketClient:
         self.instance_id = instance.instance_id
         self.config = config
         self.entity_discovery = entity_discovery
+        self.automation_tracker = automation_tracker
 
         # Connection settings
         self.max_retries = config.rest.retry_attempts
@@ -160,8 +164,12 @@ class WebSocketClient:
                 except Exception as e:
                     logger.error(f"Error in state_changed callback: {e}", exc_info=True)
 
+            elif event_type == "automation_triggered":
+                # Track automation execution
+                await self._handle_automation_triggered(event.get("data", {}))
+
             elif event_type == "call_service":
-                # Handle automation/scene/script reload events
+                # Handle automation/scene/script reload events and track service calls
                 await self._handle_service_call(event.get("data", {}))
 
         elif msg_type == "pong":
@@ -170,48 +178,103 @@ class WebSocketClient:
         else:
             logger.debug(f"Received message type: {msg_type}")
 
+    async def _handle_automation_triggered(self, data: dict[str, Any]) -> None:
+        """Handle automation_triggered events to track automation executions.
+
+        Args:
+            data: Automation triggered event data containing entity_id, trigger info
+        """
+        if not self.automation_tracker:
+            return
+
+        # Extract automation information from event data
+        entity_id = data.get("entity_id")
+        if not entity_id:
+            return
+
+        # Extract trigger information
+        trigger = data.get("trigger", {})
+        trigger_type = trigger.get("platform")  # e.g., "state", "time", "event"
+
+        # Track the execution (duration and success will be updated later if available)
+        try:
+            await self.automation_tracker.record_execution(
+                automation_id=entity_id,
+                trigger_type=trigger_type,
+                success=True,  # Assume success unless error state detected
+            )
+        except Exception as e:
+            logger.error(f"Failed to record automation execution for {entity_id}: {e}")
+
     async def _handle_service_call(self, data: dict[str, Any]) -> None:
-        """Handle service call events for discovery refresh triggers.
+        """Handle service call events for discovery refresh triggers and automation tracking.
 
         Args:
             data: Service call event data
         """
-        if not self.entity_discovery:
-            return
-
         domain = data.get("domain")
         service = data.get("service")
 
-        # Check for automation/scene/script reload services
-        if domain == "automation" and service == "reload":
-            if self.config.monitoring.auto_discovery.refresh_on_automation_reload:
-                logger.info("Automation reload detected, triggering discovery refresh")
-                try:
-                    await self.entity_discovery.discover_and_refresh(
-                        trigger_type="event", trigger_source="automation_reload"
-                    )
-                except Exception as e:
-                    logger.error(f"Discovery refresh failed after automation reload: {e}")
+        # Handle discovery refresh triggers if entity_discovery is configured
+        if self.entity_discovery:
+            # Check for automation/scene/script reload services
+            if domain == "automation" and service == "reload":
+                if self.config.monitoring.auto_discovery.refresh_on_automation_reload:
+                    logger.info("Automation reload detected, triggering discovery refresh")
+                    try:
+                        await self.entity_discovery.discover_and_refresh(
+                            trigger_type="event", trigger_source="automation_reload"
+                        )
+                    except Exception as e:
+                        logger.error(f"Discovery refresh failed after automation reload: {e}")
 
-        elif domain == "scene" and service == "reload":
-            if self.config.monitoring.auto_discovery.refresh_on_scene_reload:
-                logger.info("Scene reload detected, triggering discovery refresh")
-                try:
-                    await self.entity_discovery.discover_and_refresh(
-                        trigger_type="event", trigger_source="scene_reload"
-                    )
-                except Exception as e:
-                    logger.error(f"Discovery refresh failed after scene reload: {e}")
+            elif domain == "scene" and service == "reload":
+                if self.config.monitoring.auto_discovery.refresh_on_scene_reload:
+                    logger.info("Scene reload detected, triggering discovery refresh")
+                    try:
+                        await self.entity_discovery.discover_and_refresh(
+                            trigger_type="event", trigger_source="scene_reload"
+                        )
+                    except Exception as e:
+                        logger.error(f"Discovery refresh failed after scene reload: {e}")
 
-        elif domain == "script" and service == "reload":
-            if self.config.monitoring.auto_discovery.refresh_on_script_reload:
-                logger.info("Script reload detected, triggering discovery refresh")
+            elif domain == "script" and service == "reload":
+                if self.config.monitoring.auto_discovery.refresh_on_script_reload:
+                    logger.info("Script reload detected, triggering discovery refresh")
+                    try:
+                        await self.entity_discovery.discover_and_refresh(
+                            trigger_type="event", trigger_source="script_reload"
+                        )
+                    except Exception as e:
+                        logger.error(f"Discovery refresh failed after script reload: {e}")
+
+        # Track service calls made by automations if automation_tracker is configured
+        if self.automation_tracker:
+            # Check if this service call was made by an automation
+            # The context field contains parent_id linking to the automation
+            context = data.get("context", {})
+            parent_id = context.get("parent_id")
+
+            # If there's a parent context, this might be from an automation
+            # We'll also check the user_id to confirm it's from an automation
+            if parent_id or context.get("user_id") is None:
+                service_data = data.get("service_data", {})
+                entity_id = service_data.get("entity_id")
+
+                # Try to determine automation_id from context
+                # Note: This is a best-effort approach. Full tracking requires
+                # correlating with automation_triggered events
+                automation_id = context.get("id", "unknown")
+
                 try:
-                    await self.entity_discovery.discover_and_refresh(
-                        trigger_type="event", trigger_source="script_reload"
+                    await self.automation_tracker.record_service_call(
+                        automation_id=automation_id,
+                        service_name=f"{domain}.{service}",
+                        entity_id=entity_id if isinstance(entity_id, str) else None,
+                        success=True,
                     )
                 except Exception as e:
-                    logger.error(f"Discovery refresh failed after script reload: {e}")
+                    logger.debug(f"Failed to record service call: {e}")
 
     async def _listen_loop(self) -> None:
         """Main message listening loop."""
@@ -258,6 +321,10 @@ class WebSocketClient:
                 if self.entity_discovery:
                     await self.subscribe_events("call_service")
 
+                # Subscribe to automation_triggered events for automation tracking
+                if self.automation_tracker:
+                    await self.subscribe_events("automation_triggered")
+
                 logger.info("Reconnection successful")
 
                 # Restart listen loop
@@ -285,6 +352,10 @@ class WebSocketClient:
         # Also subscribe to call_service events for discovery refresh triggers
         if self.entity_discovery:
             await self.subscribe_events("call_service")
+
+        # Subscribe to automation_triggered events for automation tracking
+        if self.automation_tracker:
+            await self.subscribe_events("automation_triggered")
 
         # Start listening loop
         asyncio.create_task(self._listen_loop())
