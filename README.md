@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen)](https://github.com/jasonthagerty/ha_boss)
 
-A standalone Python service that monitors Home Assistant instances, automatically heals integration failures, and provides AI-powered automation management. HA Boss acts as an intelligent watchdog for your smart home, detecting issues before they become problems and fixing them automatically.
+A standalone Python service that monitors Home Assistant instances, automatically heals integration failures, and provides AI-powered automation analysis and optimization. HA Boss acts as an intelligent watchdog for your smart home, detecting issues before they become problems and fixing them automatically.
 
 ## ✨ Key Features
 
@@ -15,7 +15,7 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 - **🔧 Auto-Healing** - Automatically reloads failed integrations with circuit breakers
 - **🛡️ Safety First** - Dry-run mode, graceful degradation, automatic reconnection
 - **📊 Pattern Analysis** - Tracks reliability metrics and failure patterns
-- **🤖 AI Intelligence** - Local LLM (Ollama) + Claude API for automation generation
+- **🤖 AI Intelligence** - Local LLM (Ollama) + Claude API for automation analysis and optimization
 - **🔌 MCP Server** - Exposes capabilities to AI agents via Model Context Protocol
 - **🐳 Docker-First** - Production-ready with multi-stage builds and health checks
 - **💻 Rich CLI** - Beautiful terminal UI for management and analysis
@@ -107,9 +107,8 @@ haboss patterns reliability        # Integration reliability
 haboss patterns failures           # Failure timeline
 haboss patterns weekly-summary     # AI weekly report
 
-# Automation
+# Automation Analysis
 haboss automation analyze bedroom_lights
-haboss automation generate "Turn on lights when motion detected"
 ```
 
 ## 📚 Documentation
@@ -131,10 +130,12 @@ haboss automation generate "Turn on lights when motion detected"
 
 - ✅ **Phase 1** - Real-time monitoring, auto-healing, Docker deployment
 - ✅ **Phase 2** - Reliability tracking, CLI reports, database schema
-- ✅ **Phase 3** - Local LLM, Claude integration, automation generation
+- ✅ **Phase 3** - Local LLM, Claude integration, automation analysis and optimization
 - ✅ **MCP Server** - Model Context Protocol interface for AI agents
 
 **Test Coverage:** 81% (528 tests) | **Docker Images:** Multi-arch (amd64, arm64)
+
+> **Note:** HA Boss focuses on automation optimization based on real-world monitoring data. For natural language automation generation, Home Assistant is developing a native feature which will provide better integration with the core platform.
 
 ## 🏗️ Architecture
 
@@ -158,10 +159,82 @@ haboss automation generate "Turn on lights when motion detected"
 
 ## 🔐 Security
 
-- Tokens stored in `.env` (never committed)
-- Non-root Docker user (haboss:1000, mcpuser:1001)
-- Works fully offline with local LLM
-- Optional Claude API for advanced features
+### Authentication
+
+**Optional API Key Authentication:**
+```yaml
+api:
+  auth_enabled: true
+  api_keys:
+    - "your-secret-api-key-here"
+```
+
+When enabled, all API requests require the `X-API-Key` header:
+```bash
+curl -H "X-API-Key: your-secret-api-key-here" http://localhost:8000/api/status
+```
+
+**Default**: Authentication is disabled. Only enable on trusted networks or with HTTPS.
+
+### Multi-Instance Security Model
+
+HA Boss uses a **trust-based security model** for multi-instance deployments:
+
+- **Shared API Key Pool** - All configured API keys grant access to all instances
+- **No Per-Instance Authorization** - Any authenticated user can access any configured instance
+- **Instance Isolation** - Handled at the deployment level (see below)
+
+**Recommended Deployment Patterns:**
+
+**Single-Tenant (One User/Household):**
+```yaml
+# Monitor multiple properties with shared access
+home_assistant:
+  instances:
+    - instance_id: "home"
+      url: "http://home.local:8123"
+    - instance_id: "cabin"
+      url: "http://cabin.local:8123"
+
+api:
+  api_keys: ["shared-family-key"]  # All family members access all instances
+```
+
+**Multi-Tenant (Managed Service Provider):**
+
+For complete isolation between customers, deploy separate HA Boss containers:
+
+```bash
+# Customer A - separate container
+docker run -e HA_URL=http://customer-a.local:8123 \
+           -e HA_TOKEN=customer-a-token \
+           -e API_KEYS=customer-a-api-key \
+           ghcr.io/jasonthagerty/ha-boss:latest
+
+# Customer B - separate container
+docker run -e HA_URL=http://customer-b.local:8123 \
+           -e HA_TOKEN=customer-b-token \
+           -e API_KEYS=customer-b-api-key \
+           ghcr.io/jasonthagerty/ha-boss:latest
+```
+
+**Benefits of Separate Deployments:**
+- ✅ Complete data isolation between tenants
+- ✅ Independent scaling and resource allocation
+- ✅ No shared API keys or access concerns
+- ✅ Independent updates and rollbacks
+- ✅ Simplified security model
+
+> **Note:** Instance-level authorization (per-instance API keys) may be added in a future release if user demand emerges. See [Issue #144](https://github.com/jasonthagerty/ha_boss/issues/144) for discussion.
+
+### Other Security Features
+
+- **Token Storage** - Home Assistant tokens stored in `.env` (never committed to git)
+- **Non-Root Containers** - Docker runs as non-root users (haboss:1000, mcpuser:1001)
+- **Offline Operation** - Works fully offline with local LLM (Ollama)
+- **Optional Cloud API** - Claude API only used when explicitly configured
+- **CORS Protection** - Configurable allowed origins for browser requests
+- **HTTPS Support** - Optional `require_https` setting for API endpoints
 
 ## 📦 Docker Images
 

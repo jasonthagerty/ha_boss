@@ -192,38 +192,6 @@ class AutomationAnalysisResponse(BaseModel):
     complexity_score: int | None = Field(None, description="Complexity score (1-10)")
 
 
-class AutomationGenerateRequest(BaseModel):
-    """Request to generate an automation."""
-
-    description: str = Field(..., description="Natural language description")
-    mode: str = Field("single", description="Automation mode")
-
-
-class AutomationGenerateResponse(BaseModel):
-    """Generated automation result."""
-
-    automation_id: str = Field(..., description="Generated automation ID")
-    alias: str = Field(..., description="Automation alias")
-    description: str = Field(..., description="Automation description")
-    yaml_content: str = Field(..., description="Generated YAML")
-    validation_errors: list[str] | None = Field(None, description="Validation errors if any")
-    is_valid: bool = Field(..., description="Is automation valid")
-
-
-class AutomationCreateRequest(BaseModel):
-    """Request to create an automation in Home Assistant."""
-
-    automation_yaml: str = Field(..., description="Automation YAML to create")
-
-
-class AutomationCreateResponse(BaseModel):
-    """Automation creation result."""
-
-    success: bool = Field(..., description="Was creation successful")
-    automation_id: str | None = Field(None, description="Created automation ID")
-    message: str = Field(..., description="Result message")
-
-
 class HealingActionResponse(BaseModel):
     """Healing action result."""
 
