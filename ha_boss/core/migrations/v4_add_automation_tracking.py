@@ -74,14 +74,6 @@ async def migrate_v3_to_v4(session: AsyncSession) -> None:
         await connection.execute(
             text(
                 """
-                CREATE INDEX IF NOT EXISTS ix_automation_executions_executed_at
-                ON automation_executions(executed_at)
-                """
-            )
-        )
-        await connection.execute(
-            text(
-                """
                 CREATE INDEX IF NOT EXISTS idx_automation_executions_instance_automation
                 ON automation_executions(instance_id, automation_id)
                 """
@@ -136,22 +128,6 @@ async def migrate_v3_to_v4(session: AsyncSession) -> None:
         await connection.execute(
             text(
                 """
-                CREATE INDEX IF NOT EXISTS ix_automation_service_calls_service_name
-                ON automation_service_calls(service_name)
-                """
-            )
-        )
-        await connection.execute(
-            text(
-                """
-                CREATE INDEX IF NOT EXISTS ix_automation_service_calls_called_at
-                ON automation_service_calls(called_at)
-                """
-            )
-        )
-        await connection.execute(
-            text(
-                """
                 CREATE INDEX IF NOT EXISTS idx_automation_service_calls_instance_automation
                 ON automation_service_calls(instance_id, automation_id)
                 """
@@ -175,14 +151,22 @@ async def migrate_v3_to_v4(session: AsyncSession) -> None:
         )
         logger.info("Created indexes for automation_service_calls")
 
-        # Update schema version
-        new_version = DatabaseVersion(
-            version=CURRENT_DB_VERSION,
-            applied_at=datetime.now(UTC),
-            description="Add automation execution tracking tables",
+        # Update schema version (check if version 4 already exists to support idempotency)
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(DatabaseVersion).where(DatabaseVersion.version == CURRENT_DB_VERSION)
         )
-        session.add(new_version)
-        await session.commit()
+        existing_version = result.scalar_one_or_none()
+
+        if existing_version is None:
+            new_version = DatabaseVersion(
+                version=CURRENT_DB_VERSION,
+                applied_at=datetime.now(UTC),
+                description="Add automation execution tracking tables",
+            )
+            session.add(new_version)
+            await session.commit()
 
         logger.info("Migration v3 → v4 completed successfully")
 
