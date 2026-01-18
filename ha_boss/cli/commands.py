@@ -1498,7 +1498,9 @@ async def _analyze_single_automation(config: Config, automation_id: str, include
                 progress.remove_task(task)
 
         # Create analyzer
-        analyzer = AutomationAnalyzer(ha_client, config, llm_router)
+        analyzer = AutomationAnalyzer(
+            ha_client, config, instance_id="default", llm_router=llm_router
+        )
 
         # Analyze automation
         with Progress(
@@ -1557,7 +1559,9 @@ async def _analyze_all_automations(config: Config, include_ai: bool) -> None:
             )
 
         # Create analyzer
-        analyzer = AutomationAnalyzer(ha_client, config, llm_router)
+        analyzer = AutomationAnalyzer(
+            ha_client, config, instance_id="default", llm_router=llm_router
+        )
 
         # Get all automations
         with Progress(

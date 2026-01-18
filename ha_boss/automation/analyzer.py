@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, cast, func, select
 
 from ha_boss.core.config import Config
 from ha_boss.core.database import AutomationExecution, AutomationServiceCall, Database
@@ -135,6 +135,10 @@ class AutomationAnalyzer:
             state = await self.ha_client.get_state(automation_id)
         except Exception as e:
             logger.error(f"Failed to fetch automation {automation_id}: {e}")
+            return None
+
+        if state is None:
+            logger.warning(f"Automation {automation_id} not found")
             return None
 
         return await self.analyze_automation_state(state, include_ai)
@@ -657,7 +661,7 @@ Be concise. Each suggestion should be 1-2 sentences."""
                     select(
                         func.count(AutomationExecution.id).label("count"),
                         func.sum(
-                            func.cast(AutomationExecution.success == False, int)  # noqa: E712
+                            cast(AutomationExecution.success == False, Integer)  # noqa: E712
                         ).label("failures"),
                         func.avg(AutomationExecution.duration_ms).label("avg_duration"),
                         func.max(AutomationExecution.executed_at).label("last_executed"),
@@ -696,13 +700,19 @@ Be concise. Each suggestion should be 1-2 sentences."""
                 )
                 service_count = service_result.scalar() or 0
 
+                # Access by index to avoid mypy confusion with row.count method
+                exec_count = exec_stats[0] or 0
+                fail_count = exec_stats[1] or 0
+                avg_dur = exec_stats[2]
+                last_exec = exec_stats[3]
+
                 return UsageStatistics(
-                    execution_count=exec_stats.count or 0,
-                    failure_count=exec_stats.failures or 0,
-                    avg_duration_ms=exec_stats.avg_duration,
-                    service_call_count=service_count,
+                    execution_count=int(exec_count),
+                    failure_count=int(fail_count),
+                    avg_duration_ms=float(avg_dur) if avg_dur else None,
+                    service_call_count=int(service_count),
                     most_common_trigger=trigger_row[0] if trigger_row else None,
-                    last_executed=exec_stats.last_executed,
+                    last_executed=last_exec,
                 )
 
         except Exception as e:
@@ -737,19 +747,20 @@ Be concise. Each suggestion should be 1-2 sentences."""
                 result.usage_stats = usage_stats
 
                 # Add usage-based suggestions
-                usage_suggestions = self._usage_based_suggestions(usage_stats, result)
+                usage_suggestions = self._usage_based_suggestions(usage_stats, result, days=days)
                 result.suggestions.extend(usage_suggestions)
 
         return result
 
     def _usage_based_suggestions(
-        self, usage: UsageStatistics, analysis: AnalysisResult
+        self, usage: UsageStatistics, analysis: AnalysisResult, days: int = 30
     ) -> list[Suggestion]:
         """Generate usage-based optimization suggestions.
 
         Args:
             usage: Usage statistics
             analysis: Base analysis result
+            days: Number of days the usage statistics cover
 
         Returns:
             List of usage-based suggestions
@@ -758,7 +769,7 @@ Be concise. Each suggestion should be 1-2 sentences."""
 
         # 1. High execution frequency
         if usage.execution_count > 100:
-            executions_per_day = usage.execution_count / 30  # Assuming 30 days
+            executions_per_day = usage.execution_count / days
             if executions_per_day > 100:
                 suggestions.append(
                     Suggestion(
@@ -825,7 +836,7 @@ Be concise. Each suggestion should be 1-2 sentences."""
                 Suggestion(
                     title="Automation never executed",
                     description=(
-                        "This automation hasn't run in the past 30 days. "
+                        f"This automation hasn't run in the past {days} days. "
                         "Verify triggers are working or consider disabling."
                     ),
                     severity=SuggestionSeverity.WARNING,
@@ -837,7 +848,7 @@ Be concise. Each suggestion should be 1-2 sentences."""
                 Suggestion(
                     title="Rarely executed automation",
                     description=(
-                        f"Only executed {usage.execution_count} times in 30 days. "
+                        f"Only executed {usage.execution_count} times in {days} days. "
                         "Verify this matches expected behavior."
                     ),
                     severity=SuggestionSeverity.INFO,
