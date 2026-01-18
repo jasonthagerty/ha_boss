@@ -262,8 +262,11 @@ class WebSocketClient:
                 entity_id = service_data.get("entity_id")
 
                 # Try to determine automation_id from context
-                # Note: This is a best-effort approach. Full tracking requires
-                # correlating with automation_triggered events
+                # Note: Determining automation_id from service_call context is best-effort.
+                # The context.id may not always correspond to the automation entity_id.
+                # For accurate correlation, service calls should be linked to recent
+                # automation_triggered events by matching context.parent_id.
+                # Many service calls may be recorded with automation_id="unknown".
                 automation_id = context.get("id", "unknown")
 
                 try:
