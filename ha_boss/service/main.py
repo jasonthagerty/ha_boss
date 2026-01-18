@@ -438,12 +438,9 @@ class HABossService:
     def _start_background_tasks(self) -> None:
         """Start all background tasks for all instances."""
         # Start tasks for each instance
-        for instance_id, websocket_client in self.websocket_clients.items():
-            # WebSocket receiver
-            task = asyncio.create_task(websocket_client.start())  # type: ignore
-            task.set_name(f"websocket_receiver_{instance_id}")
-            self._tasks.append(task)
-
+        # Note: WebSocket is already started in _initialize_instance() via start()
+        # which creates its own internal listening loop - no need to start again here
+        for instance_id in self.websocket_clients:
             # Periodic REST snapshot validation (every 5 minutes)
             task = asyncio.create_task(self._periodic_snapshot_validation(instance_id))
             task.set_name(f"periodic_snapshot_validation_{instance_id}")

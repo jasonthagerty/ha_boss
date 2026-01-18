@@ -169,7 +169,8 @@ class TestHABossServiceStart:
             assert mock_client.get_states.call_count == 3
             # Note: StateTracker.initialize() is no longer called in multi-instance architecture
             mock_monitor.start.assert_called_once()
-            mock_ws.connect.assert_called_once()
+            # WebSocket now uses start() instead of connect() for initialization
+            mock_ws.start.assert_called_once()
 
             # Verify statistics initialized for default instance
             assert "default" in service.health_checks_performed
