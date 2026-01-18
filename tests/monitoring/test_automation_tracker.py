@@ -1,7 +1,8 @@
 """Tests for automation tracking functionality."""
 
-import pytest
 from datetime import UTC, datetime
+
+import pytest
 from sqlalchemy import select
 
 from ha_boss.core.database import AutomationExecution, AutomationServiceCall, Database
@@ -146,7 +147,7 @@ async def test_record_service_call_with_response_time(tracker):
 @pytest.mark.asyncio
 async def test_record_multiple_executions(tracker):
     """Test recording multiple executions."""
-    for i in range(5):
+    for _ in range(5):
         await tracker.record_execution(
             automation_id="automation.frequent_automation",
             trigger_type="state",
