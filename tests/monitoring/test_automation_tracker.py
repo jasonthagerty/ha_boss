@@ -155,6 +155,7 @@ async def test_record_multiple_executions(tracker):
 
     async with tracker.database.async_session() as session:
         from sqlalchemy import func
+
         result = await session.execute(
             select(func.count(AutomationExecution.id)).where(
                 AutomationExecution.automation_id == "automation.frequent_automation"
@@ -179,6 +180,7 @@ async def test_record_multiple_service_calls(tracker):
 
     async with tracker.database.async_session() as session:
         from sqlalchemy import func
+
         result = await session.execute(
             select(func.count(AutomationServiceCall.id)).where(
                 AutomationServiceCall.automation_id == "automation.complex_automation"

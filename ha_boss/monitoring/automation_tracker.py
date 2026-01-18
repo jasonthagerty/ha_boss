@@ -109,7 +109,6 @@ class AutomationTracker:
 
         except Exception as e:
             logger.error(
-                f"[{self.instance_id}] Failed to record service call "
-                f"for {automation_id}: {e}",
+                f"[{self.instance_id}] Failed to record service call " f"for {automation_id}: {e}",
                 exc_info=True,
             )
