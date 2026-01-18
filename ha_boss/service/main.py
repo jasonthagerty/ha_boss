@@ -16,6 +16,7 @@ from ha_boss.core.exceptions import (
 from ha_boss.healing.escalation import NotificationEscalator
 from ha_boss.healing.heal_strategies import HealingManager
 from ha_boss.healing.integration_manager import IntegrationDiscovery
+from ha_boss.monitoring.automation_tracker import AutomationTracker
 from ha_boss.monitoring.health_monitor import HealthIssue, HealthMonitor
 from ha_boss.monitoring.state_tracker import EntityState, StateTracker
 from ha_boss.monitoring.websocket_client import WebSocketClient
@@ -68,6 +69,7 @@ class HABossService:
         self.notification_managers: dict[str, NotificationManager] = {}
         self.escalation_managers: dict[str, NotificationEscalator] = {}
         self.pattern_collectors: dict[str, Any] = {}  # PatternCollector (Phase 2)
+        self.automation_trackers: dict[str, AutomationTracker] = {}  # Automation usage tracking
 
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
@@ -302,21 +304,24 @@ class HABossService:
                 logger.warning(f"[{instance_id}] Failed to initialize pattern collector: {e}")
                 logger.info(f"[{instance_id}] Continuing without pattern collection")
 
+        # 9b. Initialize automation tracker for usage-based optimization
+        logger.info(f"[{instance_id}] Initializing automation tracker...")
+        self.automation_trackers[instance_id] = AutomationTracker(
+            instance_id=instance_id,
+            database=self.database,
+        )
+        logger.info(f"[{instance_id}] ✓ Automation tracker initialized")
+
         # 10. Connect WebSocket
         logger.info(f"[{instance_id}] Connecting to Home Assistant WebSocket...")
         self.websocket_clients[instance_id] = WebSocketClient(
+            instance=instance,
             config=self.config,
             entity_discovery=self.entity_discoveries.get(instance_id),
+            automation_tracker=self.automation_trackers.get(instance_id),
             on_state_changed=lambda event: self._on_websocket_state_changed(instance_id, event),
-            url=url,
-            token=token,
         )
-        await self.websocket_clients[instance_id].connect()
-        await self.websocket_clients[instance_id].subscribe_events("state_changed")
-
-        # Subscribe to call_service events for discovery refresh triggers
-        if self.entity_discoveries.get(instance_id):
-            await self.websocket_clients[instance_id].subscribe_events("call_service")
+        await self.websocket_clients[instance_id].start()
 
         logger.info(f"[{instance_id}] ✓ WebSocket connected and subscribed")
 
@@ -433,12 +438,9 @@ class HABossService:
     def _start_background_tasks(self) -> None:
         """Start all background tasks for all instances."""
         # Start tasks for each instance
-        for instance_id, websocket_client in self.websocket_clients.items():
-            # WebSocket receiver
-            task = asyncio.create_task(websocket_client.start())  # type: ignore
-            task.set_name(f"websocket_receiver_{instance_id}")
-            self._tasks.append(task)
-
+        # Note: WebSocket is already started in _initialize_instance() via start()
+        # which creates its own internal listening loop - no need to start again here
+        for instance_id in self.websocket_clients:
             # Periodic REST snapshot validation (every 5 minutes)
             task = asyncio.create_task(self._periodic_snapshot_validation(instance_id))
             task.set_name(f"periodic_snapshot_validation_{instance_id}")
