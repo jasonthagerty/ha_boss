@@ -5,6 +5,7 @@ from ha_boss.automation.analyzer import (
     AutomationAnalyzer,
     Suggestion,
     SuggestionSeverity,
+    UsageStatistics,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "AutomationAnalyzer",
     "Suggestion",
     "SuggestionSeverity",
+    "UsageStatistics",
 ]
