@@ -50,7 +50,7 @@ class ToolsSettings(BaseSettings):
     """Tool enablement settings."""
 
     enabled: list[str] = Field(
-        default=["monitoring", "healing", "patterns", "service"],
+        default=["monitoring", "healing", "patterns", "service", "automations"],
         description="Enabled tool categories",
     )
 
@@ -153,7 +153,7 @@ def validate_config(config: MCPConfig) -> None:
             raise ValueError("OAuth is enabled but base_url is missing")
 
     # Validate tool categories
-    valid_categories = {"monitoring", "healing", "patterns", "service"}
+    valid_categories = {"monitoring", "healing", "patterns", "service", "automations"}
     invalid = set(config.tools.enabled) - valid_categories
     if invalid:
         raise ValueError(f"Invalid tool categories: {invalid}")

@@ -256,42 +256,51 @@ class HABossAPIClient:
         params = {"ai_insights": include_ai_insights}
         return await self._request("GET", "/api/patterns/summary", params=params)
 
-    # Automation (Future Phase 2)
+    # Automation Analysis
     async def analyze_automation(
-        self, automation_id: str, include_ai: bool = True
+        self,
+        automation_id: str,
+        include_ai: bool = True,
+        include_usage: bool = False,
+        days: int = 30,
+        instance_id: str = "default",
     ) -> dict[str, Any]:
         """Analyze automation for optimization suggestions.
 
         Args:
             automation_id: Automation ID from Home Assistant
             include_ai: Include AI-powered suggestions
+            include_usage: Include usage-based analysis from execution history
+            days: Days of usage data to analyze (1-90)
+            instance_id: Home Assistant instance identifier
 
         Returns:
-            Analysis with suggestions and complexity score
+            Analysis with suggestions, complexity score, and optional usage statistics
         """
-        params = {"include_ai": include_ai}
         return await self._request(
             "POST",
             "/api/automations/analyze",
             json={"automation_id": automation_id},
-            params=params,
+            params={
+                "include_ai": include_ai,
+                "include_usage": include_usage,
+                "days": days,
+                "instance_id": instance_id,
+            },
         )
 
-    async def generate_automation(
-        self, prompt: str, mode: str = "single", dry_run: bool = True
-    ) -> dict[str, Any]:
-        """Generate automation from natural language prompt.
+    async def list_automations(self, instance_id: str = "default") -> list[dict[str, Any]]:
+        """List all automations from Home Assistant.
 
         Args:
-            prompt: Natural language description
-            mode: Generation mode ("single" or "multiple")
-            dry_run: Test without creating
+            instance_id: Home Assistant instance identifier
 
         Returns:
-            Generated automation YAML and validation results
+            List of automation entities with states and attributes
         """
-        return await self._request(
-            "POST",
-            "/api/automations/generate",
-            json={"prompt": prompt, "mode": mode, "dry_run": dry_run},
+        response = await self._request(
+            "GET",
+            "/api/automations",
+            params={"instance_id": instance_id},
         )
+        return response.get("automations", [])

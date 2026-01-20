@@ -17,7 +17,7 @@ from ha_boss_mcp.clients.haboss_api import (
     HABossConnectionError,
 )
 from ha_boss_mcp.config import MCPConfig, load_config, validate_config
-from ha_boss_mcp.tools import healing, monitoring, patterns, service
+from ha_boss_mcp.tools import automations, healing, monitoring, patterns, service
 
 
 async def create_server(config: MCPConfig | None = None) -> FastMCP:
@@ -46,13 +46,15 @@ async def create_server(config: MCPConfig | None = None) -> FastMCP:
         "HA Boss",
         instructions="""
         HA Boss MCP Server provides access to Home Assistant monitoring,
-        healing, and pattern analysis capabilities via the Model Context Protocol.
+        healing, pattern analysis, and automation optimization capabilities
+        via the Model Context Protocol.
 
         Available tool categories:
         - Monitoring: Entity states, service status, history
         - Healing: Integration reloads, healing actions, statistics
         - Pattern Analysis: Reliability stats, failure patterns, anomalies
         - Service Management: Health checks, configuration
+        - Automations: Analysis, execution history, usage statistics
 
         All healing operations default to dry-run mode for safety.
         Use with care when executing actual healing actions.
@@ -113,6 +115,11 @@ async def create_server(config: MCPConfig | None = None) -> FastMCP:
         await service.register_tools(mcp, api_client, db_reader)
         print("  ✓ Service management tools (2)", file=sys.stderr)
         tool_count += 2
+
+    if "automations" in config.tools.enabled:
+        automations.register_tools(mcp, api_client, db_reader)
+        print("  ✓ Automation tools (5)", file=sys.stderr)
+        tool_count += 5
 
     print(f"✓ Registered {tool_count} tools", file=sys.stderr)
 

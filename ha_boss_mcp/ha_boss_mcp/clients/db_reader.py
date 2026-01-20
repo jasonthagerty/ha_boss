@@ -398,3 +398,173 @@ class DBReader:
             async with db.execute(query) as cursor:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
+
+    # Automation Tracking Methods (Phase 3)
+
+    async def get_automation_executions(
+        self,
+        automation_id: str | None = None,
+        instance_id: str = "default",
+        days: int = 30,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Get automation execution history.
+
+        Args:
+            automation_id: Optional automation ID filter
+            instance_id: Home Assistant instance identifier
+            days: Days of history to retrieve
+            limit: Maximum executions to return
+
+        Returns:
+            List of execution records
+        """
+        since = datetime.utcnow() - timedelta(days=days)
+
+        where_clauses = ["instance_id = ?", "executed_at >= ?"]
+        params: list[Any] = [instance_id, since.isoformat()]
+
+        if automation_id:
+            where_clauses.append("automation_id = ?")
+            params.append(automation_id)
+
+        where_clause = " AND ".join(where_clauses)
+
+        await self.ensure_ready()
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            query = f"""
+                SELECT id, instance_id, automation_id, executed_at,
+                       trigger_type, duration_ms, success, error_message
+                FROM automation_executions
+                WHERE {where_clause}
+                ORDER BY executed_at DESC
+                LIMIT ?
+            """
+            async with db.execute(query, params + [limit]) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def get_automation_service_calls(
+        self,
+        automation_id: str | None = None,
+        instance_id: str = "default",
+        days: int = 30,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Get service calls made by automations.
+
+        Args:
+            automation_id: Optional automation ID filter
+            instance_id: Home Assistant instance identifier
+            days: Days of history to retrieve
+            limit: Maximum service calls to return
+
+        Returns:
+            List of service call records
+        """
+        since = datetime.utcnow() - timedelta(days=days)
+
+        where_clauses = ["instance_id = ?", "called_at >= ?"]
+        params: list[Any] = [instance_id, since.isoformat()]
+
+        if automation_id:
+            where_clauses.append("automation_id = ?")
+            params.append(automation_id)
+
+        where_clause = " AND ".join(where_clauses)
+
+        await self.ensure_ready()
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            query = f"""
+                SELECT id, instance_id, automation_id, service_name,
+                       entity_id, called_at, response_time_ms, success
+                FROM automation_service_calls
+                WHERE {where_clause}
+                ORDER BY called_at DESC
+                LIMIT ?
+            """
+            async with db.execute(query, params + [limit]) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def get_automation_usage_stats(
+        self,
+        automation_id: str,
+        instance_id: str = "default",
+        days: int = 30,
+    ) -> dict[str, Any]:
+        """Get aggregated usage statistics for an automation.
+
+        Args:
+            automation_id: Automation ID
+            instance_id: Home Assistant instance identifier
+            days: Days of data to analyze
+
+        Returns:
+            Dict with execution_count, failure_count, avg_duration_ms,
+            service_call_count, most_common_trigger, last_executed
+        """
+        since = datetime.utcnow() - timedelta(days=days)
+
+        await self.ensure_ready()
+        async with aiosqlite.connect(self.db_path) as db:
+            # Get execution stats
+            async with db.execute(
+                """
+                SELECT
+                    COUNT(*) as execution_count,
+                    SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failure_count,
+                    AVG(duration_ms) as avg_duration_ms,
+                    MAX(executed_at) as last_executed
+                FROM automation_executions
+                WHERE instance_id = ? AND automation_id = ? AND executed_at >= ?
+                """,
+                (instance_id, automation_id, since.isoformat()),
+            ) as cursor:
+                row = await cursor.fetchone()
+                execution_count = row[0] if row else 0
+                failure_count = row[1] if row else 0
+                avg_duration_ms = row[2] if row else None
+                last_executed = row[3] if row else None
+
+            # Get most common trigger type
+            async with db.execute(
+                """
+                SELECT trigger_type, COUNT(*) as cnt
+                FROM automation_executions
+                WHERE instance_id = ? AND automation_id = ? AND executed_at >= ?
+                      AND trigger_type IS NOT NULL
+                GROUP BY trigger_type
+                ORDER BY cnt DESC
+                LIMIT 1
+                """,
+                (instance_id, automation_id, since.isoformat()),
+            ) as cursor:
+                row = await cursor.fetchone()
+                most_common_trigger = row[0] if row else None
+
+            # Get service call count
+            async with db.execute(
+                """
+                SELECT COUNT(*) as service_call_count
+                FROM automation_service_calls
+                WHERE instance_id = ? AND automation_id = ? AND called_at >= ?
+                """,
+                (instance_id, automation_id, since.isoformat()),
+            ) as cursor:
+                row = await cursor.fetchone()
+                service_call_count = row[0] if row else 0
+
+            return {
+                "automation_id": automation_id,
+                "instance_id": instance_id,
+                "days": days,
+                "execution_count": execution_count,
+                "failure_count": failure_count,
+                "avg_duration_ms": round(avg_duration_ms, 2) if avg_duration_ms else None,
+                "service_call_count": service_call_count,
+                "most_common_trigger": most_common_trigger,
+                "last_executed": last_executed,
+            }

@@ -131,3 +131,66 @@ class ConfigSummary(BaseModel):
     grace_period_seconds: int = Field(description="Grace period before triggering healing")
     api_enabled: bool = Field(description="Whether REST API is enabled")
     llm_enabled: bool = Field(description="Whether LLM features are enabled")
+
+
+# Automation Tracking Models (Phase 3)
+class AutomationExecution(BaseModel):
+    """Automation execution record."""
+
+    id: int = Field(description="Execution record ID")
+    instance_id: str = Field(description="Home Assistant instance identifier")
+    automation_id: str = Field(description="Automation entity ID")
+    executed_at: str = Field(description="Execution timestamp (ISO format)")
+    trigger_type: str | None = Field(description="Trigger type (state, time, event, etc.)")
+    duration_ms: int | None = Field(description="Execution duration in milliseconds")
+    success: bool = Field(description="Whether execution succeeded")
+    error_message: str | None = Field(description="Error message if failed")
+
+
+class AutomationServiceCall(BaseModel):
+    """Service call made by an automation."""
+
+    id: int = Field(description="Service call record ID")
+    instance_id: str = Field(description="Home Assistant instance identifier")
+    automation_id: str = Field(description="Automation that made the call")
+    service_name: str = Field(description="Service called (e.g., 'light.turn_on')")
+    entity_id: str | None = Field(description="Target entity ID")
+    called_at: str = Field(description="Call timestamp (ISO format)")
+    response_time_ms: int | None = Field(description="Service response time in milliseconds")
+    success: bool = Field(description="Whether call succeeded")
+
+
+class UsageStatistics(BaseModel):
+    """Aggregated automation usage statistics."""
+
+    automation_id: str = Field(description="Automation entity ID")
+    instance_id: str = Field(description="Home Assistant instance identifier")
+    days: int = Field(description="Days of data analyzed")
+    execution_count: int = Field(description="Total executions in period")
+    failure_count: int = Field(description="Failed executions in period")
+    avg_duration_ms: float | None = Field(description="Average execution duration")
+    service_call_count: int = Field(description="Total service calls made")
+    most_common_trigger: str | None = Field(description="Most frequent trigger type")
+    last_executed: str | None = Field(description="Last execution timestamp (ISO format)")
+
+
+class AutomationInfo(BaseModel):
+    """Basic automation information."""
+
+    automation_id: str = Field(
+        description="Automation entity ID (e.g., 'automation.bedroom_lights')"
+    )
+    alias: str | None = Field(description="Human-readable name")
+    state: str = Field(description="Current state (on/off)")
+    last_triggered: str | None = Field(description="Last trigger timestamp (ISO format)")
+
+
+class AutomationAnalysis(BaseModel):
+    """Automation analysis result."""
+
+    automation_id: str = Field(description="Automation entity ID")
+    alias: str | None = Field(description="Human-readable name")
+    analysis: str = Field(description="AI-generated analysis text")
+    suggestions: list[str] = Field(description="Optimization suggestions")
+    complexity_score: int | None = Field(description="Complexity score (1-10)")
+    usage_stats: UsageStatistics | None = Field(description="Usage statistics if requested")
