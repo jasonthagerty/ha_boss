@@ -374,11 +374,6 @@ class Dashboard {
       this.analyzeAutomation();
     });
 
-    document.getElementById('generateForm').addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.generateAutomation();
-    });
-
     document.getElementById('healingForm').addEventListener('submit', (e) => {
       e.preventDefault();
       this.triggerHealing();
@@ -883,7 +878,6 @@ class Dashboard {
   async loadAutomationsTab() {
     // Clear previous results
     document.getElementById('analyzeResult').classList.add('hidden');
-    document.getElementById('generateResult').classList.add('hidden');
   }
 
   /**
@@ -923,49 +917,6 @@ class Dashboard {
     } catch (error) {
       console.error('Error analyzing automation:', error);
       resultDiv.innerHTML = Components.errorAlert(`Failed to analyze: ${error.message}`);
-    }
-  }
-
-  /**
-   * Generate automation
-   */
-  async generateAutomation() {
-    const description = document.getElementById('automationDescription').value.trim();
-    const mode = document.getElementById('automationMode').value;
-    const resultDiv = document.getElementById('generateResult');
-
-    if (!description) return;
-
-    resultDiv.innerHTML = Components.spinner();
-    resultDiv.classList.remove('hidden');
-
-    try {
-      const result = await this.api.generateAutomation(description, mode);
-
-      const html = `
-        <div class="space-y-4 p-4 bg-gray-50 rounded">
-          <div class="flex items-center justify-between">
-            <h3 class="font-medium text-gray-900">${result.alias}</h3>
-            ${result.is_valid ? Components.statusBadge('healthy', 'Valid') : Components.statusBadge('error', 'Invalid')}
-          </div>
-          <pre class="text-xs bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto">${result.yaml_content}</pre>
-          ${result.validation_errors && result.validation_errors.length > 0 ? `
-            <div>
-              <h4 class="text-sm font-medium text-red-900 mb-2">Validation Errors:</h4>
-              <ul class="list-disc list-inside text-sm text-red-700">
-                ${result.validation_errors.map(e => `<li>${e}</li>`).join('')}
-              </ul>
-            </div>
-          ` : ''}
-        </div>
-      `;
-
-      resultDiv.innerHTML = html;
-      this.showToast('Automation generated successfully', 'success');
-
-    } catch (error) {
-      console.error('Error generating automation:', error);
-      resultDiv.innerHTML = Components.errorAlert(`Failed to generate: ${error.message}`);
     }
   }
 

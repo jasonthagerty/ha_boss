@@ -220,21 +220,6 @@ export class APIClient {
   }
 
   /**
-   * Generate a new automation from natural language
-   * POST /api/automations/generate
-   * @param {string} description - Natural language description
-   * @param {string} mode - Automation mode (default: 'single')
-   * @param {string|null} instanceId - Instance ID (null to use current instance)
-   */
-  async generateAutomation(description, mode = 'single', instanceId = null) {
-    const params = new URLSearchParams();
-    this.addInstanceParam(params, instanceId);
-    return this.request('POST', `/automations/generate?${params}`, {
-      body: JSON.stringify({ description, mode })
-    });
-  }
-
-  /**
    * Create an automation in Home Assistant
    * POST /api/automations/create
    * @param {string} automationYaml - Automation YAML content
