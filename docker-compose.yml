@@ -2,9 +2,6 @@ services:
   haboss:
     image: ghcr.io/jasonthagerty/ha-boss:latest
     pull_policy: always
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: ha-boss
 
     # Restart policy for reliability
