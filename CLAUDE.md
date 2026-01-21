@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HA Boss is a standalone Python service that monitors Home Assistant instances, automatically heals integration failures, and uses AI to generate and optimize automations. The project follows an MVP-first approach, starting with reliable monitoring and auto-healing, then adding intelligence features incrementally.
+HA Boss is a standalone Python service that monitors Home Assistant instances, automatically heals integration failures, and uses AI to analyze and optimize automations. The project follows an MVP-first approach, starting with reliable monitoring and auto-healing, then adding intelligence features incrementally.
 
 ### Core Capabilities
 
@@ -23,12 +23,13 @@ HA Boss is a standalone Python service that monitors Home Assistant instances, a
 
 **Phase 3 (AI-Powered Intelligence Layer - Complete)**:
 - Local LLM integration (Ollama) for enhanced notifications
-- Claude API integration for complex reasoning and automation generation
+- Claude API integration for complex reasoning and automation analysis
 - Intelligent LLM router with local-first fallback strategy
 - Pattern-based anomaly detection with AI-generated insights
 - Weekly AI-analyzed summary reports
 - Automation analysis with optimization suggestions
-- Natural language automation generation
+- Real-time automation usage tracking (executions, service calls, statistics)
+- MCP server with 17 tools for AI assistant integration
 - Performance benchmarks validating < 15s response times
 
 **Phase 3 LLM Stack Decision** (see `docs/LLM_SETUP.md` for details):
@@ -175,8 +176,8 @@ ha_boss/
 │   │   ├── pattern_collector.py # Pattern data collection
 │   │   └── reliability_analyzer.py # Integration reliability analysis
 │   ├── automation/             # Automation management
-│   │   ├── analyzer.py        # Automation analysis
-│   │   └── generator.py       # AI automation generation
+│   │   ├── analyzer.py        # Automation analysis with AI suggestions
+│   │   └── tracker.py         # Real-time automation usage tracking
 │   ├── notifications/          # Notification system
 │   │   ├── manager.py         # Notification routing
 │   │   └── templates.py       # Message templates
@@ -194,6 +195,14 @@ ha_boss/
 │   └── .env.example          # Environment variables
 ├── data/                      # Runtime data (created by Docker)
 │   └── ha_boss.db            # SQLite database
+├── ha_boss_mcp/               # MCP Server package
+│   ├── ha_boss_mcp/           # MCP server implementation
+│   │   ├── clients/           # API and database clients
+│   │   ├── tools/             # MCP tool implementations
+│   │   ├── server.py          # FastMCP server setup
+│   │   ├── config.py          # MCP configuration
+│   │   └── models.py          # Pydantic response models
+│   └── pyproject.toml         # MCP package metadata
 ├── .claude/                   # Claude Code configuration
 ├── .github/                   # GitHub configuration
 ├── Dockerfile                 # Docker image
@@ -236,8 +245,8 @@ async def call_ha_api_with_retry(
 **Database Design**:
 - SQLAlchemy async with aiosqlite
 - Models defined with type hints
-- Migrations via Alembic (future)
-- Separate tables for: entities, health_events, healing_actions, integrations
+- Schema versioning with automatic migrations
+- Tables: entities, health_events, healing_actions, integrations, pattern_events, automation_executions, automation_service_calls
 
 ### Component Interactions
 
@@ -290,6 +299,45 @@ async def call_ha_api_with_retry(
       └───────────────┘
 ```
 
+### MCP Server Integration
+
+HA Boss includes an MCP (Model Context Protocol) server (`ha_boss_mcp/`) that exposes monitoring, healing, and automation features to AI assistants like Claude.
+
+**Tool Categories (17 tools total)**:
+- **Monitoring** (4 tools): Entity states, service status, history queries
+- **Healing** (3 tools): Trigger healing, view actions, statistics
+- **Patterns** (3 tools): Integration reliability, failure events, anomalies
+- **Service** (2 tools): Health checks, configuration summary
+- **Automations** (5 tools): Analysis, execution history, service calls, usage stats, list automations
+
+**Architecture**:
+```
+┌─────────────────────────────────────────┐
+│         AI Assistant (Claude)           │
+└─────────────────┬───────────────────────┘
+                  │ MCP Protocol
+┌─────────────────▼───────────────────────┐
+│         HA Boss MCP Server              │
+│         (FastMCP + Tools)               │
+├─────────────────────────────────────────┤
+│  ┌─────────────┐    ┌─────────────┐    │
+│  │ API Client  │    │ DB Reader   │    │
+│  │ (REST)      │    │ (SQLite)    │    │
+│  └──────┬──────┘    └──────┬──────┘    │
+└─────────┼──────────────────┼───────────┘
+          │                  │
+          ▼                  ▼
+┌─────────────────┐  ┌─────────────────┐
+│  HA Boss API    │  │  HA Boss DB     │
+│  (FastAPI)      │  │  (SQLite)       │
+└─────────────────┘  └─────────────────┘
+```
+
+**Transport Options**:
+- `stdio`: Default for Claude Code integration
+- `http`: REST-based transport for web clients
+- `sse`: Server-sent events for real-time updates
+
 ### Data Flow
 
 **Startup Sequence**:
@@ -316,6 +364,18 @@ async def call_ha_api_with_retry(
 3. Optional: Fall back to REST polling during disconnection
 4. On reconnect: fetch state history since last event to catch missed changes
 5. Resume normal WebSocket monitoring
+
+**Automation Tracking Flow** (Phase 3):
+1. WebSocket receives `automation_triggered` event
+2. AutomationTracker extracts automation_id and trigger metadata
+3. Execution record created in `automation_executions` table
+4. Service calls tracked via `call_service` events → `automation_service_calls` table
+5. Statistics aggregated on-demand for usage analysis
+6. Data exposed via MCP tools for AI-assisted optimization
+
+**Note**: Automation tracking has a known limitation where `automation_id` detection
+depends on Home Assistant including `context.parent_id` in events. Some trigger
+types may not provide this context, resulting in `unknown` automation attribution.
 
 ### Code Organization Rules
 

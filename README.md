@@ -71,14 +71,14 @@ haboss init && haboss start --foreground
 
 ## 🔌 MCP Server (Model Context Protocol)
 
-**NEW:** HA Boss includes an optional MCP server that exposes 12 tools to AI agents like Claude Desktop.
+**NEW:** HA Boss includes an optional MCP server that exposes 17 tools to AI agents like Claude Desktop.
 
 ```bash
 # Start with MCP server enabled
 docker-compose --profile mcp up -d
 ```
 
-**Available Tools:** Monitoring (4), Healing (3), Pattern Analysis (3), Service Management (2)
+**Available Tools:** Monitoring (4), Healing (3), Pattern Analysis (3), Service Management (2), Automations (5)
 
 **Claude Desktop Integration:**
 ```json
@@ -146,7 +146,7 @@ haboss automation analyze bedroom_lights
 │  WebSocket Monitor ──▶ State      │
 │  Health Monitor ──▶ Healing Mgr    │
 │  Pattern Collector ──▶ AI Analyzer │
-│  MCP Server ──▶ 12 AI Agent Tools  │
+│  MCP Server ──▶ 17 AI Agent Tools  │
 └────────────────────────────────────┘
          │              │
          │ WebSocket    │ SQLite

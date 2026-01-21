@@ -11,13 +11,14 @@ Welcome to the HA Boss documentation! This wiki provides comprehensive guides fo
   - Real-time dashboard with charts, monitoring, and API testing
   - See [REST API](REST-API) and [Dashboard](Dashboard) for complete documentation
 
-- **Automation Creation** - Generate and create automations directly in Home Assistant via API
-  - Preview-first workflow: review generated YAML before creating
-  - Use `haboss automation generate "description" --create` to create in HA
-  - See [AI Features - Automation Generation](AI-Features#automation-generation) for details
+- **Automation Tracking** - Real-time execution and service call tracking
+  - Track automation executions with trigger types, durations, and success rates
+  - Monitor service calls made by automations with response times
+  - Access via CLI (`haboss automation stats`) or MCP tools (5 new tools)
+  - See [AI Features - Automation Usage Tracking](AI-Features#automation-usage-tracking) for details
 
-- **Enhanced CLI** - Improved automation commands with safer defaults
-  - Preview by default, opt-in creation with `--create` flag
+- **Enhanced CLI** - Improved automation commands with usage tracking
+  - View execution history and statistics from command line
   - Rich terminal UI with formatted output
   - See [CLI Commands - Automation Commands](CLI-Commands#automation-commands) for full reference
 
@@ -82,7 +83,7 @@ HA Boss is production-ready with all three development phases complete:
 
 - ✅ **Phase 1 (MVP)** - Monitoring, auto-healing, Docker deployment
 - ✅ **Phase 2 (Pattern Analysis)** - Reliability tracking, database schema
-- ✅ **Phase 3 (AI Intelligence)** - Local LLM, Claude integration, automation generation
+- ✅ **Phase 3 (AI Intelligence)** - Local LLM, Claude integration, automation analysis and tracking
 
 **Test Coverage:** 81% (528 tests passing)
 

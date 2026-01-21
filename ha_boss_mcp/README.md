@@ -1,6 +1,6 @@
 # HA Boss MCP Server
 
-Model Context Protocol server for HA Boss - enables AI agents to monitor and manage Home Assistant instances.
+Model Context Protocol server for HA Boss - enables AI agents to monitor and manage Home Assistant instances through 17 specialized tools.
 
 ## Features
 
@@ -8,6 +8,7 @@ Model Context Protocol server for HA Boss - enables AI agents to monitor and man
 - **Healing**: Trigger integration reloads and view healing history
 - **Pattern Analysis**: Access reliability statistics and failure patterns
 - **Service Management**: Health checks and configuration access
+- **Automations**: Analyze automations and track execution history
 
 ## Installation
 
@@ -49,6 +50,13 @@ See main HA Boss repository for Docker deployment instructions.
 ### Service Management (2 tools)
 - `health_check` - Comprehensive health status
 - `get_config` - Current configuration (sanitized)
+
+### Automations (5 tools)
+- `analyze_automation` - AI-powered automation analysis with suggestions
+- `get_automation_executions` - Execution history with trigger and duration info
+- `get_automation_service_calls` - Service calls made by automations
+- `get_automation_usage_stats` - Aggregated statistics (execution count, failure rate, etc.)
+- `list_automations` - List all automations with current state
 
 ## Configuration
 

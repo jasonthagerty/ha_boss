@@ -11,7 +11,7 @@ This guide covers HA Boss Phase 3 AI-powered intelligence features, including se
   - [Anomaly Detection](#anomaly-detection)
   - [Weekly Summary Reports](#weekly-summary-reports)
   - [Automation Analysis](#automation-analysis)
-  - [Automation Generation](#automation-generation)
+  - [Automation Usage Tracking](#automation-usage-tracking)
 - [Setup](#setup)
   - [Ollama Setup (Local LLM)](#ollama-setup-local-llm)
   - [Claude API Setup (Optional)](#claude-api-setup-optional)
@@ -37,7 +37,7 @@ HA Boss Phase 3 introduces AI-powered intelligence features using a **hybrid LLM
 | Anomaly Detection | Identifies unusual failure patterns | Ollama | < 5s |
 | Weekly Summaries | AI-analyzed health reports | Ollama | < 15s |
 | Automation Analysis | Suggests improvements | Ollama | < 5s |
-| Automation Generation | Creates automations from text | Claude | < 15s |
+| Automation Usage Tracking | Real-time execution and service call tracking | N/A | Real-time |
 
 ### Key Benefits
 
@@ -294,92 +294,83 @@ haboss automation recommend automation.bedroom_lights
 
 ---
 
-### Automation Generation
+### Automation Usage Tracking
 
-**What it does**: Creates Home Assistant automations from natural language descriptions
+**What it does**: Tracks automation executions and service calls in real-time for analysis and optimization
 
 **Example**:
 
 ```bash
-# Preview automation (default behavior)
-$ haboss automation generate "Turn on bedroom light when motion detected, only at night"
+# View execution history for an automation
+$ haboss automation executions automation.bedroom_lights --days 7
 
-Generating automation with Claude API...
+Automation Executions: automation.bedroom_lights
+Period: Last 7 days
 
-╭─────────────────────── Generated Automation ───────────────────╮
-│                                                                 │
-│ alias: Bedroom Motion Light (Night Only)                       │
-│ description: Turn on bedroom light when motion detected at night│
-│ mode: single                                                    │
-│                                                                 │
-│ trigger:                                                        │
-│   - platform: state                                            │
-│     entity_id: binary_sensor.motion_bedroom                    │
-│     to: 'on'                                                   │
-│                                                                 │
-│ condition:                                                      │
-│   - condition: sun                                             │
-│     after: sunset                                              │
-│     before: sunrise                                            │
-│                                                                 │
-│ action:                                                         │
-│   - service: light.turn_on                                     │
-│     target:                                                     │
-│       entity_id: light.bedroom                                 │
-│     data:                                                       │
-│       brightness_pct: 30                                       │
-│                                                                 │
-╰─────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────╮
+│ Executed At           │ Trigger    │ Duration │ Status          │
+├───────────────────────┼────────────┼──────────┼─────────────────┤
+│ 2024-12-20 08:30:15   │ state      │ 45ms     │ ✓ Success       │
+│ 2024-12-20 07:15:22   │ state      │ 38ms     │ ✓ Success       │
+│ 2024-12-19 22:45:10   │ time       │ 52ms     │ ✓ Success       │
+│ 2024-12-19 18:30:05   │ state      │ 41ms     │ ✗ Failed        │
+╰──────────────────────────────────────────────────────────────────╯
 
-(Preview only - use --create to create in Home Assistant)
+Total: 156 executions | 98.7% success rate | Avg: 44ms
 
-To create this automation:
-  Run again with: --create
+# View usage statistics
+$ haboss automation stats automation.bedroom_lights
 
-# Then create the automation
-$ haboss automation generate "Turn on bedroom light when motion detected, only at night" --create
+Usage Statistics: automation.bedroom_lights
+Period: Last 30 days
 
-✓ Automation created successfully!
-  ID: 1734670542123
-  Alias: Bedroom Motion Light (Night Only)
-
-View in Home Assistant: Configuration → Automations → Bedroom Motion Light (Night Only)
+Execution Count: 458
+Failure Count: 6
+Success Rate: 98.7%
+Avg Duration: 44ms
+Service Calls: 912
+Most Common Trigger: state
+Last Executed: 2024-12-20 08:30:15
 ```
 
-**Configuration**:
-```yaml
-intelligence:
-  claude_api_key: "${CLAUDE_API_KEY}"  # Required for generation
-  claude_model: "claude-3-5-sonnet-20241022"
-```
+**Features**:
+- **Real-time Tracking**: Captures every automation execution via WebSocket events
+- **Service Call Tracking**: Records all service calls made by automations
+- **Usage Statistics**: Aggregates execution counts, failure rates, and performance metrics
+- **MCP Integration**: Exposes data via 5 MCP tools for AI-assisted analysis
 
 **CLI Commands**:
 ```bash
-# Preview automation (default - recommended first step)
-haboss automation generate "description"
+# View execution history
+haboss automation executions [automation_id] --days 7
 
-# Create automation in Home Assistant
-haboss automation generate "description" --create
+# View service calls
+haboss automation service-calls [automation_id] --days 7
 
-# Generate with specific mode and create
-haboss automation generate "description" --mode restart --create
+# Get usage statistics
+haboss automation stats automation.bedroom_lights --days 30
 
-# Typical workflow: preview then create
-haboss automation generate "description"  # Review output first
-haboss automation generate "description" --create  # Create if approved
+# List all automations with status
+haboss automation list
 ```
 
-**Workflow**:
-1. **Preview**: Generate and review the automation YAML (default behavior)
-2. **Validate**: Check that entities, triggers, and conditions are correct
-3. **Create**: Use `--create` flag to create the automation in Home Assistant
-4. **Test**: Test the automation in the Home Assistant UI
+**MCP Tools**:
+- `get_automation_executions` - Query execution history
+- `get_automation_service_calls` - Query service call history
+- `get_automation_usage_stats` - Get aggregated statistics
+- `list_automations` - List all automations
+- `analyze_automation` - AI-powered analysis with usage data
 
-**LLM Used**: Claude API (complex reasoning required for correct YAML structure)
+**Data Stored**:
+- Execution timestamp and duration
+- Trigger type (state, time, event, etc.)
+- Success/failure status with error messages
+- Service calls with target entities and response times
 
-**Performance**: < 15s generation time
-
-**Validation**: Generated automations are validated against Home Assistant schema before delivery
+**Known Limitations**:
+> **Note**: Automation ID detection depends on Home Assistant including `context.parent_id`
+> in events. Some trigger types may not provide this context, resulting in `unknown`
+> automation attribution. This is a Home Assistant WebSocket API limitation.
 
 ---
 
@@ -461,7 +452,7 @@ docker-compose exec ollama ollama list
 
 ### Claude API Setup (Optional)
 
-Claude API is **optional** and only used for automation generation. All other features work with Ollama alone.
+Claude API is **optional** and provides enhanced automation analysis. All other features work with Ollama alone.
 
 #### 1. Get API Key
 
@@ -501,12 +492,12 @@ Claude API charges per token:
 - **Output**: ~$15 per million tokens
 
 **HA Boss Usage**:
-- Automation generation: ~500-1000 tokens per request
-- Estimated cost: < $0.01 per automation
-- Monthly cost (10 automations): < $0.10
+- Automation analysis: ~500-1000 tokens per request
+- Estimated cost: < $0.01 per analysis
+- Monthly cost (10 analyses): < $0.10
 
 **Cost Control**:
-- Only used for automation generation (not notifications)
+- Only used for complex automation analysis (not notifications)
 - Keep `claude_enabled: false` to disable Claude completely
 - Monitor usage at https://console.anthropic.com
 
@@ -626,7 +617,7 @@ Validated on Intel CPU with Ollama (Llama 3.1 8B):
 | Anomaly detection | < 5s | 3-4s | ✅ |
 | Weekly summary | < 15s | 10-12s | ✅ |
 | Automation analysis | < 5s | 3-4s | ✅ |
-| Automation generation (Claude) | < 15s | 6-10s | ✅ |
+| Automation tracking (DB write) | < 100ms | 10-50ms | ✅ |
 
 See `tests/performance/test_ai_performance.py` for detailed benchmarks.
 
@@ -777,21 +768,24 @@ Use weekly summaries to identify issues:
 - Monitor reliability trends
 - Act on AI suggestions
 
-### 5. Use Automation Analysis Before Generation
+### 5. Use Automation Tracking for Optimization
 
-Before generating new automations, analyze existing ones:
+Use execution history and statistics to optimize automations:
 ```bash
-# Analyze existing automation for patterns
-haboss automation analyze automation.existing_pattern
+# Check for high-failure automations
+haboss automation stats automation.bedroom_lights
 
-# Use insights to inform new automation generation
-haboss automation generate "similar to existing_pattern but for bedroom"
+# View execution patterns to identify issues
+haboss automation executions automation.bedroom_lights --days 30
+
+# Analyze with usage data for AI recommendations
+haboss automation analyze automation.bedroom_lights --include-usage
 ```
 
 ### 6. Cost Control for Claude API
 
 Minimize Claude costs:
-- Only enable Claude when needed (set `claude_enabled: true` only for automation generation)
+- Only enable Claude when needed for complex analysis
 - Set monthly budget alerts at https://console.anthropic.com
 - Monitor usage regularly
 - Keep `claude_enabled: false` for local-only mode if cost is a concern
@@ -813,6 +807,6 @@ Minimize Claude costs:
 
 ---
 
-**Last Updated**: 2024-11-30
+**Last Updated**: 2025-01-20
 **Phase**: 3 (AI-Powered Intelligence Layer)
 **Status**: Complete ✅
