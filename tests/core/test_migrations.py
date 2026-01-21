@@ -398,3 +398,115 @@ async def test_migration_error_handling(v3_database):
     # Verify it succeeded
     version = await v3_database.get_version()
     assert version == 4
+
+
+class TestMigrationRegistry:
+    """Tests for the migration registry system."""
+
+    def test_registry_has_all_migrations(self):
+        """Test that all expected migrations are registered."""
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
+        versions = MIGRATION_REGISTRY.all_versions
+        assert 3 in versions, "v3 migration should be registered"
+        assert 4 in versions, "v4 migration should be registered"
+        assert 5 in versions, "v5 migration should be registered"
+
+    def test_registry_latest_version(self):
+        """Test that latest_version returns correct value."""
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
+        assert MIGRATION_REGISTRY.latest_version == CURRENT_DB_VERSION
+
+    def test_get_migrations_for_upgrade_v2_to_v5(self):
+        """Test getting all migrations for a full upgrade path."""
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
+        migrations = MIGRATION_REGISTRY.get_migrations_for_upgrade(2, 5)
+
+        assert len(migrations) == 3
+        assert migrations[0].target_version == 3
+        assert migrations[1].target_version == 4
+        assert migrations[2].target_version == 5
+
+    def test_get_migrations_for_upgrade_partial(self):
+        """Test getting migrations for partial upgrade."""
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
+        migrations = MIGRATION_REGISTRY.get_migrations_for_upgrade(3, 5)
+
+        assert len(migrations) == 2
+        assert migrations[0].target_version == 4
+        assert migrations[1].target_version == 5
+
+    def test_get_migrations_for_upgrade_single(self):
+        """Test getting single migration."""
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
+        migrations = MIGRATION_REGISTRY.get_migrations_for_upgrade(4, 5)
+
+        assert len(migrations) == 1
+        assert migrations[0].target_version == 5
+
+    def test_get_migrations_for_upgrade_none_needed(self):
+        """Test when no migrations needed."""
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
+        migrations = MIGRATION_REGISTRY.get_migrations_for_upgrade(5, 5)
+        assert len(migrations) == 0
+
+        migrations = MIGRATION_REGISTRY.get_migrations_for_upgrade(5, 3)
+        assert len(migrations) == 0
+
+    def test_get_migration_by_version(self):
+        """Test getting specific migration by version."""
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
+        migration = MIGRATION_REGISTRY.get_migration(4)
+        assert migration is not None
+        assert migration.target_version == 4
+        assert "automation" in migration.description.lower()
+
+    def test_get_migration_nonexistent(self):
+        """Test getting nonexistent migration returns None."""
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
+        migration = MIGRATION_REGISTRY.get_migration(999)
+        assert migration is None
+
+
+@pytest.mark.asyncio
+async def test_migration_creates_backup(tmp_path):
+    """Test that migration creates a backup file."""
+    db_path = tmp_path / "test_backup.db"
+    database = Database(str(db_path))
+
+    # Initialize database
+    await database.init_db()
+
+    # Manually set version to 3 to trigger migrations
+    async with database.async_session() as session:
+        await session.execute(text("DELETE FROM schema_version"))
+        v3_version = DatabaseVersion(
+            version=3,
+            applied_at=datetime.now(UTC),
+            description="Test v3",
+        )
+        session.add(v3_version)
+        await session.commit()
+
+    # Close and reopen - should trigger migration and backup
+    await database.close()
+
+    database = Database(str(db_path))
+    await database.init_db()
+
+    # Check backup file exists
+    backup_files = list(tmp_path.glob("test_backup_v3_backup_*.db"))
+    assert len(backup_files) == 1, "Backup file should be created"
+
+    # Verify backup file has content
+    backup_file = backup_files[0]
+    assert backup_file.stat().st_size > 0, "Backup file should not be empty"
+
+    await database.close()

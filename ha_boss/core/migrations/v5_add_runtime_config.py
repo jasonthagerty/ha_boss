@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 
+# Note: This function is registered via the migration registry in __init__.py
 async def migrate_v4_to_v5(session: AsyncSession) -> None:
     """Migrate database from v4 to v5.
 

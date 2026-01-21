@@ -20,6 +20,7 @@ from ha_boss.core.database import DatabaseVersion
 logger = logging.getLogger(__name__)
 
 
+# Note: This function is registered via the migration registry in __init__.py
 async def migrate_v3_to_v4(session: AsyncSession) -> None:
     """Migrate database from v3 to v4.
 

@@ -693,13 +693,15 @@ class Database:
     async def _run_migrations(self) -> None:
         """Run pending database migrations.
 
-        Checks current database version and runs migrations sequentially
-        to bring database up to CURRENT_DB_VERSION. Creates a backup before
-        any migrations are run.
+        Uses the migration registry to find and run all migrations needed
+        to upgrade from the current version to CURRENT_DB_VERSION.
+        Creates a backup before any migrations are run.
 
         Raises:
             DatabaseError: If migration fails
         """
+        from ha_boss.core.migrations import MIGRATION_REGISTRY
+
         current_version = await self.get_version()
 
         if current_version is None:
@@ -710,7 +712,23 @@ class Database:
             # Already at current version
             return
 
-        logger.info(f"Running migrations from v{current_version} to v{CURRENT_DB_VERSION}")
+        # Get all migrations needed
+        migrations = MIGRATION_REGISTRY.get_migrations_for_upgrade(
+            current_version, CURRENT_DB_VERSION
+        )
+
+        if not migrations:
+            logger.warning(
+                f"No migrations found for v{current_version} → v{CURRENT_DB_VERSION}. "
+                "This may indicate missing migration files."
+            )
+            return
+
+        logger.info(
+            f"Running {len(migrations)} migration(s) from v{current_version} to v{CURRENT_DB_VERSION}"
+        )
+        for m in migrations:
+            logger.info(f"  - v{m.target_version}: {m.description}")
 
         # Create backup before any migrations
         backup_path = await self._backup_database(current_version)
@@ -718,37 +736,25 @@ class Database:
 
         try:
             # Run migrations sequentially
-            if current_version == 2 and CURRENT_DB_VERSION >= 3:
-                from ha_boss.core.migrations.v3_add_instance_id import (
-                    migrate_v2_to_v3,
+            for migration in migrations:
+                prev_version = migration.target_version - 1
+                logger.info(
+                    f"Running migration: v{prev_version} → v{migration.target_version} "
+                    f"({migration.description})"
                 )
 
-                logger.info("Running migration: v2 → v3")
                 async with self.async_session() as session:
-                    await migrate_v2_to_v3(session)
-                logger.info("Migration v2 → v3 completed successfully")
-                current_version = 3
+                    await migration.migrate_func(session)
 
-            if current_version == 3 and CURRENT_DB_VERSION >= 4:
-                from ha_boss.core.migrations.v4_add_automation_tracking import (
-                    migrate_v3_to_v4,
+                logger.info(f"Migration to v{migration.target_version} completed successfully")
+
+            # Verify final version
+            final_version = await self.get_version()
+            if final_version != CURRENT_DB_VERSION:
+                raise DatabaseError(
+                    f"Migration completed but version mismatch: "
+                    f"expected v{CURRENT_DB_VERSION}, got v{final_version}"
                 )
-
-                logger.info("Running migration: v3 → v4")
-                async with self.async_session() as session:
-                    await migrate_v3_to_v4(session)
-                logger.info("Migration v3 → v4 completed successfully")
-                current_version = 4
-
-            if current_version == 4 and CURRENT_DB_VERSION >= 5:
-                from ha_boss.core.migrations.v5_add_runtime_config import (
-                    migrate_v4_to_v5,
-                )
-
-                logger.info("Running migration: v4 → v5")
-                async with self.async_session() as session:
-                    await migrate_v4_to_v5(session)
-                logger.info("Migration v4 → v5 completed successfully")
 
             logger.info(f"All migrations completed. Database now at v{CURRENT_DB_VERSION}")
 
