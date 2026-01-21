@@ -694,7 +694,8 @@ class Database:
         """Run pending database migrations.
 
         Checks current database version and runs migrations sequentially
-        to bring database up to CURRENT_DB_VERSION.
+        to bring database up to CURRENT_DB_VERSION. Creates a backup before
+        any migrations are run.
 
         Raises:
             DatabaseError: If migration fails
@@ -711,8 +712,23 @@ class Database:
 
         logger.info(f"Running migrations from v{current_version} to v{CURRENT_DB_VERSION}")
 
+        # Create backup before any migrations
+        backup_path = await self._backup_database(current_version)
+        logger.info(f"Created database backup at: {backup_path}")
+
         try:
             # Run migrations sequentially
+            if current_version == 2 and CURRENT_DB_VERSION >= 3:
+                from ha_boss.core.migrations.v3_add_instance_id import (
+                    migrate_v2_to_v3,
+                )
+
+                logger.info("Running migration: v2 → v3")
+                async with self.async_session() as session:
+                    await migrate_v2_to_v3(session)
+                logger.info("Migration v2 → v3 completed successfully")
+                current_version = 3
+
             if current_version == 3 and CURRENT_DB_VERSION >= 4:
                 from ha_boss.core.migrations.v4_add_automation_tracking import (
                     migrate_v3_to_v4,
@@ -734,9 +750,54 @@ class Database:
                     await migrate_v4_to_v5(session)
                 logger.info("Migration v4 → v5 completed successfully")
 
+            logger.info(f"All migrations completed. Database now at v{CURRENT_DB_VERSION}")
+
         except Exception as e:
             logger.error(f"Migration failed: {e}", exc_info=True)
+            logger.error(f"Database backup available at: {backup_path}")
             raise DatabaseError(f"Failed to run migrations: {e}") from e
+
+    async def _backup_database(self, version: int) -> Path:
+        """Create a backup of the database before migration.
+
+        Args:
+            version: Current database version (used in backup filename)
+
+        Returns:
+            Path to the backup file
+
+        Raises:
+            DatabaseError: If backup fails
+        """
+        import shutil
+
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        backup_name = f"{self.db_path.stem}_v{version}_backup_{timestamp}{self.db_path.suffix}"
+        backup_path = self.db_path.parent / backup_name
+
+        try:
+            # Close connections before backup to ensure data is flushed
+            await self.engine.dispose()
+
+            # Copy the database file
+            shutil.copy2(self.db_path, backup_path)
+
+            # Recreate the engine after backup
+            self.engine = create_async_engine(
+                f"sqlite+aiosqlite:///{self.db_path}",
+                echo=False,
+            )
+            self.async_session = async_sessionmaker(
+                self.engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+            )
+
+            logger.info(f"Database backup created: {backup_path}")
+            return backup_path
+
+        except Exception as e:
+            raise DatabaseError(f"Failed to create database backup: {e}") from e
 
     async def get_version(self) -> int | None:
         """Get current database schema version.

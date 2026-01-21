@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ha_boss.core.database import CURRENT_DB_VERSION, DatabaseVersion
+from ha_boss.core.database import DatabaseVersion
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +64,23 @@ async def migrate_v2_to_v3(session: AsyncSession) -> None:
             await _migrate_table(connection, table_name)
 
         # Update schema version
-        new_version = DatabaseVersion(
-            version=CURRENT_DB_VERSION,
-            applied_at=datetime.now(UTC),
-            description="Add instance_id for multi-instance support",
+        # Note: Use literal 3 here, not CURRENT_DB_VERSION which may be higher
+        from sqlalchemy import select
+
+        target_version = 3
+        result = await session.execute(
+            select(DatabaseVersion).where(DatabaseVersion.version == target_version)
         )
-        session.add(new_version)
-        await session.commit()
+        existing_version = result.scalar_one_or_none()
+
+        if existing_version is None:
+            new_version = DatabaseVersion(
+                version=target_version,
+                applied_at=datetime.now(UTC),
+                description="Add instance_id for multi-instance support",
+            )
+            session.add(new_version)
+            await session.commit()
 
         logger.info("Migration v2 → v3 completed successfully")
 
