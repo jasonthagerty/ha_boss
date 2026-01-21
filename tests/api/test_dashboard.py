@@ -142,7 +142,6 @@ def test_dashboard_has_required_elements(client):
 
     # Check for header elements
     assert 'id="statusIndicator"' in html
-    assert 'id="settingsBtn"' in html
 
     # Check for tab navigation
     assert 'data-tab="overview"' in html
@@ -150,6 +149,7 @@ def test_dashboard_has_required_elements(client):
     assert 'data-tab="analysis"' in html
     assert 'data-tab="automations"' in html
     assert 'data-tab="healing"' in html
+    assert 'data-tab="settings"' in html
 
     # Check for tab content containers
     assert 'id="overviewTab"' in html
@@ -157,9 +157,9 @@ def test_dashboard_has_required_elements(client):
     assert 'id="analysisTab"' in html
     assert 'id="automationsTab"' in html
     assert 'id="healingTab"' in html
+    assert 'id="settingsTab"' in html
 
     # Check for modals
-    assert 'id="settingsModal"' in html
     assert 'id="entityModal"' in html
 
     # Check for charts

@@ -536,6 +536,10 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 monitoring,
                 patterns,
                 status,
+                websocket,
+            )
+            from ha_boss.api.routes import (
+                config as config_routes,
             )
 
             # Add authentication dependency if enabled
@@ -578,6 +582,15 @@ Access the web dashboard at `/dashboard` for a visual interface.
             app.include_router(
                 healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies
             )
+            app.include_router(
+                config_routes.router,
+                prefix="/api",
+                tags=["Configuration"],
+                dependencies=dependencies,
+            )
+
+            # WebSocket endpoint (no auth - same-origin only)
+            app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])
 
             # Static file serving for dashboard
             static_dir = Path(__file__).parent.parent / "api" / "static"

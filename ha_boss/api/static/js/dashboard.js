@@ -330,15 +330,7 @@ class Dashboard {
       });
     });
 
-    // Settings modal
-    document.getElementById('settingsBtn').addEventListener('click', () => {
-      this.showSettingsModal();
-    });
-
-    document.getElementById('closeSettingsBtn').addEventListener('click', () => {
-      this.hideSettingsModal();
-    });
-
+    // API Key buttons (now in Settings tab)
     document.getElementById('saveKeyBtn').addEventListener('click', () => {
       this.saveApiKey();
     });
@@ -352,12 +344,6 @@ class Dashboard {
     });
 
     // Close modals on outside click
-    document.getElementById('settingsModal').addEventListener('click', (e) => {
-      if (e.target.id === 'settingsModal') {
-        this.hideSettingsModal();
-      }
-    });
-
     document.getElementById('entityModal').addEventListener('click', (e) => {
       if (e.target.id === 'entityModal') {
         this.hideEntityModal();
@@ -463,29 +449,6 @@ class Dashboard {
   }
 
   /**
-   * Show settings modal
-   */
-  showSettingsModal() {
-    const modal = document.getElementById('settingsModal');
-    const input = document.getElementById('apiKeyInput');
-
-    // Pre-fill with current key if exists
-    input.value = this.api.apiKey || '';
-
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-  }
-
-  /**
-   * Hide settings modal
-   */
-  hideSettingsModal() {
-    const modal = document.getElementById('settingsModal');
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
-  }
-
-  /**
    * Save API key
    */
   async saveApiKey() {
@@ -494,7 +457,6 @@ class Dashboard {
 
     if (!key) {
       this.api.setApiKey(null);
-      this.hideSettingsModal();
       this.showToast('API key cleared', 'info');
       return;
     }
@@ -503,7 +465,6 @@ class Dashboard {
     const result = await this.api.testApiKey(key);
 
     if (result.success) {
-      this.hideSettingsModal();
       this.showToast('API key saved successfully', 'success');
       this.updateStatusIndicator('connected', 'Connected');
 
@@ -1029,6 +990,12 @@ class Dashboard {
     // Store pending changes
     this.pendingSettings = {};
     this.restartRequired = false;
+
+    // Populate API key input with current value
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    if (apiKeyInput) {
+      apiKeyInput.value = this.api.apiKey || '';
+    }
 
     await Promise.all([
       this.loadConfigSettings(),
