@@ -59,7 +59,7 @@ jobs:
 
           # Check if any non-docs files changed
           # Docs-only patterns: *.md, docs/*, .claude/*, wiki files
-          CODE_CHANGES=$(echo "$CHANGED_FILES" | grep -v -E '^(.*\.md|docs/|\.claude/|CONTRIBUTING|LICENSE|\.gitignore)' || true)
+          CODE_CHANGES=$(echo "$CHANGED_FILES" | grep -v -E '^(.*\.md|docs/|\.claude/|\.github/|CONTRIBUTING|LICENSE|\.gitignore)' || true)
 
           if [ -z "$CODE_CHANGES" ]; then
             echo "should_build=false" >> $GITHUB_OUTPUT
