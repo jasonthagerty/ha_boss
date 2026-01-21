@@ -117,7 +117,9 @@ class MigrationRegistry:
 MIGRATION_REGISTRY = MigrationRegistry()
 
 
-def register_migration(target_version: int, description: str) -> Callable[
+def register_migration(
+    target_version: int, description: str
+) -> Callable[
     [Callable[[AsyncSession], Coroutine[Any, Any, None]]],
     Callable[[AsyncSession], Coroutine[Any, Any, None]],
 ]:
