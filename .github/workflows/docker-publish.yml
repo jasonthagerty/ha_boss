@@ -1,9 +1,9 @@
 name: Docker Build and Publish
 
 on:
-  # Only run after CI and Security Scan pass on main branch
+  # Only run after CI passes on main branch
   workflow_run:
-    workflows: ["CI", "Security Scan"]
+    workflows: ["CI"]
     types:
       - completed
     branches:
@@ -15,15 +15,68 @@ on:
   # Allow manual triggering
   workflow_dispatch:
 
+# Paths that should NOT trigger Docker builds (checked in the job condition)
+# Documentation, config files, and non-code changes don't need new images
+
 env:
   REGISTRY: ghcr.io
   IMAGE_OWNER: ${{ github.repository_owner }}
 
 jobs:
+  # Check if build is needed (skip for docs-only changes)
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for code changes
+        id: check
+        run: |
+          # For workflow_run, check files changed in the triggering commit
+          # For tags or manual dispatch, always build
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "Manual dispatch or tag push - will build"
+            exit 0
+          fi
+
+          # Get changed files from the last commit
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "Could not determine changed files - will build"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Check if any non-docs files changed
+          # Docs-only patterns: *.md, docs/*, .claude/*, wiki files
+          CODE_CHANGES=$(echo "$CHANGED_FILES" | grep -v -E '^(.*\.md|docs/|\.claude/|CONTRIBUTING|LICENSE|\.gitignore)' || true)
+
+          if [ -z "$CODE_CHANGES" ]; then
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "Documentation-only changes - skipping build"
+          else
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "Code changes detected - will build"
+            echo "Code files: $CODE_CHANGES"
+          fi
+
   build-and-push:
     runs-on: ubuntu-latest
-    # Only run if triggered by successful workflow runs, manual dispatch, or tags
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    needs: check-changes
+    # Only run if: code changes detected AND (successful workflow run OR manual/tag trigger)
+    if: |
+      needs.check-changes.outputs.should_build == 'true' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     permissions:
       contents: read
       packages: write
