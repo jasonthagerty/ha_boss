@@ -176,16 +176,14 @@ def test_dashboard_has_forms(client):
 
     html = response.text
 
-    # Check for automation forms
+    # Check for automation analyze form
     assert 'id="analyzeForm"' in html
-    assert 'id="generateForm"' in html
 
     # Check for healing form
     assert 'id="healingForm"' in html
 
     # Check for input fields
     assert 'id="automationId"' in html
-    assert 'id="automationDescription"' in html
     assert 'id="entityId"' in html
     assert 'id="apiKeyInput"' in html
 
