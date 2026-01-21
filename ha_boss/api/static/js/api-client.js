@@ -272,6 +272,119 @@ export class APIClient {
     return this.request('GET', `/healing/history?${params}`);
   }
 
+  // ==================== Configuration Endpoints ====================
+
+  /**
+   * Get all configuration settings with sources
+   * GET /api/config
+   */
+  async getConfig() {
+    return this.request('GET', '/config');
+  }
+
+  /**
+   * Update configuration settings
+   * PUT /api/config
+   * @param {Object} settings - Settings to update (key -> value)
+   */
+  async updateConfig(settings) {
+    return this.request('PUT', '/config', {
+      body: JSON.stringify({ settings })
+    });
+  }
+
+  /**
+   * Get configuration schema for UI generation
+   * GET /api/config/schema
+   */
+  async getConfigSchema() {
+    return this.request('GET', '/config/schema');
+  }
+
+  /**
+   * Validate configuration without applying
+   * POST /api/config/validate
+   * @param {Object} settings - Settings to validate
+   */
+  async validateConfig(settings) {
+    return this.request('POST', '/config/validate', {
+      body: JSON.stringify({ settings })
+    });
+  }
+
+  /**
+   * Request configuration reload
+   * POST /api/config/reload
+   */
+  async reloadConfig() {
+    return this.request('POST', '/config/reload');
+  }
+
+  /**
+   * Get all configured HA instances
+   * GET /api/config/instances
+   */
+  async getConfigInstances() {
+    return this.request('GET', '/config/instances');
+  }
+
+  /**
+   * Add a new HA instance
+   * POST /api/config/instances
+   * @param {Object} instance - Instance configuration
+   * @param {string} instance.instance_id - Unique identifier
+   * @param {string} instance.url - Home Assistant URL
+   * @param {string} instance.token - Access token
+   * @param {boolean} instance.bridge_enabled - Enable bridge (default: true)
+   */
+  async addConfigInstance(instance) {
+    return this.request('POST', '/config/instances', {
+      body: JSON.stringify(instance)
+    });
+  }
+
+  /**
+   * Update an existing HA instance
+   * PUT /api/config/instances/{instance_id}
+   * @param {string} instanceId - Instance to update
+   * @param {Object} updates - Fields to update
+   */
+  async updateConfigInstance(instanceId, updates) {
+    return this.request('PUT', `/config/instances/${encodeURIComponent(instanceId)}`, {
+      body: JSON.stringify(updates)
+    });
+  }
+
+  /**
+   * Delete an HA instance
+   * DELETE /api/config/instances/{instance_id}
+   * @param {string} instanceId - Instance to delete
+   */
+  async deleteConfigInstance(instanceId) {
+    return this.request('DELETE', `/config/instances/${encodeURIComponent(instanceId)}`);
+  }
+
+  /**
+   * Test connection to an existing HA instance
+   * POST /api/config/instances/{instance_id}/test
+   * @param {string} instanceId - Instance to test
+   */
+  async testConfigInstance(instanceId) {
+    return this.request('POST', `/config/instances/${encodeURIComponent(instanceId)}/test`);
+  }
+
+  /**
+   * Test connection to a new HA instance (before saving)
+   * POST /api/config/instances/test
+   * @param {string} url - Home Assistant URL
+   * @param {string} token - Access token
+   */
+  async testNewConfigInstance(url, token) {
+    return this.request('POST', '/config/instances/test', {
+      body: JSON.stringify({ url, token })
+    });
+  }
+
   // ==================== Helper Methods ====================
 
   /**

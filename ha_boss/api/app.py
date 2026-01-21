@@ -182,6 +182,9 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
         status,
         websocket,
     )
+    from ha_boss.api.routes import (
+        config as config_routes,
+    )
 
     # Add authentication dependency if enabled
     dependencies = []
@@ -206,6 +209,9 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
     app.include_router(healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies)
     app.include_router(
         discovery.router, prefix="/api", tags=["Discovery"], dependencies=dependencies
+    )
+    app.include_router(
+        config_routes.router, prefix="/api", tags=["Configuration"], dependencies=dependencies
     )
 
     # WebSocket endpoint (no auth - same-origin only)

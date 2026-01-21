@@ -306,3 +306,125 @@ class EntityAutomationsResponse(BaseModel):
         default_factory=list, description="Scripts using this entity"
     )
     total_usage: int = Field(..., description="Total number of usages")
+
+
+# ==================== Configuration API Models ====================
+
+
+class ConfigSettingMetadata(BaseModel):
+    """Metadata for a configuration setting."""
+
+    key: str = Field(..., description="Setting key (e.g., 'monitoring.grace_period_seconds')")
+    label: str = Field(..., description="Human-readable label")
+    description: str = Field(..., description="Description of the setting")
+    value_type: str = Field(..., description="Value type: string, int, float, bool, list, dict")
+    editable: bool = Field(default=True, description="Whether setting can be edited from dashboard")
+    requires_restart: bool = Field(
+        default=False, description="Whether changes require service restart"
+    )
+    section: str = Field(default="general", description="Configuration section")
+    min_value: float | int | None = Field(None, description="Minimum value for numeric settings")
+    max_value: float | int | None = Field(None, description="Maximum value for numeric settings")
+    options: list[str] | None = Field(None, description="Allowed values for enum-like settings")
+
+
+class ConfigValueResponse(BaseModel):
+    """Configuration value with source information."""
+
+    key: str = Field(..., description="Setting key")
+    value: Any = Field(..., description="Current value")
+    source: str = Field(..., description="Source of value: default, yaml, database, or environment")
+    editable: bool = Field(default=True, description="Whether setting can be edited")
+    requires_restart: bool = Field(
+        default=False, description="Whether changes require service restart"
+    )
+
+
+class ConfigResponse(BaseModel):
+    """Full configuration response."""
+
+    settings: dict[str, ConfigValueResponse] = Field(
+        ..., description="All configuration settings with values and sources"
+    )
+    restart_required: bool = Field(
+        default=False, description="Whether pending changes require restart"
+    )
+
+
+class ConfigUpdateRequest(BaseModel):
+    """Request to update configuration settings."""
+
+    settings: dict[str, Any] = Field(..., description="Settings to update (key -> value)")
+
+
+class ConfigUpdateResponse(BaseModel):
+    """Response from configuration update."""
+
+    updated: list[str] = Field(..., description="List of successfully updated settings")
+    errors: list[str] = Field(default_factory=list, description="List of validation errors")
+    restart_required: bool = Field(
+        default=False, description="Whether changes require service restart"
+    )
+
+
+class ConfigValidationResponse(BaseModel):
+    """Response from configuration validation."""
+
+    valid: bool = Field(..., description="Whether all settings are valid")
+    errors: list[str] = Field(default_factory=list, description="List of validation errors")
+
+
+class ConfigSchemaResponse(BaseModel):
+    """Configuration schema for UI generation."""
+
+    settings: dict[str, ConfigSettingMetadata] = Field(
+        ..., description="All editable settings with metadata"
+    )
+    sections: list[str] = Field(..., description="Available configuration sections")
+
+
+class ConfigInstanceInfo(BaseModel):
+    """Home Assistant instance configuration (safe for API - token masked)."""
+
+    instance_id: str = Field(..., description="Instance identifier")
+    url: str = Field(..., description="Home Assistant URL")
+    masked_token: str = Field(..., description="Masked token (e.g., 'eyJ...xxxx')")
+    bridge_enabled: bool = Field(..., description="Whether bridge is enabled")
+    is_active: bool = Field(..., description="Whether instance is active")
+    source: str = Field(..., description="Configuration source: dashboard, yaml, import")
+    created_at: datetime | None = Field(None, description="When instance was created")
+    updated_at: datetime | None = Field(None, description="When instance was last updated")
+
+
+class ConfigInstanceCreateRequest(BaseModel):
+    """Request to create a new HA instance."""
+
+    instance_id: str = Field(..., description="Unique instance identifier")
+    url: str = Field(..., description="Home Assistant URL")
+    token: str = Field(..., description="Long-lived access token")
+    bridge_enabled: bool = Field(default=True, description="Enable bridge if available")
+
+
+class ConfigInstanceUpdateRequest(BaseModel):
+    """Request to update an HA instance."""
+
+    url: str | None = Field(None, description="New URL (optional)")
+    token: str | None = Field(None, description="New token (optional)")
+    bridge_enabled: bool | None = Field(None, description="New bridge setting (optional)")
+    is_active: bool | None = Field(None, description="New active status (optional)")
+
+
+class ConfigInstanceTestRequest(BaseModel):
+    """Request to test HA instance connection."""
+
+    url: str = Field(..., description="Home Assistant URL to test")
+    token: str = Field(..., description="Access token to test")
+
+
+class ConfigInstanceTestResponse(BaseModel):
+    """Response from HA instance connection test."""
+
+    success: bool = Field(..., description="Whether connection was successful")
+    message: str = Field(..., description="Result message")
+    version: str | None = Field(None, description="Home Assistant version if connected")
+    location_name: str | None = Field(None, description="HA location name if connected")

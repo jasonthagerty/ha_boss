@@ -71,3 +71,9 @@ class DatabaseError(HABossError):
     """Database operation error."""
 
     pass
+
+
+class ConfigServiceError(HABossError):
+    """Configuration service operation error."""
+
+    pass

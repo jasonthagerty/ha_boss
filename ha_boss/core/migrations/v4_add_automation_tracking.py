@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ha_boss.core.database import CURRENT_DB_VERSION, DatabaseVersion
+from ha_boss.core.database import DatabaseVersion
 
 logger = logging.getLogger(__name__)
 
@@ -108,16 +108,18 @@ async def migrate_v3_to_v4(session: AsyncSession) -> None:
         logger.info("Created indexes for automation_service_calls")
 
         # Update schema version (check if version 4 already exists to support idempotency)
+        # Note: Use literal 4 here, not CURRENT_DB_VERSION which may be higher
         from sqlalchemy import select
 
+        target_version = 4
         result = await session.execute(
-            select(DatabaseVersion).where(DatabaseVersion.version == CURRENT_DB_VERSION)
+            select(DatabaseVersion).where(DatabaseVersion.version == target_version)
         )
         existing_version = result.scalar_one_or_none()
 
         if existing_version is None:
             new_version = DatabaseVersion(
-                version=CURRENT_DB_VERSION,
+                version=target_version,
                 applied_at=datetime.now(UTC),
                 description="Add automation execution tracking tables",
             )

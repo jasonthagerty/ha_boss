@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 4
+CURRENT_DB_VERSION = 5
 
 
 class Base(DeclarativeBase):
@@ -572,6 +572,66 @@ class AutomationServiceCall(Base):
         return f"<AutomationServiceCall({self.instance_id}:{self.automation_id} -> {self.service_name}, {status})>"
 
 
+# Configuration Management Models (Schema v5)
+
+
+class RuntimeConfig(Base):
+    """Store runtime configuration overrides from dashboard.
+
+    Stores configuration values that override YAML defaults but are
+    overridden by environment variables. Values are JSON-serialized.
+    """
+
+    __tablename__ = "runtime_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # JSON serialized
+    value_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # string, int, float, bool, list, dict
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_by: Mapped[str] = mapped_column(String(50), nullable=False, default="dashboard")
+
+    def __repr__(self) -> str:
+        return f"<RuntimeConfig({self.key}={self.value[:50]}...)>"
+
+
+class StoredInstance(Base):
+    """Store Home Assistant instance configurations.
+
+    Stores HA instance configurations with encrypted tokens.
+    These supplement or replace YAML-configured instances.
+    """
+
+    __tablename__ = "stored_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    encrypted_token: Mapped[str] = mapped_column(Text, nullable=False)  # Fernet encrypted
+    bridge_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="dashboard"
+    )  # dashboard, yaml, import
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        status = "active" if self.is_active else "inactive"
+        return f"<StoredInstance({self.instance_id}, {self.url}, {status})>"
+
+
 class Database:
     """Database manager for HA Boss."""
 
@@ -662,12 +722,17 @@ class Database:
                 async with self.async_session() as session:
                     await migrate_v3_to_v4(session)
                 logger.info("Migration v3 → v4 completed successfully")
+                current_version = 4
 
-            # Future migrations can be added here:
-            # if current_version <= 4 and CURRENT_DB_VERSION >= 5:
-            #     from ha_boss.core.migrations.v5_... import migrate_v4_to_v5
-            #     async with self.async_session() as session:
-            #         await migrate_v4_to_v5(session)
+            if current_version == 4 and CURRENT_DB_VERSION >= 5:
+                from ha_boss.core.migrations.v5_add_runtime_config import (
+                    migrate_v4_to_v5,
+                )
+
+                logger.info("Running migration: v4 → v5")
+                async with self.async_session() as session:
+                    await migrate_v4_to_v5(session)
+                logger.info("Migration v4 → v5 completed successfully")
 
         except Exception as e:
             logger.error(f"Migration failed: {e}", exc_info=True)

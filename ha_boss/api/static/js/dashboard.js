@@ -393,6 +393,43 @@ class Dashboard {
       this.loadWeeklySummary();
     });
 
+    // Settings tab buttons
+    document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
+      this.saveSettings();
+    });
+
+    document.getElementById('resetSettingsBtn')?.addEventListener('click', () => {
+      this.resetSettings();
+    });
+
+    document.getElementById('addInstanceBtn')?.addEventListener('click', () => {
+      this.showInstanceModal();
+    });
+
+    // Instance modal
+    document.getElementById('closeInstanceBtn')?.addEventListener('click', () => {
+      this.hideInstanceModal();
+    });
+
+    document.getElementById('cancelInstanceBtn')?.addEventListener('click', () => {
+      this.hideInstanceModal();
+    });
+
+    document.getElementById('instanceModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'instanceModal') {
+        this.hideInstanceModal();
+      }
+    });
+
+    document.getElementById('instanceForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.saveInstance();
+    });
+
+    document.getElementById('testInstanceBtn')?.addEventListener('click', () => {
+      this.testInstance();
+    });
+
     // Page visibility (pause polling when hidden)
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
@@ -589,6 +626,9 @@ class Dashboard {
           break;
         case 'healing':
           await this.loadHealingTab();
+          break;
+        case 'settings':
+          await this.loadSettingsTab();
           break;
       }
     } catch (error) {
@@ -1029,6 +1069,478 @@ class Dashboard {
     }
   }
 
+  // ==================== Settings Tab ====================
+
+  /**
+   * Load settings tab
+   */
+  async loadSettingsTab() {
+    // Store pending changes
+    this.pendingSettings = {};
+    this.restartRequired = false;
+
+    await Promise.all([
+      this.loadConfigSettings(),
+      this.loadConfigInstances()
+    ]);
+  }
+
+  /**
+   * Load configuration settings
+   */
+  async loadConfigSettings() {
+    try {
+      const [config, schema] = await Promise.all([
+        this.api.getConfig(),
+        this.api.getConfigSchema()
+      ]);
+
+      // Group settings by section
+      const sections = {};
+      for (const [key, metadata] of Object.entries(schema.settings)) {
+        const section = metadata.section;
+        if (!sections[section]) {
+          sections[section] = [];
+        }
+        const configValue = config.settings[key];
+        sections[section].push({
+          ...metadata,
+          value: configValue?.value,
+          source: configValue?.source,
+          editable: configValue?.editable ?? true
+        });
+      }
+
+      // Render each section
+      this.renderSettingsSection('monitoringSettings', sections.monitoring || []);
+      this.renderSettingsSection('healingSettings', sections.healing || []);
+      this.renderSettingsSection('notificationSettings', sections.notifications || []);
+      this.renderSettingsSection('intelligenceSettings', sections.intelligence || []);
+      this.renderSettingsSection('loggingSettings', sections.logging || []);
+      this.renderSettingsSection('databaseSettings', sections.database || []);
+
+    } catch (error) {
+      console.error('Error loading config settings:', error);
+      this.showToast(`Failed to load settings: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Render a settings section
+   * @param {string} containerId - Container element ID
+   * @param {Array} settings - Settings for this section
+   */
+  renderSettingsSection(containerId, settings) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (settings.length === 0) {
+      container.innerHTML = '<p class="text-gray-500 text-sm">No settings available</p>';
+      return;
+    }
+
+    const html = settings.map(setting => {
+      const isDisabled = !setting.editable;
+      const sourceLabel = setting.source === 'environment'
+        ? '<span class="text-xs text-yellow-600 ml-2">(env override)</span>'
+        : setting.source === 'database'
+          ? '<span class="text-xs text-blue-600 ml-2">(customized)</span>'
+          : '';
+
+      let inputHtml = '';
+
+      if (setting.value_type === 'bool') {
+        inputHtml = `
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" class="sr-only peer config-input"
+                   data-key="${setting.key}"
+                   data-type="bool"
+                   ${setting.value ? 'checked' : ''}
+                   ${isDisabled ? 'disabled' : ''}>
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}"></div>
+          </label>
+        `;
+      } else if (setting.options && setting.options.length > 0) {
+        inputHtml = `
+          <select class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm config-input"
+                  data-key="${setting.key}"
+                  data-type="string"
+                  ${isDisabled ? 'disabled' : ''}>
+            ${setting.options.map(opt => `<option value="${opt}" ${setting.value === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+          </select>
+        `;
+      } else if (setting.value_type === 'int' || setting.value_type === 'float') {
+        const min = setting.min_value !== null ? `min="${setting.min_value}"` : '';
+        const max = setting.max_value !== null ? `max="${setting.max_value}"` : '';
+        const step = setting.value_type === 'float' ? 'step="0.1"' : 'step="1"';
+        inputHtml = `
+          <input type="number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm config-input"
+                 data-key="${setting.key}"
+                 data-type="${setting.value_type}"
+                 value="${setting.value ?? ''}"
+                 ${min} ${max} ${step}
+                 ${isDisabled ? 'disabled' : ''}>
+        `;
+      } else if (setting.value_type === 'list') {
+        const value = Array.isArray(setting.value) ? setting.value.join('\n') : '';
+        inputHtml = `
+          <textarea class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm config-input"
+                    data-key="${setting.key}"
+                    data-type="list"
+                    rows="3"
+                    placeholder="One item per line"
+                    ${isDisabled ? 'disabled' : ''}>${value}</textarea>
+        `;
+      } else {
+        inputHtml = `
+          <input type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm config-input"
+                 data-key="${setting.key}"
+                 data-type="string"
+                 value="${setting.value ?? ''}"
+                 ${isDisabled ? 'disabled' : ''}>
+        `;
+      }
+
+      return `
+        <div class="flex justify-between items-start py-2 border-b border-gray-100 last:border-0">
+          <div class="flex-1 pr-4">
+            <label class="text-sm font-medium text-gray-700">${setting.label}${sourceLabel}</label>
+            <p class="text-xs text-gray-500">${setting.description}</p>
+          </div>
+          <div class="w-48 flex-shrink-0">
+            ${inputHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = html;
+
+    // Add change listeners
+    container.querySelectorAll('.config-input').forEach(input => {
+      input.addEventListener('change', (e) => this.onSettingChange(e.target));
+    });
+  }
+
+  /**
+   * Handle setting change
+   * @param {HTMLElement} input - Input element that changed
+   */
+  onSettingChange(input) {
+    const key = input.dataset.key;
+    const type = input.dataset.type;
+    let value;
+
+    if (type === 'bool') {
+      value = input.checked;
+    } else if (type === 'int') {
+      value = parseInt(input.value, 10);
+    } else if (type === 'float') {
+      value = parseFloat(input.value);
+    } else if (type === 'list') {
+      value = input.value.split('\n').map(v => v.trim()).filter(v => v);
+    } else {
+      value = input.value;
+    }
+
+    this.pendingSettings[key] = value;
+    console.log('Setting changed:', key, '=', value);
+  }
+
+  /**
+   * Save all pending settings
+   */
+  async saveSettings() {
+    if (Object.keys(this.pendingSettings).length === 0) {
+      this.showToast('No changes to save', 'info');
+      return;
+    }
+
+    try {
+      // Validate first
+      const validation = await this.api.validateConfig(this.pendingSettings);
+      if (!validation.valid) {
+        this.showToast(`Validation failed: ${validation.errors.join(', ')}`, 'error');
+        return;
+      }
+
+      // Save settings
+      const result = await this.api.updateConfig(this.pendingSettings);
+
+      if (result.errors.length > 0) {
+        this.showToast(`Some settings failed: ${result.errors.join(', ')}`, 'warning');
+      } else {
+        this.showToast(`Saved ${result.updated.length} setting(s)`, 'success');
+      }
+
+      if (result.restart_required) {
+        document.getElementById('restartRequiredAlert').classList.remove('hidden');
+      }
+
+      // Clear pending changes
+      this.pendingSettings = {};
+
+      // Reload settings to show new values
+      await this.loadConfigSettings();
+
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      this.showToast(`Failed to save settings: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Reset settings to defaults (clear database overrides)
+   */
+  async resetSettings() {
+    if (!confirm('Reset all settings to defaults? This will remove any customizations.')) {
+      return;
+    }
+
+    try {
+      // For now, just reload - full reset would require API endpoint
+      this.pendingSettings = {};
+      await this.loadConfigSettings();
+      this.showToast('Settings reloaded', 'info');
+    } catch (error) {
+      console.error('Error resetting settings:', error);
+      this.showToast(`Failed to reset: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Load HA instances configuration
+   */
+  async loadConfigInstances() {
+    const container = document.getElementById('instancesList');
+    if (!container) return;
+
+    container.innerHTML = '<p class="text-gray-500">Loading instances...</p>';
+
+    try {
+      const instances = await this.api.getConfigInstances();
+
+      if (instances.length === 0) {
+        container.innerHTML = '<p class="text-gray-500">No instances configured in database. Instances are loaded from config.yaml.</p>';
+        return;
+      }
+
+      const html = instances.map(instance => `
+        <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+          <div class="flex-1">
+            <div class="flex items-center space-x-2">
+              <span class="font-medium text-gray-900">${instance.instance_id}</span>
+              ${instance.is_active
+                ? '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded">Active</span>'
+                : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">Inactive</span>'}
+              <span class="text-xs text-gray-500">(${instance.source})</span>
+            </div>
+            <div class="text-sm text-gray-600 mt-1">${instance.url}</div>
+            <div class="text-xs text-gray-400 mt-1">Token: ${instance.masked_token}</div>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button class="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
+                    onclick="window.dashboard.testConfigInstance('${instance.instance_id}')">
+              Test
+            </button>
+            <button class="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
+                    onclick="window.dashboard.editInstance('${instance.instance_id}')">
+              Edit
+            </button>
+            <button class="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded"
+                    onclick="window.dashboard.deleteInstance('${instance.instance_id}')">
+              Delete
+            </button>
+          </div>
+        </div>
+      `).join('');
+
+      container.innerHTML = html;
+
+    } catch (error) {
+      console.error('Error loading config instances:', error);
+      container.innerHTML = `<p class="text-red-500">Failed to load instances: ${error.message}</p>`;
+    }
+  }
+
+  /**
+   * Show instance modal for adding/editing
+   * @param {string|null} instanceId - Instance ID to edit, or null for new
+   */
+  showInstanceModal(instanceId = null) {
+    const modal = document.getElementById('instanceModal');
+    const title = document.getElementById('instanceModalTitle');
+    const form = document.getElementById('instanceForm');
+    const modeInput = document.getElementById('instanceFormMode');
+    const originalIdInput = document.getElementById('instanceFormOriginalId');
+
+    // Reset form
+    form.reset();
+    document.getElementById('instanceTestResult').textContent = '';
+
+    if (instanceId) {
+      title.textContent = 'Edit HA Instance';
+      modeInput.value = 'edit';
+      originalIdInput.value = instanceId;
+
+      // Load existing instance data
+      this.api.getConfigInstances().then(instances => {
+        const instance = instances.find(i => i.instance_id === instanceId);
+        if (instance) {
+          document.getElementById('instanceIdInput').value = instance.instance_id;
+          document.getElementById('instanceUrlInput').value = instance.url;
+          document.getElementById('instanceBridgeEnabled').checked = instance.bridge_enabled;
+          // Token field left empty (user must enter new token to change)
+        }
+      });
+    } else {
+      title.textContent = 'Add HA Instance';
+      modeInput.value = 'add';
+      originalIdInput.value = '';
+    }
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+
+  /**
+   * Hide instance modal
+   */
+  hideInstanceModal() {
+    const modal = document.getElementById('instanceModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+
+  /**
+   * Edit an existing instance
+   * @param {string} instanceId - Instance to edit
+   */
+  editInstance(instanceId) {
+    this.showInstanceModal(instanceId);
+  }
+
+  /**
+   * Test instance connection from modal
+   */
+  async testInstance() {
+    const url = document.getElementById('instanceUrlInput').value.trim();
+    const token = document.getElementById('instanceTokenInput').value.trim();
+    const resultSpan = document.getElementById('instanceTestResult');
+
+    if (!url) {
+      resultSpan.innerHTML = '<span class="text-red-600">URL is required</span>';
+      return;
+    }
+
+    resultSpan.innerHTML = '<span class="text-gray-600">Testing...</span>';
+
+    try {
+      let result;
+      if (token) {
+        // Test with new credentials
+        result = await this.api.testNewConfigInstance(url, token);
+      } else {
+        // Test existing instance
+        const instanceId = document.getElementById('instanceFormOriginalId').value;
+        if (!instanceId) {
+          resultSpan.innerHTML = '<span class="text-red-600">Token is required for new instance</span>';
+          return;
+        }
+        result = await this.api.testConfigInstance(instanceId);
+      }
+
+      if (result.success) {
+        resultSpan.innerHTML = `<span class="text-green-600">Connected! HA ${result.version || ''}</span>`;
+      } else {
+        resultSpan.innerHTML = `<span class="text-red-600">${result.message}</span>`;
+      }
+    } catch (error) {
+      resultSpan.innerHTML = `<span class="text-red-600">${error.message}</span>`;
+    }
+  }
+
+  /**
+   * Test a configured instance
+   * @param {string} instanceId - Instance to test
+   */
+  async testConfigInstance(instanceId) {
+    this.showToast(`Testing ${instanceId}...`, 'info', 1500);
+
+    try {
+      const result = await this.api.testConfigInstance(instanceId);
+      if (result.success) {
+        this.showToast(`${instanceId}: Connected (HA ${result.version || 'unknown'})`, 'success');
+      } else {
+        this.showToast(`${instanceId}: ${result.message}`, 'error');
+      }
+    } catch (error) {
+      this.showToast(`${instanceId}: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Save instance (add or update)
+   */
+  async saveInstance() {
+    const mode = document.getElementById('instanceFormMode').value;
+    const originalId = document.getElementById('instanceFormOriginalId').value;
+    const instanceId = document.getElementById('instanceIdInput').value.trim();
+    const url = document.getElementById('instanceUrlInput').value.trim();
+    const token = document.getElementById('instanceTokenInput').value.trim();
+    const bridgeEnabled = document.getElementById('instanceBridgeEnabled').checked;
+
+    if (!instanceId || !url) {
+      this.showToast('Instance ID and URL are required', 'error');
+      return;
+    }
+
+    try {
+      if (mode === 'add') {
+        if (!token) {
+          this.showToast('Token is required for new instance', 'error');
+          return;
+        }
+        await this.api.addConfigInstance({
+          instance_id: instanceId,
+          url: url,
+          token: token,
+          bridge_enabled: bridgeEnabled
+        });
+        this.showToast('Instance added. Restart service to connect.', 'success');
+      } else {
+        const updates = { url, bridge_enabled: bridgeEnabled };
+        if (token) updates.token = token;
+        await this.api.updateConfigInstance(originalId, updates);
+        this.showToast('Instance updated. Restart service to apply.', 'success');
+      }
+
+      this.hideInstanceModal();
+      await this.loadConfigInstances();
+
+    } catch (error) {
+      this.showToast(`Failed to save instance: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Delete an instance
+   * @param {string} instanceId - Instance to delete
+   */
+  async deleteInstance(instanceId) {
+    if (!confirm(`Delete instance "${instanceId}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await this.api.deleteConfigInstance(instanceId);
+      this.showToast('Instance deleted. Restart service to disconnect.', 'success');
+      await this.loadConfigInstances();
+    } catch (error) {
+      this.showToast(`Failed to delete instance: ${error.message}`, 'error');
+    }
+  }
+
   // ==================== Polling ====================
 
   /**
@@ -1205,10 +1717,10 @@ class Dashboard {
 // Initialize dashboard when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    const dashboard = new Dashboard();
-    dashboard.init();
+    window.dashboard = new Dashboard();
+    window.dashboard.init();
   });
 } else {
-  const dashboard = new Dashboard();
-  dashboard.init();
+  window.dashboard = new Dashboard();
+  window.dashboard.init();
 }

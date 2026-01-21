@@ -1,3 +1,3 @@
 """API route modules."""
 
-__all__ = ["status", "monitoring", "patterns", "automations", "healing"]
+__all__ = ["status", "monitoring", "patterns", "automations", "healing", "config"]

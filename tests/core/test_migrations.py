@@ -322,11 +322,11 @@ async def test_automatic_migration_on_init(tmp_path):
     database = Database(str(db_path))
     await database.init_db()
 
-    # Verify version is now 4
+    # Verify version is now CURRENT_DB_VERSION (all migrations ran)
     version = await database.get_version()
-    assert version == 4
+    assert version == CURRENT_DB_VERSION
 
-    # Verify tables exist
+    # Verify v4 tables exist
     async with database.async_session() as session:
         result = await session.execute(
             text(
@@ -334,6 +334,12 @@ async def test_automatic_migration_on_init(tmp_path):
             )
         )
         assert result.scalar() == "automation_executions"
+
+        # Verify v5 tables exist
+        result = await session.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='runtime_config'")
+        )
+        assert result.scalar() == "runtime_config"
 
     await database.close()
 
