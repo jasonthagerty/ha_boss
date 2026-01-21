@@ -34,8 +34,7 @@ async def migrate_v4_to_v5(session: AsyncSession) -> None:
         connection = await session.connection()
 
         # Create runtime_config table
-        await connection.execute(
-            text("""
+        await connection.execute(text("""
             CREATE TABLE IF NOT EXISTS runtime_config (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 key VARCHAR(255) NOT NULL UNIQUE,
@@ -44,22 +43,18 @@ async def migrate_v4_to_v5(session: AsyncSession) -> None:
                 updated_at DATETIME NOT NULL,
                 updated_by VARCHAR(50) NOT NULL DEFAULT 'dashboard'
             )
-        """)
-        )
+        """))
         logger.info("Created runtime_config table")
 
         # Create index for runtime_config
-        await connection.execute(
-            text("""
+        await connection.execute(text("""
             CREATE INDEX IF NOT EXISTS ix_runtime_config_key
             ON runtime_config(key)
-        """)
-        )
+        """))
         logger.info("Created index for runtime_config")
 
         # Create stored_instances table
-        await connection.execute(
-            text("""
+        await connection.execute(text("""
             CREATE TABLE IF NOT EXISTS stored_instances (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 instance_id VARCHAR(255) NOT NULL UNIQUE,
@@ -71,17 +66,14 @@ async def migrate_v4_to_v5(session: AsyncSession) -> None:
                 created_at DATETIME NOT NULL,
                 updated_at DATETIME NOT NULL
             )
-        """)
-        )
+        """))
         logger.info("Created stored_instances table")
 
         # Create index for stored_instances
-        await connection.execute(
-            text("""
+        await connection.execute(text("""
             CREATE INDEX IF NOT EXISTS ix_stored_instances_instance_id
             ON stored_instances(instance_id)
-        """)
-        )
+        """))
         logger.info("Created index for stored_instances")
 
         # Update schema version
