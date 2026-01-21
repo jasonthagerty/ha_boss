@@ -102,9 +102,12 @@ async def _migrate_table(connection, table_name: str) -> None:
     """
     logger.debug("Migrating table: %s", table_name)
 
-    # Check if table exists
-    inspector = inspect(connection)
-    if table_name not in await connection.run_sync(lambda sync_conn: inspector.get_table_names()):
+    # Check if table exists (must use run_sync for inspection on async connection)
+    def get_table_names(sync_conn):
+        return inspect(sync_conn).get_table_names()
+
+    existing_tables = await connection.run_sync(get_table_names)
+    if table_name not in existing_tables:
         logger.warning("Table %s does not exist, skipping migration", table_name)
         return
 
@@ -170,17 +173,17 @@ async def _migrate_entities_table(connection) -> None:
 
     # Create indexes
     await connection.execute(
-        text("CREATE INDEX ix_entities_instance_id ON entities_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_entities_instance_id ON entities_new (instance_id)")
     )
-    await connection.execute(text("CREATE INDEX ix_entities_entity_id ON entities_new (entity_id)"))
-    await connection.execute(text("CREATE INDEX ix_entities_domain ON entities_new (domain)"))
-    await connection.execute(text("CREATE INDEX ix_entities_device_id ON entities_new (device_id)"))
+    await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_entities_entity_id ON entities_new (entity_id)"))
+    await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_entities_domain ON entities_new (domain)"))
+    await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_entities_device_id ON entities_new (device_id)"))
     await connection.execute(
-        text("CREATE INDEX ix_entities_integration_id ON entities_new (integration_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_entities_integration_id ON entities_new (integration_id)")
     )
     await connection.execute(
         text(
-            "CREATE UNIQUE INDEX ix_entities_instance_entity ON entities_new (instance_id, entity_id)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_entities_instance_entity ON entities_new (instance_id, entity_id)"
         )
     )
 
@@ -209,16 +212,16 @@ async def _migrate_health_events_table(connection) -> None:
         """))
 
     await connection.execute(
-        text("CREATE INDEX ix_health_events_instance_id ON health_events_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_health_events_instance_id ON health_events_new (instance_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_health_events_entity_id ON health_events_new (entity_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_health_events_entity_id ON health_events_new (entity_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_health_events_event_type ON health_events_new (event_type)")
+        text("CREATE INDEX IF NOT EXISTS ix_health_events_event_type ON health_events_new (event_type)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_health_events_timestamp ON health_events_new (timestamp)")
+        text("CREATE INDEX IF NOT EXISTS ix_health_events_timestamp ON health_events_new (timestamp)")
     )
 
     await connection.execute(text("DROP TABLE health_events"))
@@ -251,18 +254,18 @@ async def _migrate_healing_actions_table(connection) -> None:
         """))
 
     await connection.execute(
-        text("CREATE INDEX ix_healing_actions_instance_id ON healing_actions_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_healing_actions_instance_id ON healing_actions_new (instance_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_healing_actions_entity_id ON healing_actions_new (entity_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_healing_actions_entity_id ON healing_actions_new (entity_id)")
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_healing_actions_integration_id ON healing_actions_new (integration_id)"
+            "CREATE INDEX IF NOT EXISTS ix_healing_actions_integration_id ON healing_actions_new (integration_id)"
         )
     )
     await connection.execute(
-        text("CREATE INDEX ix_healing_actions_timestamp ON healing_actions_new (timestamp)")
+        text("CREATE INDEX IF NOT EXISTS ix_healing_actions_timestamp ON healing_actions_new (timestamp)")
     )
 
     await connection.execute(text("DROP TABLE healing_actions"))
@@ -302,17 +305,17 @@ async def _migrate_integrations_table(connection) -> None:
         """))
 
     await connection.execute(
-        text("CREATE INDEX ix_integrations_instance_id ON integrations_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_integrations_instance_id ON integrations_new (instance_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_integrations_entry_id ON integrations_new (entry_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_integrations_entry_id ON integrations_new (entry_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_integrations_domain ON integrations_new (domain)")
+        text("CREATE INDEX IF NOT EXISTS ix_integrations_domain ON integrations_new (domain)")
     )
     await connection.execute(
         text(
-            "CREATE UNIQUE INDEX ix_integrations_instance_entry ON integrations_new (instance_id, entry_id)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_integrations_instance_entry ON integrations_new (instance_id, entry_id)"
         )
     )
 
@@ -341,13 +344,13 @@ async def _migrate_state_history_table(connection) -> None:
         """))
 
     await connection.execute(
-        text("CREATE INDEX ix_state_history_instance_id ON state_history_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_state_history_instance_id ON state_history_new (instance_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_state_history_entity_id ON state_history_new (entity_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_state_history_entity_id ON state_history_new (entity_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_state_history_timestamp ON state_history_new (timestamp)")
+        text("CREATE INDEX IF NOT EXISTS ix_state_history_timestamp ON state_history_new (timestamp)")
     )
 
     await connection.execute(text("DROP TABLE state_history"))
@@ -380,27 +383,27 @@ async def _migrate_integration_reliability_table(connection) -> None:
 
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_reliability_instance_id ON integration_reliability_new (instance_id)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_reliability_instance_id ON integration_reliability_new (instance_id)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_reliability_integration_id ON integration_reliability_new (integration_id)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_reliability_integration_id ON integration_reliability_new (integration_id)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_reliability_integration_domain ON integration_reliability_new (integration_domain)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_reliability_integration_domain ON integration_reliability_new (integration_domain)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_reliability_timestamp ON integration_reliability_new (timestamp)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_reliability_timestamp ON integration_reliability_new (timestamp)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_reliability_event_type ON integration_reliability_new (event_type)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_reliability_event_type ON integration_reliability_new (event_type)"
         )
     )
 
@@ -439,22 +442,22 @@ async def _migrate_integration_metrics_table(connection) -> None:
 
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_metrics_instance_id ON integration_metrics_new (instance_id)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_metrics_instance_id ON integration_metrics_new (instance_id)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_metrics_integration_id ON integration_metrics_new (integration_id)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_metrics_integration_id ON integration_metrics_new (integration_id)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_metrics_integration_domain ON integration_metrics_new (integration_domain)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_metrics_integration_domain ON integration_metrics_new (integration_domain)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_integration_metrics_period_start ON integration_metrics_new (period_start)"
+            "CREATE INDEX IF NOT EXISTS ix_integration_metrics_period_start ON integration_metrics_new (period_start)"
         )
     )
 
@@ -495,17 +498,17 @@ async def _migrate_automations_table(connection) -> None:
         """))
 
     await connection.execute(
-        text("CREATE INDEX ix_automations_instance_id ON automations_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_automations_instance_id ON automations_new (instance_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_automations_entity_id ON automations_new (entity_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_automations_entity_id ON automations_new (entity_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_automations_last_seen ON automations_new (last_seen)")
+        text("CREATE INDEX IF NOT EXISTS ix_automations_last_seen ON automations_new (last_seen)")
     )
     await connection.execute(
         text(
-            "CREATE UNIQUE INDEX ix_automations_instance_entity ON automations_new (instance_id, entity_id)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_automations_instance_entity ON automations_new (instance_id, entity_id)"
         )
     )
 
@@ -538,11 +541,11 @@ async def _migrate_scenes_table(connection) -> None:
         FROM scenes
         """))
 
-    await connection.execute(text("CREATE INDEX ix_scenes_instance_id ON scenes_new (instance_id)"))
-    await connection.execute(text("CREATE INDEX ix_scenes_entity_id ON scenes_new (entity_id)"))
-    await connection.execute(text("CREATE INDEX ix_scenes_last_seen ON scenes_new (last_seen)"))
+    await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_scenes_instance_id ON scenes_new (instance_id)"))
+    await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_scenes_entity_id ON scenes_new (entity_id)"))
+    await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_scenes_last_seen ON scenes_new (last_seen)"))
     await connection.execute(
-        text("CREATE UNIQUE INDEX ix_scenes_instance_entity ON scenes_new (instance_id, entity_id)")
+        text("CREATE UNIQUE INDEX IF NOT EXISTS ix_scenes_instance_entity ON scenes_new (instance_id, entity_id)")
     )
 
     await connection.execute(text("DROP TABLE scenes"))
@@ -576,13 +579,13 @@ async def _migrate_scripts_table(connection) -> None:
         """))
 
     await connection.execute(
-        text("CREATE INDEX ix_scripts_instance_id ON scripts_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_scripts_instance_id ON scripts_new (instance_id)")
     )
-    await connection.execute(text("CREATE INDEX ix_scripts_entity_id ON scripts_new (entity_id)"))
-    await connection.execute(text("CREATE INDEX ix_scripts_last_seen ON scripts_new (last_seen)"))
+    await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_scripts_entity_id ON scripts_new (entity_id)"))
+    await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_scripts_last_seen ON scripts_new (last_seen)"))
     await connection.execute(
         text(
-            "CREATE UNIQUE INDEX ix_scripts_instance_entity ON scripts_new (instance_id, entity_id)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_scripts_instance_entity ON scripts_new (instance_id, entity_id)"
         )
     )
 
@@ -613,35 +616,35 @@ async def _migrate_automation_entities_table(connection) -> None:
 
     await connection.execute(
         text(
-            "CREATE INDEX ix_automation_entities_instance_id ON automation_entities_new (instance_id)"
+            "CREATE INDEX IF NOT EXISTS ix_automation_entities_instance_id ON automation_entities_new (instance_id)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_automation_entities_automation_id ON automation_entities_new (automation_id)"
+            "CREATE INDEX IF NOT EXISTS ix_automation_entities_automation_id ON automation_entities_new (automation_id)"
         )
     )
     await connection.execute(
-        text("CREATE INDEX ix_automation_entities_entity_id ON automation_entities_new (entity_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_automation_entities_entity_id ON automation_entities_new (entity_id)")
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_automation_entities_relationship_type ON automation_entities_new (relationship_type)"
-        )
-    )
-    await connection.execute(
-        text(
-            "CREATE INDEX ix_automation_entities_automation ON automation_entities_new (instance_id, automation_id, relationship_type)"
+            "CREATE INDEX IF NOT EXISTS ix_automation_entities_relationship_type ON automation_entities_new (relationship_type)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_automation_entities_entity ON automation_entities_new (instance_id, entity_id, relationship_type)"
+            "CREATE INDEX IF NOT EXISTS ix_automation_entities_automation ON automation_entities_new (instance_id, automation_id, relationship_type)"
         )
     )
     await connection.execute(
         text(
-            "CREATE UNIQUE INDEX ix_automation_entities_unique ON automation_entities_new (instance_id, automation_id, entity_id, relationship_type)"
+            "CREATE INDEX IF NOT EXISTS ix_automation_entities_entity ON automation_entities_new (instance_id, entity_id, relationship_type)"
+        )
+    )
+    await connection.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_automation_entities_unique ON automation_entities_new (instance_id, automation_id, entity_id, relationship_type)"
         )
     )
 
@@ -673,23 +676,23 @@ async def _migrate_scene_entities_table(connection) -> None:
         """))
 
     await connection.execute(
-        text("CREATE INDEX ix_scene_entities_instance_id ON scene_entities_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_scene_entities_instance_id ON scene_entities_new (instance_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_scene_entities_scene_id ON scene_entities_new (scene_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_scene_entities_scene_id ON scene_entities_new (scene_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_scene_entities_entity_id ON scene_entities_new (entity_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_scene_entities_entity_id ON scene_entities_new (entity_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_scene_entities_scene ON scene_entities_new (instance_id, scene_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_scene_entities_scene ON scene_entities_new (instance_id, scene_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_scene_entities_entity ON scene_entities_new (instance_id, entity_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_scene_entities_entity ON scene_entities_new (instance_id, entity_id)")
     )
     await connection.execute(
         text(
-            "CREATE UNIQUE INDEX ix_scene_entities_unique ON scene_entities_new (instance_id, scene_id, entity_id)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_scene_entities_unique ON scene_entities_new (instance_id, scene_id, entity_id)"
         )
     )
 
@@ -720,27 +723,27 @@ async def _migrate_script_entities_table(connection) -> None:
         """))
 
     await connection.execute(
-        text("CREATE INDEX ix_script_entities_instance_id ON script_entities_new (instance_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_script_entities_instance_id ON script_entities_new (instance_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_script_entities_script_id ON script_entities_new (script_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_script_entities_script_id ON script_entities_new (script_id)")
     )
     await connection.execute(
-        text("CREATE INDEX ix_script_entities_entity_id ON script_entities_new (entity_id)")
+        text("CREATE INDEX IF NOT EXISTS ix_script_entities_entity_id ON script_entities_new (entity_id)")
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_script_entities_script ON script_entities_new (instance_id, script_id)"
+            "CREATE INDEX IF NOT EXISTS ix_script_entities_script ON script_entities_new (instance_id, script_id)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_script_entities_entity ON script_entities_new (instance_id, entity_id)"
+            "CREATE INDEX IF NOT EXISTS ix_script_entities_entity ON script_entities_new (instance_id, entity_id)"
         )
     )
     await connection.execute(
         text(
-            "CREATE UNIQUE INDEX ix_script_entities_unique ON script_entities_new (instance_id, script_id, entity_id)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_script_entities_unique ON script_entities_new (instance_id, script_id, entity_id)"
         )
     )
 
@@ -779,16 +782,16 @@ async def _migrate_discovery_refreshes_table(connection) -> None:
 
     await connection.execute(
         text(
-            "CREATE INDEX ix_discovery_refreshes_instance_id ON discovery_refreshes_new (instance_id)"
+            "CREATE INDEX IF NOT EXISTS ix_discovery_refreshes_instance_id ON discovery_refreshes_new (instance_id)"
         )
     )
     await connection.execute(
         text(
-            "CREATE INDEX ix_discovery_refreshes_trigger_type ON discovery_refreshes_new (trigger_type)"
+            "CREATE INDEX IF NOT EXISTS ix_discovery_refreshes_trigger_type ON discovery_refreshes_new (trigger_type)"
         )
     )
     await connection.execute(
-        text("CREATE INDEX ix_discovery_refreshes_timestamp ON discovery_refreshes_new (timestamp)")
+        text("CREATE INDEX IF NOT EXISTS ix_discovery_refreshes_timestamp ON discovery_refreshes_new (timestamp)")
     )
 
     await connection.execute(text("DROP TABLE discovery_refreshes"))
