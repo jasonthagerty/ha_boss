@@ -1,7 +1,7 @@
 """Encryption utilities for secure token storage.
 
 Uses Fernet symmetric encryption with auto-generated keys.
-Key is stored in data/.encryption_key with restricted permissions.
+Key is stored in data/.encryption_key with restricted permissions (chmod 600).
 """
 
 import base64
@@ -14,8 +14,8 @@ from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger(__name__)
 
-# Default key file location
-DEFAULT_KEY_PATH = Path("/data/.encryption_key")
+# Default key file location (relative path, works with /app workdir in Docker)
+DEFAULT_KEY_PATH = Path("data/.encryption_key")
 
 
 class EncryptionError(Exception):
