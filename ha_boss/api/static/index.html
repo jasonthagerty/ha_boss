@@ -255,9 +255,12 @@
                     <form id="analyzeForm" class="space-y-4">
                         <div>
                             <label for="automationId" class="block text-sm font-medium text-gray-700">Automation ID</label>
-                            <input type="text" id="automationId" name="automationId"
+                            <input type="text" id="automationId" name="automationId" list="automationIdList"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                    placeholder="automation.example" required>
+                            <datalist id="automationIdList">
+                                <!-- Options populated dynamically -->
+                            </datalist>
                         </div>
                         <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700">
                             Analyze
@@ -280,9 +283,12 @@
                     <form id="healingForm" class="space-y-4">
                         <div>
                             <label for="entityId" class="block text-sm font-medium text-gray-700">Entity ID</label>
-                            <input type="text" id="entityId" name="entityId"
+                            <input type="text" id="entityId" name="entityId" list="entityIdList"
                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                    placeholder="sensor.example" required>
+                            <datalist id="entityIdList">
+                                <!-- Options populated dynamically -->
+                            </datalist>
                             <p class="mt-1 text-sm text-gray-500">Enter the entity ID to trigger healing by reloading its integration</p>
                         </div>
                         <button type="submit" class="px-4 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700">

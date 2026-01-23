@@ -839,6 +839,27 @@ class Dashboard {
   async loadAutomationsTab() {
     // Clear previous results
     document.getElementById('analyzeResult').classList.add('hidden');
+
+    // Populate automation ID datalist
+    await this.populateAutomationList();
+  }
+
+  /**
+   * Populate automation ID datalist with available automations
+   */
+  async populateAutomationList() {
+    const datalist = document.getElementById('automationIdList');
+    if (!datalist) return;
+
+    try {
+      const automations = await this.api.getAutomations(500);
+      datalist.innerHTML = automations
+        .map(a => `<option value="${a.entity_id}">${a.friendly_name || a.entity_id}</option>`)
+        .join('');
+    } catch (error) {
+      console.error('Error loading automations for dropdown:', error);
+      // Don't show error toast - just leave the dropdown empty
+    }
   }
 
   /**
@@ -889,8 +910,27 @@ class Dashboard {
   async loadHealingTab() {
     await Promise.all([
       this.loadHealingHistory(),
-      this.loadSuccessRate()
+      this.loadSuccessRate(),
+      this.populateEntityList()
     ]);
+  }
+
+  /**
+   * Populate entity ID datalist with available entities
+   */
+  async populateEntityList() {
+    const datalist = document.getElementById('entityIdList');
+    if (!datalist) return;
+
+    try {
+      const entities = await this.api.getEntities(1000);
+      datalist.innerHTML = entities
+        .map(e => `<option value="${e.entity_id}">${e.friendly_name || e.entity_id}</option>`)
+        .join('');
+    } catch (error) {
+      console.error('Error loading entities for dropdown:', error);
+      // Don't show error toast - just leave the dropdown empty
+    }
   }
 
   /**

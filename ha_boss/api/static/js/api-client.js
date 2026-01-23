@@ -203,6 +203,25 @@ export class APIClient {
     return this.request('GET', `/patterns/summary?${params}`);
   }
 
+  // ==================== Discovery Endpoints ====================
+
+  /**
+   * List all discovered automations
+   * GET /api/discovery/automations
+   * @param {number} limit - Maximum automations to return (1-1000, default: 100)
+   * @param {number} offset - Pagination offset (default: 0)
+   * @param {string|null} state - Filter by state (on/off)
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
+   */
+  async getAutomations(limit = 100, offset = 0, state = null, instanceId = null) {
+    const params = new URLSearchParams({ limit, offset });
+    if (state) {
+      params.set('state', state);
+    }
+    this.addInstanceParam(params, instanceId);
+    return this.request('GET', `/discovery/automations?${params}`);
+  }
+
   // ==================== Automation Management Endpoints ====================
 
   /**
