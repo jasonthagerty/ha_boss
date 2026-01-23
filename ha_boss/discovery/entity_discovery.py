@@ -357,34 +357,67 @@ class EntityDiscoveryService:
         # Extract entity references
         entity_refs = EntityExtractor.extract_from_automation(attrs)
 
+        instance_id = self.ha_client.instance_id
+
         async with self.database.async_session() as session:
-            # Upsert automation record
-            automation = Automation(
-                entity_id=entity_id,
-                friendly_name=attrs.get("friendly_name"),
-                state=state,
-                mode=attrs.get("mode"),
-                trigger_config=attrs.get("trigger"),
-                condition_config=attrs.get("condition"),
-                action_config=attrs.get("action"),
-                discovered_at=datetime.now(UTC),
-                last_seen=datetime.now(UTC),
+            # Query for existing automation by unique key (instance_id, entity_id)
+            result = await session.execute(
+                select(Automation).where(
+                    Automation.instance_id == instance_id,
+                    Automation.entity_id == entity_id,
+                )
             )
+            existing = result.scalar_one_or_none()
 
-            # Merge to handle existing records
-            await session.merge(automation)
+            if existing:
+                # Update existing record
+                existing.friendly_name = attrs.get("friendly_name")
+                existing.state = state
+                existing.mode = attrs.get("mode")
+                existing.trigger_config = attrs.get("trigger")
+                existing.condition_config = attrs.get("condition")
+                existing.action_config = attrs.get("action")
+                existing.last_seen = datetime.now(UTC)
+            else:
+                # Insert new record
+                automation = Automation(
+                    instance_id=instance_id,
+                    entity_id=entity_id,
+                    friendly_name=attrs.get("friendly_name"),
+                    state=state,
+                    mode=attrs.get("mode"),
+                    trigger_config=attrs.get("trigger"),
+                    condition_config=attrs.get("condition"),
+                    action_config=attrs.get("action"),
+                    discovered_at=datetime.now(UTC),
+                    last_seen=datetime.now(UTC),
+                )
+                session.add(automation)
 
-            # Insert automation-entity relationships
+            # Upsert automation-entity relationships
             for relationship_type, entities in entity_refs.items():
                 for entity_ref_id, context in entities:
-                    relationship = AutomationEntity(
-                        automation_id=entity_id,
-                        entity_id=entity_ref_id,
-                        relationship_type=relationship_type,
-                        context=context,
-                        discovered_at=datetime.now(UTC),
+                    # Query for existing relationship
+                    rel_result = await session.execute(
+                        select(AutomationEntity).where(
+                            AutomationEntity.instance_id == instance_id,
+                            AutomationEntity.automation_id == entity_id,
+                            AutomationEntity.entity_id == entity_ref_id,
+                            AutomationEntity.relationship_type == relationship_type,
+                        )
                     )
-                    await session.merge(relationship)
+                    existing_rel = rel_result.scalar_one_or_none()
+
+                    if not existing_rel:
+                        relationship = AutomationEntity(
+                            instance_id=instance_id,
+                            automation_id=entity_id,
+                            entity_id=entity_ref_id,
+                            relationship_type=relationship_type,
+                            context=context,
+                            discovered_at=datetime.now(UTC),
+                        )
+                        session.add(relationship)
 
             await session.commit()
 
@@ -426,28 +459,61 @@ class EntityDiscoveryService:
         # Extract entity references
         entity_refs = EntityExtractor.extract_from_scene(attrs)
 
+        instance_id = self.ha_client.instance_id
+
         async with self.database.async_session() as session:
-            # Upsert scene record
-            scene = Scene(
-                entity_id=entity_id,
-                friendly_name=attrs.get("friendly_name"),
-                entities_config=attrs.get("entities"),
-                discovered_at=datetime.now(UTC),
-                last_seen=datetime.now(UTC),
-            )
-
-            await session.merge(scene)
-
-            # Insert scene-entity relationships
-            for entity_ref_id, context in entity_refs:
-                relationship = SceneEntity(
-                    scene_id=entity_id,
-                    entity_id=entity_ref_id,
-                    target_state=context.get("config", {}).get("state"),
-                    attributes=context.get("config", {}).get("attributes"),
-                    discovered_at=datetime.now(UTC),
+            # Query for existing scene by unique key (instance_id, entity_id)
+            result = await session.execute(
+                select(Scene).where(
+                    Scene.instance_id == instance_id,
+                    Scene.entity_id == entity_id,
                 )
-                await session.merge(relationship)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Update existing record
+                existing.friendly_name = attrs.get("friendly_name")
+                existing.entities_config = attrs.get("entities")
+                existing.last_seen = datetime.now(UTC)
+            else:
+                # Insert new record
+                scene = Scene(
+                    instance_id=instance_id,
+                    entity_id=entity_id,
+                    friendly_name=attrs.get("friendly_name"),
+                    entities_config=attrs.get("entities"),
+                    discovered_at=datetime.now(UTC),
+                    last_seen=datetime.now(UTC),
+                )
+                session.add(scene)
+
+            # Upsert scene-entity relationships
+            for entity_ref_id, context in entity_refs:
+                # Query for existing relationship
+                rel_result = await session.execute(
+                    select(SceneEntity).where(
+                        SceneEntity.instance_id == instance_id,
+                        SceneEntity.scene_id == entity_id,
+                        SceneEntity.entity_id == entity_ref_id,
+                    )
+                )
+                existing_rel = rel_result.scalar_one_or_none()
+
+                if existing_rel:
+                    # Update existing
+                    existing_rel.target_state = context.get("config", {}).get("state")
+                    existing_rel.attributes = context.get("config", {}).get("attributes")
+                else:
+                    relationship = SceneEntity(
+                        instance_id=instance_id,
+                        scene_id=entity_id,
+                        entity_id=entity_ref_id,
+                        target_state=context.get("config", {}).get("state"),
+                        attributes=context.get("config", {}).get("attributes"),
+                        discovered_at=datetime.now(UTC),
+                    )
+                    session.add(relationship)
 
             await session.commit()
 
@@ -489,30 +555,65 @@ class EntityDiscoveryService:
         # Extract entity references
         entity_refs = EntityExtractor.extract_from_script(attrs)
 
+        instance_id = self.ha_client.instance_id
+
         async with self.database.async_session() as session:
-            # Upsert script record
-            script = Script(
-                entity_id=entity_id,
-                friendly_name=attrs.get("friendly_name"),
-                mode=attrs.get("mode"),
-                sequence_config=attrs.get("sequence"),
-                discovered_at=datetime.now(UTC),
-                last_seen=datetime.now(UTC),
-            )
-
-            await session.merge(script)
-
-            # Insert script-entity relationships
-            for entity_ref_id, context in entity_refs:
-                relationship = ScriptEntity(
-                    script_id=entity_id,
-                    entity_id=entity_ref_id,
-                    sequence_step=context.get("sequence_step"),
-                    action_type=context.get("service"),
-                    context=context,
-                    discovered_at=datetime.now(UTC),
+            # Query for existing script by unique key (instance_id, entity_id)
+            result = await session.execute(
+                select(Script).where(
+                    Script.instance_id == instance_id,
+                    Script.entity_id == entity_id,
                 )
-                await session.merge(relationship)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Update existing record
+                existing.friendly_name = attrs.get("friendly_name")
+                existing.mode = attrs.get("mode")
+                existing.sequence_config = attrs.get("sequence")
+                existing.last_seen = datetime.now(UTC)
+            else:
+                # Insert new record
+                script = Script(
+                    instance_id=instance_id,
+                    entity_id=entity_id,
+                    friendly_name=attrs.get("friendly_name"),
+                    mode=attrs.get("mode"),
+                    sequence_config=attrs.get("sequence"),
+                    discovered_at=datetime.now(UTC),
+                    last_seen=datetime.now(UTC),
+                )
+                session.add(script)
+
+            # Upsert script-entity relationships
+            for entity_ref_id, context in entity_refs:
+                # Query for existing relationship (unique by instance_id, script_id, entity_id)
+                rel_result = await session.execute(
+                    select(ScriptEntity).where(
+                        ScriptEntity.instance_id == instance_id,
+                        ScriptEntity.script_id == entity_id,
+                        ScriptEntity.entity_id == entity_ref_id,
+                    )
+                )
+                existing_rel = rel_result.scalar_one_or_none()
+
+                if existing_rel:
+                    # Update existing
+                    existing_rel.sequence_step = context.get("sequence_step")
+                    existing_rel.action_type = context.get("service")
+                    existing_rel.context = context
+                else:
+                    relationship = ScriptEntity(
+                        instance_id=instance_id,
+                        script_id=entity_id,
+                        entity_id=entity_ref_id,
+                        sequence_step=context.get("sequence_step"),
+                        action_type=context.get("service"),
+                        context=context,
+                        discovered_at=datetime.now(UTC),
+                    )
+                    session.add(relationship)
 
             await session.commit()
 
