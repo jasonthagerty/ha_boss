@@ -392,7 +392,7 @@ class HABossService:
                 )
                 from ha_boss.core.config_service import ConfigService
 
-                config_service = ConfigService(self.config, self.database)
+                config_service = ConfigService(self.database)
                 db_instances = await config_service.get_active_instances_for_startup()
 
                 if db_instances:
