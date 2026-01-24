@@ -9,8 +9,8 @@ services:
 
     # Environment variables (override in .env file)
     environment:
-      - HA_URL=${HA_URL:-http://homeassistant.local:8123}
-      - HA_TOKEN=${HA_TOKEN:?HA_TOKEN is required}
+      # - HA_URL=${HA_URL:-http://homeassistant.local:8123}
+      # - HA_TOKEN=${HA_TOKEN:?HA_TOKEN is required}
       - CONFIG_PATH=/app/config/config.yaml
       - TZ=${TZ:-UTC}
 

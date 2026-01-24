@@ -690,6 +690,36 @@ class ConfigService:
 
             return self._safe_decrypt(instance.encrypted_token)
 
+    async def get_active_instances_for_startup(
+        self,
+    ) -> list[tuple[str, str, str, bool]]:
+        """Get active instances with decrypted tokens for service startup.
+
+        Returns:
+            List of (instance_id, url, token, bridge_enabled) tuples
+            for all active instances stored in the database.
+        """
+        instances: list[tuple[str, str, str, bool]] = []
+
+        async with self.database.async_session() as session:
+            result = await session.execute(
+                select(StoredInstance)
+                .where(StoredInstance.is_active == True)  # noqa: E712
+                .order_by(StoredInstance.created_at)
+            )
+            for row in result.scalars():
+                token = self._safe_decrypt(row.encrypted_token)
+                if token and token != "[decryption failed]":
+                    instances.append(
+                        (row.instance_id, row.url, token, row.bridge_enabled)
+                    )
+                else:
+                    logger.warning(
+                        f"Skipping instance '{row.instance_id}': failed to decrypt token"
+                    )
+
+        return instances
+
     # Private Methods
 
     async def _get_source(self, key: str) -> ConfigSource:

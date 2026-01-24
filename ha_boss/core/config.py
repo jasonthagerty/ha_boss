@@ -59,7 +59,12 @@ class HomeAssistantConfig(BaseSettings):
 
     @model_validator(mode="after")
     def validate_instances(self) -> "HomeAssistantConfig":
-        """Convert legacy single-instance config to multi-instance format."""
+        """Convert legacy single-instance config to multi-instance format.
+
+        Note: Empty instances list is allowed - instances can be configured via
+        the dashboard and stored in the database. The service will load them
+        at startup.
+        """
         # If legacy fields are set and instances is empty, convert to instances format
         if self.url and self.token and not self.instances:
             self.instances = [
@@ -71,19 +76,16 @@ class HomeAssistantConfig(BaseSettings):
             self.url = None
             self.token = None
 
-        # Ensure at least one instance is configured
-        if not self.instances:
-            raise ValueError(
-                "No Home Assistant instances configured. "
-                "Set either 'url' and 'token' (legacy) or 'instances' list."
-            )
+        # Note: Empty instances list is now allowed - instances can be loaded
+        # from the database (dashboard-configured instances)
 
-        # Validate unique instance IDs
-        instance_ids = [inst.instance_id for inst in self.instances]
-        if len(instance_ids) != len(set(instance_ids)):
-            raise ValueError(
-                "Duplicate instance_id values found. Each instance must have a unique ID."
-            )
+        # Validate unique instance IDs (if any instances are configured)
+        if self.instances:
+            instance_ids = [inst.instance_id for inst in self.instances]
+            if len(instance_ids) != len(set(instance_ids)):
+                raise ValueError(
+                    "Duplicate instance_id values found. Each instance must have a unique ID."
+                )
 
         return self
 
