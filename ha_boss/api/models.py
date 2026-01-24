@@ -129,6 +129,7 @@ class EntityStateResponse(BaseModel):
     last_changed: datetime | None = Field(None, description="Last state change time")
     last_updated: datetime | None = Field(None, description="Last update time")
     monitored: bool = Field(..., description="Is entity being monitored")
+    instance_id: str | None = Field(None, description="Instance ID (present in aggregate mode)")
 
 
 class EntityHistoryResponse(BaseModel):
@@ -161,6 +162,7 @@ class FailureEventResponse(BaseModel):
     timestamp: datetime = Field(..., description="Event timestamp")
     resolved: bool = Field(..., description="Is failure resolved")
     resolution_time: datetime | None = Field(None, description="Resolution timestamp")
+    instance_id: str | None = Field(None, description="Instance ID (present in aggregate mode)")
 
 
 class WeeklySummaryResponse(BaseModel):
@@ -201,6 +203,7 @@ class HealingActionResponse(BaseModel):
     success: bool = Field(..., description="Was healing successful")
     timestamp: datetime = Field(..., description="Action timestamp")
     message: str = Field(..., description="Result message")
+    instance_id: str | None = Field(None, description="Instance ID (present in aggregate mode)")
 
 
 class HealingHistoryResponse(BaseModel):
@@ -264,6 +267,7 @@ class AutomationSummary(BaseModel):
     state: str = Field(..., description="Automation state (on/off)")
     entity_count: int = Field(..., description="Number of entities used")
     discovered_at: datetime = Field(..., description="Discovery timestamp")
+    instance_id: str | None = Field(None, description="Instance ID (present in aggregate mode)")
 
 
 class AutomationDetailResponse(BaseModel):

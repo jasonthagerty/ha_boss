@@ -132,7 +132,8 @@ def test_root_endpoint(client):
 
 def test_status_endpoint(client, mock_service):
     """Test /api/status endpoint."""
-    response = client.get("/api/status")
+    # Use explicit instance_id to get single-instance behavior
+    response = client.get("/api/status?instance_id=default")
     assert response.status_code == 200
 
     data = response.json()
@@ -146,7 +147,8 @@ def test_status_endpoint(client, mock_service):
 
 def test_health_endpoint_healthy(client, mock_service):
     """Test /api/health endpoint when all components are healthy."""
-    response = client.get("/api/health")
+    # Use explicit instance_id to get single-instance behavior
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
 
     data = response.json()
@@ -179,7 +181,8 @@ def test_health_endpoint_degraded(client, mock_service):
     """Test /api/health endpoint when service is degraded (WebSocket down)."""
     mock_service.websocket_client.is_connected.return_value = False
 
-    response = client.get("/api/health")
+    # Use explicit instance_id to get single-instance behavior
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
 
     data = response.json()
@@ -197,7 +200,8 @@ def test_health_endpoint_unhealthy(client, mock_service):
     """Test /api/health endpoint when service is unhealthy."""
     mock_service.state = "stopped"
 
-    response = client.get("/api/health")
+    # Use explicit instance_id to get single-instance behavior
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 503  # Changed to 503 for unhealthy
 
     data = response.json()
@@ -213,7 +217,8 @@ def test_health_tier_isolation(client, mock_service):
     mock_service.config.intelligence.ollama_enabled = False
     mock_service.config.intelligence.claude_enabled = False
 
-    response = client.get("/api/health")
+    # Use explicit instance_id to get single-instance behavior
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
 
     data = response.json()
@@ -234,7 +239,8 @@ def test_health_circuit_breaker_degradation(client, mock_service):
         "integration3": 1,  # Under threshold
     }
 
-    response = client.get("/api/health")
+    # Use explicit instance_id to get single-instance behavior
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
 
     data = response.json()
@@ -246,7 +252,7 @@ def test_health_circuit_breaker_degradation(client, mock_service):
 
 def test_health_response_structure(client, mock_service):
     """Test that health response has all required fields and structure."""
-    response = client.get("/api/health")
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
 
     data = response.json()
@@ -277,7 +283,7 @@ def test_health_response_structure(client, mock_service):
 
 def test_health_component_details(client, mock_service):
     """Test that component details dicts are populated."""
-    response = client.get("/api/health")
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
 
     data = response.json()
@@ -295,7 +301,7 @@ def test_health_component_details(client, mock_service):
 
 def test_health_summary_counts(client, mock_service):
     """Test that summary counts are calculated correctly."""
-    response = client.get("/api/health")
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
 
     data = response.json()
@@ -318,19 +324,19 @@ def test_health_summary_counts(client, mock_service):
 def test_health_http_status_codes(client, mock_service):
     """Test HTTP status codes for different health states."""
     # Healthy = 200
-    response = client.get("/api/health")
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
 
     # Degraded = 200 (still functional)
     mock_service.websocket_client.is_connected.return_value = False
-    response = client.get("/api/health")
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
 
     # Unhealthy = 503 (critical failure)
     mock_service.state = "stopped"
-    response = client.get("/api/health")
+    response = client.get("/api/health?instance_id=default")
     assert response.status_code == 503
     assert response.json()["status"] == "unhealthy"
 
@@ -341,7 +347,7 @@ def test_health_service_not_initialized(client):
     with patch(
         "ha_boss.api.routes.status.get_service", side_effect=RuntimeError("Service not initialized")
     ):
-        response = client.get("/api/health")
+        response = client.get("/api/health?instance_id=default")
         assert response.status_code == 503
 
         data = response.json()

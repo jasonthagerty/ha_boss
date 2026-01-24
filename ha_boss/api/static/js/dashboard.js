@@ -184,6 +184,23 @@ class Dashboard {
       const selector = document.getElementById('instanceSelector');
       selector.innerHTML = '';
 
+      // Add "All Instances" option first
+      const allOption = document.createElement('option');
+      allOption.value = 'all';
+      allOption.textContent = '🌐 All Instances';
+      allOption.title = 'View aggregated data from all instances';
+      if (this.currentInstance === 'all') {
+        allOption.selected = true;
+      }
+      selector.appendChild(allOption);
+
+      // Add separator
+      const separator = document.createElement('option');
+      separator.disabled = true;
+      separator.textContent = '──────────';
+      selector.appendChild(separator);
+
+      // Add individual instances
       this.instances.forEach(instance => {
         const option = document.createElement('option');
         option.value = instance.instance_id;
@@ -217,22 +234,21 @@ class Dashboard {
       });
     } catch (error) {
       console.error('Failed to load instances:', error);
-      this.showToast('Failed to load instances - using default', 'error');
+      this.showToast('Failed to load instances - using All Instances view', 'error');
 
-      // Fallback: Add default instance to keep dashboard functional
+      // Fallback: Add All Instances option to keep dashboard functional
       const selector = document.getElementById('instanceSelector');
       selector.innerHTML = '';
-      const defaultOption = document.createElement('option');
-      defaultOption.value = 'default';
-      defaultOption.textContent = '🟡 default';
-      defaultOption.title = 'Instance: default\nStatus: unknown';
-      defaultOption.dataset.state = 'unknown';
-      defaultOption.selected = true;
-      selector.appendChild(defaultOption);
+      const allOption = document.createElement('option');
+      allOption.value = 'all';
+      allOption.textContent = '🌐 All Instances';
+      allOption.title = 'View aggregated data from all instances';
+      allOption.selected = true;
+      selector.appendChild(allOption);
 
-      // Ensure we're using the default instance
-      this.currentInstance = 'default';
-      this.api.setInstance('default');
+      // Ensure we're using the all instances view
+      this.currentInstance = 'all';
+      this.api.setInstance('all');
     }
   }
 

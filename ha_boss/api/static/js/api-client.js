@@ -7,7 +7,7 @@ export class APIClient {
   constructor(baseURL = '/api') {
     this.baseURL = baseURL;
     this.apiKey = localStorage.getItem('ha_boss_api_key');
-    this.currentInstance = localStorage.getItem('ha_boss_instance') || 'default';
+    this.currentInstance = localStorage.getItem('ha_boss_instance') || 'all';
   }
 
   /**

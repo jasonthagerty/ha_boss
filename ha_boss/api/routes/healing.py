@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import HealingActionResponse, HealingHistoryResponse
+from ha_boss.api.utils.instance_helpers import get_instance_ids
 from ha_boss.monitoring.health_monitor import HealthIssue
 
 logger = logging.getLogger(__name__)
@@ -121,11 +122,11 @@ async def trigger_healing(
 
 @router.get("/healing/history", response_model=HealingHistoryResponse)
 async def get_healing_history(
-    instance_id: str = Query("default", description="Instance identifier"),
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
     limit: int = Query(50, ge=1, le=500, description="Maximum actions to return"),
     hours: int = Query(24, ge=1, le=168, description="Hours of history (1-168)"),
 ) -> HealingHistoryResponse:
-    """Get healing action history for a specific instance.
+    """Get healing action history.
 
     Returns a list of recent healing actions including:
     - Entity and integration information
@@ -133,12 +134,14 @@ async def get_healing_history(
     - Timestamps
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance ID or 'all' for aggregate (default: "all")
         limit: Maximum number of actions to return (1-500)
         hours: Hours of history to retrieve (default: 24, max: 168/7 days)
 
+    When instance_id is 'all', returns healing actions from all instances.
+
     Returns:
-        Healing action history with statistics for the specified instance
+        Healing action history with statistics
 
     Raises:
         HTTPException: Instance not found (404) or service error (500)
@@ -146,12 +149,8 @@ async def get_healing_history(
     try:
         service = get_service()
 
-        # Validate instance exists
-        if instance_id not in service.healing_managers:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.healing_managers.keys())}",
-            ) from None
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
 
         if not service.database:
             raise HTTPException(status_code=503, detail="Database not initialized") from None
@@ -160,13 +159,13 @@ async def get_healing_history(
         end_time = datetime.now(UTC)
         start_time = end_time - timedelta(hours=hours)
 
-        # Query database for healing actions for this instance
+        # Query database for healing actions
         async with service.database.async_session() as session:
             from sqlalchemy import func, select
 
             from ha_boss.core.database import HealingAction, Integration
 
-            # Get healing actions with integration domains
+            # Build base query
             stmt = (
                 select(HealingAction, Integration.domain)  # type: ignore[attr-defined]
                 .join(  # type: ignore[attr-defined]
@@ -175,13 +174,18 @@ async def get_healing_history(
                     isouter=True,
                 )
                 .where(  # type: ignore[attr-defined]
-                    HealingAction.instance_id == instance_id,  # type: ignore[attr-defined]
                     HealingAction.timestamp >= start_time,  # type: ignore[attr-defined]
                     HealingAction.timestamp <= end_time,  # type: ignore[attr-defined]
                 )
-                .order_by(HealingAction.timestamp.desc())  # type: ignore[attr-defined]
-                .limit(limit)
             )
+
+            # Filter by instance(s)
+            if len(instance_ids) == 1:
+                stmt = stmt.where(HealingAction.instance_id == instance_ids[0])  # type: ignore[attr-defined]
+            else:
+                stmt = stmt.where(HealingAction.instance_id.in_(instance_ids))  # type: ignore[attr-defined]
+
+            stmt = stmt.order_by(HealingAction.timestamp.desc()).limit(limit)  # type: ignore[attr-defined]
 
             result = await session.execute(stmt)
             rows = result.all()
@@ -193,10 +197,15 @@ async def get_healing_history(
                 func.count(HealingAction.id).label("total"),  # type: ignore[attr-defined]
                 func.sum(cast(HealingAction.success, Integer)).label("success"),  # type: ignore[attr-defined, arg-type]
             ).where(  # type: ignore[attr-defined]
-                HealingAction.instance_id == instance_id,  # type: ignore[attr-defined]
                 HealingAction.timestamp >= start_time,  # type: ignore[attr-defined]
                 HealingAction.timestamp <= end_time,  # type: ignore[attr-defined]
             )
+
+            # Filter by instance(s)
+            if len(instance_ids) == 1:
+                stats_stmt = stats_stmt.where(HealingAction.instance_id == instance_ids[0])  # type: ignore[attr-defined]
+            else:
+                stats_stmt = stats_stmt.where(HealingAction.instance_id.in_(instance_ids))  # type: ignore[attr-defined]
 
             stats_result = await session.execute(stats_stmt)
             stats = stats_result.first()
@@ -214,6 +223,7 @@ async def get_healing_history(
                     message=(
                         action.error if not action.success else "Success"
                     ),  # Use 'error' attribute
+                    instance_id=action.instance_id if len(instance_ids) > 1 else None,
                 )
             )
 

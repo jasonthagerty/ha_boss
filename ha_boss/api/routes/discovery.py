@@ -16,6 +16,7 @@ from ha_boss.api.models import (
     EntityAutomationsResponse,
     EntityAutomationUsage,
 )
+from ha_boss.api.utils.instance_helpers import get_instance_ids, is_aggregate_mode
 from ha_boss.core.database import (
     Automation,
     AutomationEntity,
@@ -101,18 +102,20 @@ async def trigger_discovery_refresh(
 
 @router.get("/discovery/stats", response_model=DiscoveryStatsResponse)
 async def get_discovery_stats(
-    instance_id: str = Query("default", description="Instance identifier"),
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
 ) -> DiscoveryStatsResponse:
-    """Get current discovery statistics for a specific instance.
+    """Get current discovery statistics.
 
     Returns statistics about discovered automations, scenes, scripts,
     and entities, along with refresh scheduling information.
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance ID or 'all' for aggregate (default: "all")
+
+    When instance_id is 'all', returns aggregated statistics across all instances.
 
     Returns:
-        Discovery statistics for the specified instance
+        Discovery statistics
 
     Raises:
         HTTPException: Instance not found (404) or service error (500)
@@ -120,83 +123,91 @@ async def get_discovery_stats(
     try:
         service = get_service()
 
-        # Validate instance exists
-        state_tracker = service.state_trackers.get(instance_id)
-        if not state_tracker:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.state_trackers.keys())}",
-            ) from None
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
 
         if not service.database:
             raise HTTPException(status_code=503, detail="Database not initialized") from None
 
-        # Get counts from database for this instance
-        async with service.database.async_session() as session:
-            # Count automations
-            total_automations_result = await session.execute(
-                select(func.count(Automation.entity_id)).where(
-                    Automation.instance_id == instance_id
-                )
-            )
-            total_automations = total_automations_result.scalar() or 0
-
-            enabled_automations_result = await session.execute(
-                select(func.count(Automation.entity_id)).where(
-                    Automation.state == "on", Automation.instance_id == instance_id
-                )
-            )
-            enabled_automations = enabled_automations_result.scalar() or 0
-
-            # Count scenes
-            total_scenes_result = await session.execute(
-                select(func.count(Scene.entity_id)).where(Scene.instance_id == instance_id)
-            )
-            total_scenes = total_scenes_result.scalar() or 0
-
-            # Count scripts
-            total_scripts_result = await session.execute(
-                select(func.count(Script.entity_id)).where(Script.instance_id == instance_id)
-            )
-            total_scripts = total_scripts_result.scalar() or 0
-
-            # Count unique entities from junction tables for this instance
-            automation_entities = await session.execute(
-                select(func.count(func.distinct(AutomationEntity.entity_id))).where(
-                    AutomationEntity.instance_id == instance_id
-                )
-            )
-            scene_entities = await session.execute(
-                select(func.count(func.distinct(SceneEntity.entity_id))).where(
-                    SceneEntity.instance_id == instance_id
-                )
-            )
-            script_entities = await session.execute(
-                select(func.count(func.distinct(ScriptEntity.entity_id))).where(
-                    ScriptEntity.instance_id == instance_id
-                )
-            )
-
-            # Total unique entities (rough estimate - may have overlap)
-            total_entities = (
-                (automation_entities.scalar() or 0)
-                + (scene_entities.scalar() or 0)
-                + (script_entities.scalar() or 0)
-            )
-
-            # Get last refresh timestamp for this instance
-            last_refresh_result = await session.execute(
-                select(DiscoveryRefresh.timestamp)
-                .where(DiscoveryRefresh.instance_id == instance_id)
-                .order_by(DiscoveryRefresh.timestamp.desc())
-                .limit(1)
-            )
-            last_refresh_record = last_refresh_result.scalar_one_or_none()
-
-        # Get monitored entity count from state tracker
+        # Aggregate counts across all requested instances
+        total_automations = 0
+        enabled_automations = 0
+        total_scenes = 0
+        total_scripts = 0
+        total_entities = 0
         monitored_count = 0
-        all_states = await state_tracker.get_all_states()
-        monitored_count = len(all_states)
+        last_refresh_record = None
+
+        async with service.database.async_session() as session:
+            for inst_id in instance_ids:
+                # Count automations
+                total_automations_result = await session.execute(
+                    select(func.count(Automation.entity_id)).where(
+                        Automation.instance_id == inst_id
+                    )
+                )
+                total_automations += total_automations_result.scalar() or 0
+
+                enabled_automations_result = await session.execute(
+                    select(func.count(Automation.entity_id)).where(
+                        Automation.state == "on", Automation.instance_id == inst_id
+                    )
+                )
+                enabled_automations += enabled_automations_result.scalar() or 0
+
+                # Count scenes
+                total_scenes_result = await session.execute(
+                    select(func.count(Scene.entity_id)).where(Scene.instance_id == inst_id)
+                )
+                total_scenes += total_scenes_result.scalar() or 0
+
+                # Count scripts
+                total_scripts_result = await session.execute(
+                    select(func.count(Script.entity_id)).where(Script.instance_id == inst_id)
+                )
+                total_scripts += total_scripts_result.scalar() or 0
+
+                # Count unique entities from junction tables
+                automation_entities = await session.execute(
+                    select(func.count(func.distinct(AutomationEntity.entity_id))).where(
+                        AutomationEntity.instance_id == inst_id
+                    )
+                )
+                scene_entities = await session.execute(
+                    select(func.count(func.distinct(SceneEntity.entity_id))).where(
+                        SceneEntity.instance_id == inst_id
+                    )
+                )
+                script_entities = await session.execute(
+                    select(func.count(func.distinct(ScriptEntity.entity_id))).where(
+                        ScriptEntity.instance_id == inst_id
+                    )
+                )
+
+                # Total unique entities (rough estimate - may have overlap)
+                total_entities += (
+                    (automation_entities.scalar() or 0)
+                    + (scene_entities.scalar() or 0)
+                    + (script_entities.scalar() or 0)
+                )
+
+                # Get last refresh timestamp (keep most recent across instances)
+                refresh_result = await session.execute(
+                    select(DiscoveryRefresh.timestamp)
+                    .where(DiscoveryRefresh.instance_id == inst_id)
+                    .order_by(DiscoveryRefresh.timestamp.desc())
+                    .limit(1)
+                )
+                inst_last_refresh = refresh_result.scalar_one_or_none()
+                if inst_last_refresh:
+                    if not last_refresh_record or inst_last_refresh > last_refresh_record:
+                        last_refresh_record = inst_last_refresh
+
+                # Get monitored entity count from state tracker
+                state_tracker = service.state_trackers.get(inst_id)
+                if state_tracker:
+                    all_states = await state_tracker.get_all_states()
+                    monitored_count += len(all_states)
 
         # Calculate next refresh time
         next_refresh = None
@@ -229,24 +240,26 @@ async def get_discovery_stats(
 
 @router.get("/automations", response_model=list[AutomationSummary])
 async def list_automations(
-    instance_id: str = Query("default", description="Instance identifier"),
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
     state: str | None = Query(None, description="Filter by state (on/off)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum automations to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> list[AutomationSummary]:
-    """List all discovered automations for a specific instance.
+    """List all discovered automations.
 
     Returns a paginated list of automations discovered by the auto-discovery
     system, with optional filtering by state.
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance ID or 'all' for aggregate (default: "all")
         state: Optional state filter (on/off)
         limit: Maximum number of automations to return (1-1000)
         offset: Pagination offset
 
+    When instance_id is 'all', returns automations from all instances.
+
     Returns:
-        List of automation summaries for the specified instance
+        List of automation summaries
 
     Raises:
         HTTPException: Instance not found (404) or service error (500)
@@ -254,55 +267,72 @@ async def list_automations(
     try:
         service = get_service()
 
-        # Validate instance exists
-        if instance_id not in service.state_trackers:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.state_trackers.keys())}",
-            ) from None
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
+        aggregate = is_aggregate_mode(instance_id)
 
         if not service.database:
             raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         async with service.database.async_session() as session:
-            # Build query with instance filter
-            query = select(Automation).where(Automation.instance_id == instance_id)
+            # Build query
+            query = select(Automation)
+
+            # Filter by instance(s)
+            if len(instance_ids) == 1:
+                query = query.where(Automation.instance_id == instance_ids[0])
+            else:
+                query = query.where(Automation.instance_id.in_(instance_ids))
 
             # Apply state filter
             if state:
                 query = query.where(Automation.state == state)
 
             # Apply ordering and pagination
-            query = query.order_by(Automation.friendly_name).limit(limit).offset(offset)
+            query = (
+                query.order_by(Automation.instance_id, Automation.friendly_name)
+                .limit(limit)
+                .offset(offset)
+            )
 
             # Execute query
             result = await session.execute(query)
             automations = result.scalars().all()
 
             # Optimize: Get all entity counts in single query (avoid N+1)
+            entity_counts: dict[tuple[str, str], int] = {}
             if automations:
                 automation_ids = [a.entity_id for a in automations]
-                entity_counts_result = await session.execute(
-                    select(
-                        AutomationEntity.automation_id,
-                        func.count(func.distinct(AutomationEntity.entity_id)).label("entity_count"),
+                entity_counts_query = select(
+                    AutomationEntity.instance_id,
+                    AutomationEntity.automation_id,
+                    func.count(func.distinct(AutomationEntity.entity_id)).label("entity_count"),
+                ).where(AutomationEntity.automation_id.in_(automation_ids))
+
+                # Filter by instance(s)
+                if len(instance_ids) == 1:
+                    entity_counts_query = entity_counts_query.where(
+                        AutomationEntity.instance_id == instance_ids[0]
                     )
-                    .where(
-                        AutomationEntity.instance_id == instance_id,
-                        AutomationEntity.automation_id.in_(automation_ids),
+                else:
+                    entity_counts_query = entity_counts_query.where(
+                        AutomationEntity.instance_id.in_(instance_ids)
                     )
-                    .group_by(AutomationEntity.automation_id)
+
+                entity_counts_query = entity_counts_query.group_by(
+                    AutomationEntity.instance_id, AutomationEntity.automation_id
                 )
+
+                entity_counts_result = await session.execute(entity_counts_query)
                 entity_counts = {
-                    row.automation_id: row.entity_count for row in entity_counts_result
+                    (row.instance_id, row.automation_id): row.entity_count
+                    for row in entity_counts_result
                 }
-            else:
-                entity_counts = {}
 
             # Build response with pre-fetched entity counts
             response = []
             for automation in automations:
-                entity_count = entity_counts.get(automation.entity_id, 0)
+                entity_count = entity_counts.get((automation.instance_id, automation.entity_id), 0)
 
                 response.append(
                     AutomationSummary(
@@ -311,6 +341,7 @@ async def list_automations(
                         state=automation.state,
                         entity_count=entity_count,
                         discovered_at=automation.discovered_at,
+                        instance_id=automation.instance_id if aggregate else None,
                     )
                 )
 

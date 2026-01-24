@@ -13,6 +13,7 @@ from ha_boss.api.models import (
     PerformanceMetrics,
     ServiceStatusResponse,
 )
+from ha_boss.api.utils.instance_helpers import get_instance_ids, is_aggregate_mode
 
 logger = logging.getLogger(__name__)
 
@@ -55,21 +56,23 @@ async def list_instances() -> list[InstanceInfo]:
 
 @router.get("/status", response_model=ServiceStatusResponse)
 async def get_status(
-    instance_id: str = Query("default", description="Instance identifier"),
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
 ) -> ServiceStatusResponse:
-    """Get service status and statistics for a specific instance.
+    """Get service status and statistics.
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance identifier or 'all' for aggregate (default: "all")
 
     Returns detailed information about the HA Boss service including:
     - Current state (running/stopped/error)
     - Uptime and start time
-    - Health check and healing statistics for the instance
-    - Number of monitored entities for the instance
+    - Health check and healing statistics
+    - Number of monitored entities
+
+    When instance_id is 'all', returns aggregated statistics across all instances.
 
     Returns:
-        Service status information for the specified instance
+        Service status information
 
     Raises:
         HTTPException: Service not initialized (500) or instance not found (404)
@@ -77,70 +80,74 @@ async def get_status(
     try:
         service = get_service()
 
-        # Validate instance exists
-        if instance_id not in service.ha_clients:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
-            )
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
 
         # Calculate uptime
         uptime_seconds = 0.0
         if service.start_time:
             uptime_seconds = (datetime.now(UTC) - service.start_time).total_seconds()
 
-        # Count monitored entities from database for this instance
-        monitored_count = 0
-        db_success = False
-        try:
-            async with service.database.async_session() as session:
-                from sqlalchemy import func, select
+        # Aggregate statistics across all requested instances
+        total_monitored = 0
+        total_health_checks = 0
+        total_healings_attempted = 0
+        total_healings_succeeded = 0
+        total_healings_failed = 0
 
-                from ha_boss.core.database import Entity
+        for inst_id in instance_ids:
+            # Count monitored entities from database
+            db_count = 0
+            db_success = False
+            try:
+                async with service.database.async_session() as session:
+                    from sqlalchemy import func, select
 
-                result = await session.execute(
-                    select(func.count())
-                    .select_from(Entity)
-                    .where(Entity.is_monitored == True)  # noqa: E712
-                    .where(Entity.instance_id == instance_id)
-                )
-                count_value = result.scalar() or 0
-                # Ensure we got an integer (not a mock/coroutine)
-                if isinstance(count_value, int):
-                    monitored_count = count_value
-                    db_success = True
-        except Exception:
-            pass  # Fall through to cache fallback
+                    from ha_boss.core.database import Entity
 
-        # Fallback to cache if database query didn't succeed
-        state_tracker = service.state_trackers.get(instance_id)
-        if not db_success and state_tracker:
-            if hasattr(state_tracker, "_cache"):
-                # Use cache directly (works with mocks and real implementation)
-                monitored_count = len(state_tracker._cache)
-            else:
-                # Try get_all_states as last resort
-                try:
-                    all_states = await state_tracker.get_all_states()
-                    monitored_count = len(all_states) if isinstance(all_states, dict) else 0
-                except Exception:
-                    monitored_count = 0
+                    result = await session.execute(
+                        select(func.count())
+                        .select_from(Entity)
+                        .where(Entity.is_monitored == True)  # noqa: E712
+                        .where(Entity.instance_id == inst_id)
+                    )
+                    count_value = result.scalar() or 0
+                    if isinstance(count_value, int):
+                        db_count = count_value
+                        db_success = True
+            except Exception:
+                pass
 
-        # Get per-instance statistics
-        health_checks = service.health_checks_performed.get(instance_id, 0)
-        healings_attempted = service.healings_attempted.get(instance_id, 0)
-        healings_succeeded = service.healings_succeeded.get(instance_id, 0)
-        healings_failed = service.healings_failed.get(instance_id, 0)
+            # Fallback to cache if database query didn't succeed
+            if not db_success:
+                state_tracker = service.state_trackers.get(inst_id)
+                if state_tracker:
+                    if hasattr(state_tracker, "_cache"):
+                        db_count = len(state_tracker._cache)
+                    else:
+                        try:
+                            all_states = await state_tracker.get_all_states()
+                            db_count = len(all_states) if isinstance(all_states, dict) else 0
+                        except Exception:
+                            db_count = 0
+
+            total_monitored += db_count
+
+            # Aggregate per-instance statistics
+            total_health_checks += service.health_checks_performed.get(inst_id, 0)
+            total_healings_attempted += service.healings_attempted.get(inst_id, 0)
+            total_healings_succeeded += service.healings_succeeded.get(inst_id, 0)
+            total_healings_failed += service.healings_failed.get(inst_id, 0)
 
         return ServiceStatusResponse(
             state=service.state,
             uptime_seconds=uptime_seconds,
             start_time=service.start_time,
-            health_checks_performed=health_checks,
-            healings_attempted=healings_attempted,
-            healings_succeeded=healings_succeeded,
-            healings_failed=healings_failed,
-            monitored_entities=monitored_count,
+            health_checks_performed=total_health_checks,
+            healings_attempted=total_healings_attempted,
+            healings_succeeded=total_healings_succeeded,
+            healings_failed=total_healings_failed,
+            monitored_entities=total_monitored,
         )
 
     except HTTPException:
@@ -813,7 +820,8 @@ async def check_tier5_intelligence(service) -> dict[str, ComponentHealth]:
 
 @router.get("/health", response_model=EnhancedHealthCheckResponse)
 async def health_check(
-    response: Response, instance_id: str = Query("default", description="Instance identifier")
+    response: Response,
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
 ) -> EnhancedHealthCheckResponse:
     """Comprehensive health check endpoint for monitoring and orchestration.
 
@@ -825,14 +833,18 @@ async def health_check(
     - Tier 5 (Intelligence): Optional AI features
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance ID or 'all' for aggregate (default: "all")
+
+    When instance_id is 'all', health checks are performed for all instances
+    and component names are prefixed with instance_id. Overall status reflects
+    the worst status across all instances.
 
     HTTP Status Codes:
     - 200 OK: Status is "healthy" or "degraded" (service functional)
     - 503 Service Unavailable: Status is "unhealthy" (critical failure)
 
     Returns:
-        Comprehensive health status with component-level detail for the specified instance
+        Comprehensive health status with component-level detail
 
     Raises:
         HTTPException: Instance not found (404)
@@ -841,27 +853,47 @@ async def health_check(
     try:
         service = get_service()
 
-        # Validate instance exists
-        if instance_id not in service.ha_clients:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
-            )
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
+        aggregate = is_aggregate_mode(instance_id)
 
-        # Check all tiers
-        critical = await check_tier1_critical(service, instance_id)
-        essential = await check_tier2_essential(service, instance_id)
-        operational = await check_tier3_operational(service, instance_id)
-        healing = await check_tier4_healing(service, instance_id)
-        intelligence = await check_tier5_intelligence(service)
+        # Aggregate health checks across all requested instances
+        all_critical: dict[str, ComponentHealth] = {}
+        all_essential: dict[str, ComponentHealth] = {}
+        all_operational: dict[str, ComponentHealth] = {}
+        all_healing: dict[str, ComponentHealth] = {}
+        all_intelligence: dict[str, ComponentHealth] = {}
+
+        for inst_id in instance_ids:
+            # Check all tiers for this instance
+            critical = await check_tier1_critical(service, inst_id)
+            essential = await check_tier2_essential(service, inst_id)
+            operational = await check_tier3_operational(service, inst_id)
+            healing = await check_tier4_healing(service, inst_id)
+
+            # Add prefix if in aggregate mode
+            if aggregate:
+                prefix = f"{inst_id}:"
+                all_critical.update({f"{prefix}{k}": v for k, v in critical.items()})
+                all_essential.update({f"{prefix}{k}": v for k, v in essential.items()})
+                all_operational.update({f"{prefix}{k}": v for k, v in operational.items()})
+                all_healing.update({f"{prefix}{k}": v for k, v in healing.items()})
+            else:
+                all_critical.update(critical)
+                all_essential.update(essential)
+                all_operational.update(operational)
+                all_healing.update(healing)
+
+        # Intelligence checks are not instance-specific
+        all_intelligence = await check_tier5_intelligence(service)
 
         # Organize components by tier
         all_components = {
-            "critical": critical,
-            "essential": essential,
-            "operational": operational,
-            "healing": healing,
-            "intelligence": intelligence,
+            "critical": all_critical,
+            "essential": all_essential,
+            "operational": all_operational,
+            "healing": all_healing,
+            "intelligence": all_intelligence,
         }
 
         # Determine overall status
@@ -891,11 +923,11 @@ async def health_check(
         return EnhancedHealthCheckResponse(
             status=overall_status,
             timestamp=datetime.now(UTC),
-            critical=critical,
-            essential=essential,
-            operational=operational,
-            healing=healing,
-            intelligence=intelligence,
+            critical=all_critical,
+            essential=all_essential,
+            operational=all_operational,
+            healing=all_healing,
+            intelligence=all_intelligence,
             performance=performance,
             summary=summary,
         )

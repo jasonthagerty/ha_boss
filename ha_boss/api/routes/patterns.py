@@ -11,6 +11,7 @@ from ha_boss.api.models import (
     IntegrationReliabilityResponse,
     WeeklySummaryResponse,
 )
+from ha_boss.api.utils.instance_helpers import get_instance_ids
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,9 @@ router = APIRouter()
 
 @router.get("/patterns/reliability", response_model=list[IntegrationReliabilityResponse])
 async def get_reliability_stats(
-    instance_id: str = Query("default", description="Instance identifier"),
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
 ) -> list[IntegrationReliabilityResponse]:
-    """Get integration reliability statistics for a specific instance.
+    """Get integration reliability statistics.
 
     Returns reliability metrics for all integrations including:
     - Total entities per integration
@@ -31,10 +32,13 @@ async def get_reliability_stats(
     - Last failure timestamp
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance ID or 'all' for aggregate (default: "all")
+
+    When instance_id is 'all', returns aggregated reliability statistics
+    across all instances.
 
     Returns:
-        List of integration reliability statistics for the specified instance
+        List of integration reliability statistics
 
     Raises:
         HTTPException: Instance not found (404) or service error (500)
@@ -42,45 +46,63 @@ async def get_reliability_stats(
     try:
         service = get_service()
 
-        # Validate instance exists (use ha_clients as authoritative source)
-        if instance_id not in service.ha_clients:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
-            ) from None
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
 
         if not service.database:
             raise HTTPException(status_code=503, detail="Database not initialized") from None
 
-        # Get pattern collector for this instance
-        pattern_collector = service.pattern_collectors.get(instance_id)
+        # Aggregate reliability stats across all requested instances
+        aggregated_stats: dict[str, dict] = {}
 
-        # Use the reliability analyzer if available
-        if pattern_collector and hasattr(pattern_collector, "analyzer"):
-            analyzer = pattern_collector.analyzer
-            stats = await analyzer.get_integration_reliability(instance_id=instance_id)
+        for inst_id in instance_ids:
+            pattern_collector = service.pattern_collectors.get(inst_id)
 
-            # Convert to response models
-            reliability_list = []
-            for integration, data in stats.items():
-                reliability_list.append(
-                    IntegrationReliabilityResponse(
-                        integration=integration,
-                        total_entities=data.get("total_entities", 0),
-                        unavailable_count=data.get("unavailable_count", 0),
-                        failure_count=data.get("failure_count", 0),
-                        success_count=data.get("success_count", 0),
-                        reliability_percent=data.get("reliability_percent", 0.0),
-                        last_failure=data.get("last_failure"),
-                    )
+            if pattern_collector and hasattr(pattern_collector, "analyzer"):
+                analyzer = pattern_collector.analyzer
+                stats = await analyzer.get_integration_reliability(instance_id=inst_id)
+
+                # Merge stats (aggregate by integration name)
+                for integration, data in stats.items():
+                    if integration not in aggregated_stats:
+                        aggregated_stats[integration] = {
+                            "total_entities": 0,
+                            "unavailable_count": 0,
+                            "failure_count": 0,
+                            "success_count": 0,
+                            "last_failure": None,
+                        }
+
+                    agg = aggregated_stats[integration]
+                    agg["total_entities"] += data.get("total_entities", 0)
+                    agg["unavailable_count"] += data.get("unavailable_count", 0)
+                    agg["failure_count"] += data.get("failure_count", 0)
+                    agg["success_count"] += data.get("success_count", 0)
+
+                    # Keep most recent failure
+                    new_failure = data.get("last_failure")
+                    if new_failure:
+                        if not agg["last_failure"] or new_failure > agg["last_failure"]:
+                            agg["last_failure"] = new_failure
+
+        # Convert to response models and calculate reliability percentages
+        reliability_list = []
+        for integration, data in aggregated_stats.items():
+            total = data["failure_count"] + data["success_count"]
+            reliability_percent = (data["success_count"] / total * 100) if total > 0 else 100.0
+            reliability_list.append(
+                IntegrationReliabilityResponse(
+                    integration=integration,
+                    total_entities=data["total_entities"],
+                    unavailable_count=data["unavailable_count"],
+                    failure_count=data["failure_count"],
+                    success_count=data["success_count"],
+                    reliability_percent=reliability_percent,
+                    last_failure=data["last_failure"],
                 )
+            )
 
-            return reliability_list
-
-        # Fallback: query database directly if analyzer not available
-        # Note: HealthEvent doesn't have integration_id in current schema
-        # Return empty list until data model is updated
-        return []
+        return reliability_list
 
     except HTTPException:
         raise
@@ -96,11 +118,11 @@ async def get_reliability_stats(
 
 @router.get("/patterns/failures", response_model=list[FailureEventResponse])
 async def get_failure_events(
-    instance_id: str = Query("default", description="Instance identifier"),
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
     limit: int = Query(50, ge=1, le=500, description="Maximum failures to return"),
     hours: int = Query(24, ge=1, le=168, description="Hours of history (1-168)"),
 ) -> list[FailureEventResponse]:
-    """Get failure event timeline for a specific instance.
+    """Get failure event timeline.
 
     Returns a list of recent failure events including:
     - Entity and integration information
@@ -108,12 +130,14 @@ async def get_failure_events(
     - Resolution status and timestamps
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance ID or 'all' for aggregate (default: "all")
         limit: Maximum number of failures to return (1-500)
         hours: Hours of history to retrieve (default: 24, max: 168/7 days)
 
+    When instance_id is 'all', returns failure events from all instances.
+
     Returns:
-        List of failure events for the specified instance
+        List of failure events
 
     Raises:
         HTTPException: Instance not found (404) or service error (500)
@@ -121,12 +145,8 @@ async def get_failure_events(
     try:
         service = get_service()
 
-        # Validate instance exists
-        if instance_id not in service.pattern_collectors:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.pattern_collectors.keys())}",
-            ) from None
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
 
         if not service.database:
             raise HTTPException(status_code=503, detail="Database not initialized") from None
@@ -135,22 +155,26 @@ async def get_failure_events(
         end_time = datetime.now(UTC)
         start_time = end_time - timedelta(hours=hours)
 
-        # Query database for failure events for this instance
+        # Query database for failure events
         async with service.database.async_session() as session:
             from sqlalchemy import select
 
             from ha_boss.core.database import HealthEvent
 
+            # Query failure events (SQLAlchemy dynamic attributes)
             stmt = (
-                select(HealthEvent)  # type: ignore[attr-defined]
-                .where(  # type: ignore[attr-defined]
-                    HealthEvent.instance_id == instance_id,  # type: ignore[attr-defined]
-                    HealthEvent.timestamp >= start_time,  # type: ignore[attr-defined]
-                    HealthEvent.timestamp <= end_time,  # type: ignore[attr-defined]
-                )
-                .order_by(HealthEvent.timestamp.desc())  # type: ignore[attr-defined]
-                .limit(limit)
+                select(HealthEvent)
+                .where(HealthEvent.timestamp >= start_time)
+                .where(HealthEvent.timestamp <= end_time)
             )
+
+            # Filter by instance(s)
+            if len(instance_ids) == 1:
+                stmt = stmt.where(HealthEvent.instance_id == instance_ids[0])
+            else:
+                stmt = stmt.where(HealthEvent.instance_id.in_(instance_ids))
+
+            stmt = stmt.order_by(HealthEvent.timestamp.desc()).limit(limit)
 
             result = await session.execute(stmt)
             events = result.scalars().all()
@@ -167,6 +191,7 @@ async def get_failure_events(
                     timestamp=event.timestamp,
                     resolved=False,  # Not tracked in current schema
                     resolution_time=None,
+                    instance_id=event.instance_id if len(instance_ids) > 1 else None,
                 )
             )
 
@@ -184,11 +209,11 @@ async def get_failure_events(
 
 @router.get("/patterns/summary", response_model=WeeklySummaryResponse)
 async def get_weekly_summary(
-    instance_id: str = Query("default", description="Instance identifier"),
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
     days: int = Query(7, ge=1, le=30, description="Days to summarize (1-30)"),
     ai: bool = Query(False, description="Include AI-generated insights"),
 ) -> WeeklySummaryResponse:
-    """Get weekly summary statistics for a specific instance.
+    """Get weekly summary statistics.
 
     Returns aggregated statistics for the specified time period including:
     - Health check and failure counts
@@ -197,12 +222,14 @@ async def get_weekly_summary(
     - Optional AI-generated insights and recommendations
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance ID or 'all' for aggregate (default: "all")
         days: Number of days to summarize (default: 7, max: 30)
         ai: Include AI-generated insights (requires AI configuration)
 
+    When instance_id is 'all', returns aggregated summary across all instances.
+
     Returns:
-        Weekly summary statistics for the specified instance
+        Weekly summary statistics
 
     Raises:
         HTTPException: Instance not found (404) or service error (500)
@@ -210,51 +237,56 @@ async def get_weekly_summary(
     try:
         service = get_service()
 
-        # Validate instance exists (use ha_clients as authoritative source)
-        if instance_id not in service.ha_clients:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
-            ) from None
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
 
         if not service.database:
             raise HTTPException(status_code=503, detail="Database not initialized") from None
-
-        # Get pattern collector for this instance (for AI summary generation)
-        pattern_collector = service.pattern_collectors.get(instance_id)
 
         # Calculate time range
         end_date = datetime.now(UTC)
         start_date = end_date - timedelta(days=days)
 
-        # Query database for summary stats for this instance
+        # Query database for summary stats
         async with service.database.async_session() as session:
-            from sqlalchemy import func, select
+            from sqlalchemy import Integer, cast, func, select
 
             from ha_boss.core.database import HealingAction, HealthEvent
 
-            # Total failures
-            failure_stmt = select(func.count(HealthEvent.id)).where(  # type: ignore[attr-defined]
-                HealthEvent.instance_id == instance_id,  # type: ignore[attr-defined]
-                HealthEvent.timestamp >= start_date,  # type: ignore[attr-defined]
-                HealthEvent.timestamp <= end_date,  # type: ignore[attr-defined]
+            # Total failures (type: ignore for SQLAlchemy dynamic attributes)
+            failure_stmt = (
+                select(func.count(HealthEvent.id))
+                .where(HealthEvent.timestamp >= start_date)
+                .where(HealthEvent.timestamp <= end_date)
             )
+
+            # Filter by instance(s)
+            if len(instance_ids) == 1:
+                failure_stmt = failure_stmt.where(HealthEvent.instance_id == instance_ids[0])
+            else:
+                failure_stmt = failure_stmt.where(HealthEvent.instance_id.in_(instance_ids))
+
             failure_result = await session.execute(failure_stmt)
             total_failures = failure_result.scalar() or 0
 
-            # Healing stats
-            from sqlalchemy import Integer, cast
-
-            healing_stmt = select(  # type: ignore[attr-defined]
-                func.count(HealingAction.id).label("total_healings"),  # type: ignore[attr-defined]
-                func.sum(cast(HealingAction.success, Integer)).label(  # type: ignore[attr-defined, arg-type]
-                    "successful_healings"
-                ),
-            ).where(  # type: ignore[attr-defined]
-                HealingAction.instance_id == instance_id,  # type: ignore[attr-defined]
-                HealingAction.timestamp >= start_date,  # type: ignore[attr-defined]
-                HealingAction.timestamp <= end_date,  # type: ignore[attr-defined]
+            # Healing stats (type: ignore for SQLAlchemy dynamic attributes)
+            healing_stmt = (
+                select(
+                    func.count(HealingAction.id).label("total_healings"),
+                    func.sum(cast(HealingAction.success, Integer)).label(  # type: ignore[arg-type]
+                        "successful_healings"
+                    ),
+                )
+                .where(HealingAction.timestamp >= start_date)
+                .where(HealingAction.timestamp <= end_date)
             )
+
+            # Filter by instance(s)
+            if len(instance_ids) == 1:
+                healing_stmt = healing_stmt.where(HealingAction.instance_id == instance_ids[0])
+            else:
+                healing_stmt = healing_stmt.where(HealingAction.instance_id.in_(instance_ids))
+
             healing_result = await session.execute(healing_stmt)
             healing_row = healing_result.first()
 
@@ -269,17 +301,19 @@ async def get_weekly_summary(
             # Return empty list until data model is updated
             top_failing_integrations: list[str] = []
 
-        # Generate AI insights if requested
+        # Generate AI insights if requested (only for single instance)
         ai_insights = None
-        if ai and pattern_collector and hasattr(pattern_collector, "summary_generator"):
-            try:
-                summary_generator = pattern_collector.summary_generator
-                ai_insights = await summary_generator.generate_summary(
-                    days=days, instance_id=instance_id
-                )
-            except Exception as e:
-                logger.warning(f"[{instance_id}] Failed to generate AI insights: {e}")
-                ai_insights = None
+        if ai and len(instance_ids) == 1:
+            pattern_collector = service.pattern_collectors.get(instance_ids[0])
+            if pattern_collector and hasattr(pattern_collector, "summary_generator"):
+                try:
+                    summary_generator = pattern_collector.summary_generator
+                    ai_insights = await summary_generator.generate_summary(
+                        days=days, instance_id=instance_ids[0]
+                    )
+                except Exception as e:
+                    logger.warning(f"[{instance_id}] Failed to generate AI insights: {e}")
+                    ai_insights = None
 
         return WeeklySummaryResponse(
             start_date=start_date,

@@ -217,15 +217,17 @@ def test_list_instances_includes_urls(multi_instance_client):
 # ==================== Instance Parameter Tests ====================
 
 
-def test_status_endpoint_defaults_to_default_instance(multi_instance_client):
-    """Test that /api/status without instance_id uses default instance."""
+def test_status_endpoint_defaults_to_all_instances(multi_instance_client):
+    """Test that /api/status without instance_id uses 'all' (aggregate mode)."""
     response = multi_instance_client.get("/api/status")
     assert response.status_code == 200
 
     data = response.json()
-    # Should show statistics for default instance
-    assert data["health_checks_performed"] == 100
-    assert data["healings_attempted"] == 10
+    # Should show aggregated statistics from all instances
+    # default(100) + home(50) + vacation(25) = 175
+    assert data["health_checks_performed"] == 175
+    # default(10) + home(5) + vacation(2) = 17
+    assert data["healings_attempted"] == 17
 
 
 def test_status_endpoint_accepts_instance_id_parameter(multi_instance_client):
@@ -337,8 +339,8 @@ def test_all_endpoints_use_consistent_validation(multi_instance_client):
 
 
 def test_backward_compatibility_no_instance_param(multi_instance_client):
-    """Test that omitting instance_id parameter works (backward compatibility)."""
-    # These should all default to "default" instance
+    """Test that omitting instance_id parameter works (defaults to 'all')."""
+    # These should all default to "all" (aggregate mode)
     endpoints = [
         "/api/status",
         "/api/health",
@@ -347,22 +349,22 @@ def test_backward_compatibility_no_instance_param(multi_instance_client):
 
     for endpoint in endpoints:
         response = multi_instance_client.get(endpoint)
-        # Should not fail - defaults to "default" instance or lists all
+        # Should not fail - defaults to "all" (aggregate) or lists all instances
         assert response.status_code in [200, 503], f"Endpoint {endpoint} failed"
 
 
-def test_explicit_default_instance_same_as_omitted(multi_instance_client):
-    """Test that explicit instance_id=default gives same result as omitting it."""
-    # Get status without instance_id
+def test_explicit_all_instance_same_as_omitted(multi_instance_client):
+    """Test that explicit instance_id=all gives same result as omitting it."""
+    # Get status without instance_id (defaults to 'all')
     response_implicit = multi_instance_client.get("/api/status")
     assert response_implicit.status_code == 200
     data_implicit = response_implicit.json()
 
-    # Get status with explicit instance_id=default
-    response_explicit = multi_instance_client.get("/api/status?instance_id=default")
+    # Get status with explicit instance_id=all
+    response_explicit = multi_instance_client.get("/api/status?instance_id=all")
     assert response_explicit.status_code == 200
     data_explicit = response_explicit.json()
 
-    # Both should return same data
+    # Both should return same aggregated data
     assert data_implicit["health_checks_performed"] == data_explicit["health_checks_performed"]
     assert data_implicit["healings_attempted"] == data_explicit["healings_attempted"]

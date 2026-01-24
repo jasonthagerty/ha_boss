@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import EntityHistoryResponse, EntityStateResponse
+from ha_boss.api.utils.instance_helpers import get_instance_ids, is_aggregate_mode
 from ha_boss.core.database import Entity
 
 logger = logging.getLogger(__name__)
@@ -17,22 +18,25 @@ router = APIRouter()
 
 @router.get("/entities", response_model=list[EntityStateResponse])
 async def list_entities(
-    instance_id: str = Query("default", description="Instance identifier"),
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum entities to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> list[EntityStateResponse]:
-    """List all monitored entities with current states for a specific instance.
+    """List all monitored entities with current states.
 
     Returns a paginated list of entities being monitored by HA Boss,
     including their current state and last update timestamps.
 
     Args:
-        instance_id: Instance identifier (default: "default")
+        instance_id: Instance ID or 'all' for aggregate (default: "all")
         limit: Maximum number of entities to return (1-1000)
         offset: Pagination offset
 
+    When instance_id is 'all', returns entities from all instances.
+    Each entity's instance_id field indicates which instance it belongs to.
+
     Returns:
-        List of entity state information for the specified instance
+        List of entity state information
 
     Raises:
         HTTPException: Instance not found (404) or service error (500)
@@ -40,32 +44,33 @@ async def list_entities(
     try:
         service = get_service()
 
-        # Validate instance exists
-        state_tracker = service.state_trackers.get(instance_id)
-        if not state_tracker:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.state_trackers.keys())}",
-            ) from None
+        # Get list of instances to query
+        instance_ids = get_instance_ids(service, instance_id)
+        aggregate = is_aggregate_mode(instance_id)
 
-        # Query database for monitored entities for this instance
-        # This is more reliable than state tracker cache which may be empty
+        # Query database for monitored entities
         async with service.database.async_session() as session:
-            result = await session.execute(
-                select(Entity)
-                .where(Entity.is_monitored == True)  # noqa: E712
-                .where(Entity.instance_id == instance_id)
-                .order_by(Entity.entity_id)
-                .limit(limit)
-                .offset(offset)
-            )
+            query = select(Entity).where(Entity.is_monitored == True)  # noqa: E712
+
+            # Filter by instance(s)
+            if len(instance_ids) == 1:
+                query = query.where(Entity.instance_id == instance_ids[0])
+            else:
+                query = query.where(Entity.instance_id.in_(instance_ids))
+
+            query = query.order_by(Entity.instance_id, Entity.entity_id).limit(limit).offset(offset)
+
+            result = await session.execute(query)
             db_entities = result.scalars().all()
 
         # Convert to response models
         entities = []
         for db_entity in db_entities:
             # Try to get current state from cache first, fall back to database
-            cached_state = await state_tracker.get_state(db_entity.entity_id)
+            state_tracker = service.state_trackers.get(db_entity.instance_id)
+            cached_state = None
+            if state_tracker:
+                cached_state = await state_tracker.get_state(db_entity.entity_id)
 
             if cached_state:
                 entities.append(
@@ -76,6 +81,7 @@ async def list_entities(
                         last_changed=None,
                         last_updated=cached_state.last_updated,
                         monitored=True,
+                        instance_id=db_entity.instance_id if aggregate else None,
                     )
                 )
             else:
@@ -88,6 +94,7 @@ async def list_entities(
                         last_changed=None,
                         last_updated=db_entity.last_seen,
                         monitored=True,
+                        instance_id=db_entity.instance_id if aggregate else None,
                     )
                 )
 
