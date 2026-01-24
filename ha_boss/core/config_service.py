@@ -710,9 +710,7 @@ class ConfigService:
             for row in result.scalars():
                 token = self._safe_decrypt(row.encrypted_token)
                 if token and token != "[decryption failed]":
-                    instances.append(
-                        (row.instance_id, row.url, token, row.bridge_enabled)
-                    )
+                    instances.append((row.instance_id, row.url, token, row.bridge_enabled))
                 else:
                     logger.warning(
                         f"Skipping instance '{row.instance_id}': failed to decrypt token"

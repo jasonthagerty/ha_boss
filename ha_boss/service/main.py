@@ -387,7 +387,9 @@ class HABossService:
 
             # If no config instances, try to load from database (dashboard-configured)
             if not instances:
-                logger.info("No instances in config, checking database for dashboard-configured instances...")
+                logger.info(
+                    "No instances in config, checking database for dashboard-configured instances..."
+                )
                 from ha_boss.core.config_service import ConfigService
 
                 config_service = ConfigService(self.config, self.database)
