@@ -65,16 +65,36 @@ class HomeAssistantConfig(BaseSettings):
         the dashboard and stored in the database. The service will load them
         at startup.
         """
-        # If legacy fields are set and instances is empty, convert to instances format
-        if self.url and self.token and not self.instances:
+
+        # Helper to check if a value is a valid (not placeholder) string
+        def is_valid_value(v: str | None) -> bool:
+            if not v:
+                return False
+            # Reject environment variable placeholders that weren't substituted
+            if v.startswith("${") and v.endswith("}"):
+                return False
+            return True
+
+        # If legacy fields are set (and not placeholders) and instances is empty,
+        # convert to instances format
+        if is_valid_value(self.url) and is_valid_value(self.token) and not self.instances:
             self.instances = [
                 HomeAssistantInstance(
-                    instance_id="default", url=self.url, token=self.token, bridge_enabled=True
+                    instance_id="default",
+                    url=self.url,  # type: ignore[arg-type]
+                    token=self.token,  # type: ignore[arg-type]
+                    bridge_enabled=True,
                 )
             ]
             # Clear legacy fields after conversion
             self.url = None
             self.token = None
+        else:
+            # Clear placeholder values from legacy fields
+            if not is_valid_value(self.url):
+                self.url = None
+            if not is_valid_value(self.token):
+                self.token = None
 
         # Note: Empty instances list is now allowed - instances can be loaded
         # from the database (dashboard-configured instances)

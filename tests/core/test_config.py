@@ -46,15 +46,38 @@ def test_config_url_trailing_slash():
     assert config.home_assistant.instances[0].url == "http://homeassistant.local:8123"
 
 
-def test_config_invalid_token():
-    """Test that empty token raises validation error."""
-    with pytest.raises(ValueError, match="HA_TOKEN"):
-        Config(
-            home_assistant={
-                "url": "http://homeassistant.local:8123",
-                "token": "${HA_TOKEN}",  # Not substituted
-            }
-        )
+def test_config_placeholder_token_ignored():
+    """Test that placeholder token results in empty instances list.
+
+    When env var placeholders aren't substituted, they're treated as
+    unset - allowing instances to be configured via the dashboard instead.
+    """
+    config = Config(
+        home_assistant={
+            "url": "http://homeassistant.local:8123",
+            "token": "${HA_TOKEN}",  # Not substituted - will be ignored
+        }
+    )
+    # Placeholder token is ignored, resulting in empty instances
+    # (both url AND token must be valid to create an instance)
+    assert config.home_assistant.instances == []
+    # URL is valid so it's kept, token placeholder is cleared
+    assert config.home_assistant.url == "http://homeassistant.local:8123"
+    assert config.home_assistant.token is None
+
+
+def test_config_both_placeholders_ignored():
+    """Test that both placeholders result in empty instances list."""
+    config = Config(
+        home_assistant={
+            "url": "${HA_URL}",
+            "token": "${HA_TOKEN}",
+        }
+    )
+    # Both are placeholders, so both get cleared
+    assert config.home_assistant.instances == []
+    assert config.home_assistant.url is None
+    assert config.home_assistant.token is None
 
 
 def test_config_custom_values():
