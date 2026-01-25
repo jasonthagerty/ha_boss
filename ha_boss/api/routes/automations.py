@@ -90,7 +90,7 @@ async def analyze_automation(
         analyzer = AutomationAnalyzer(
             ha_client=ha_client,
             config=service.config,
-            instance_id="default",
+            instance_id=instance_id,
             llm_router=llm_router,
         )
 
