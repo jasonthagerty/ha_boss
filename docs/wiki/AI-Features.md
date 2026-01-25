@@ -552,7 +552,7 @@ notifications:
 - Increase if using slower hardware or larger models
 
 **`claude_api_key`**: Anthropic API key (optional)
-- Required only for automation generation
+- Provides enhanced analysis capabilities (not required for basic features)
 - Set in .env file for security
 
 **`notifications.ai_enhanced`**: Enable AI explanations in notifications
@@ -578,7 +578,7 @@ notifications:
 ⚠️  Data sent to Anthropic servers
 ⚠️  Subject to Anthropic's privacy policy
 ℹ️  Only minimal context sent (no sensitive data)
-ℹ️  Only used for automation generation
+ℹ️  Used for complex automation analysis when enabled
 
 ### Security Best Practices
 

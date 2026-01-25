@@ -6,23 +6,25 @@ Welcome to the HA Boss documentation! This wiki provides comprehensive guides fo
 
 **Recent Updates:**
 
+- **Multi-Instance Support with Aggregate Mode** - Monitor multiple Home Assistant instances
+  - Connect to multiple HA instances simultaneously
+  - "All Instances" aggregate view shows combined data across all instances
+  - Per-instance filtering via `instance_id` parameter
+  - See [Multi-Instance](Multi-Instance) for complete documentation
+
 - **REST API & Dashboard** - Full REST API with interactive web dashboard
-  - 13 endpoints covering all HA Boss features (status, entities, patterns, healing, automations)
-  - Real-time dashboard with charts, monitoring, and API testing
+  - 15+ endpoints covering all HA Boss features (status, entities, patterns, healing, automations)
+  - Real-time dashboard with charts, monitoring, and instance selector
   - See [REST API](REST-API) and [Dashboard](Dashboard) for complete documentation
 
-- **Automation Tracking** - Real-time execution and service call tracking
+- **Automation Analysis & Tracking** - Usage-based optimization recommendations
   - Track automation executions with trigger types, durations, and success rates
   - Monitor service calls made by automations with response times
-  - Access via CLI (`haboss automation stats`) or MCP tools (5 new tools)
-  - See [AI Features - Automation Usage Tracking](AI-Features#automation-usage-tracking) for details
+  - AI-powered analysis suggests optimizations based on real usage patterns
+  - Access via CLI (`haboss automation stats`) or MCP tools
+  - See [AI Features - Automation Analysis](AI-Features#automation-analysis) for details
 
-- **Enhanced CLI** - Improved automation commands with usage tracking
-  - View execution history and statistics from command line
-  - Rich terminal UI with formatted output
-  - See [CLI Commands - Automation Commands](CLI-Commands#automation-commands) for full reference
-
-- **Comprehensive Test Suite** - 528 tests with 81% coverage
+- **Comprehensive Test Suite** - 740+ tests with robust coverage
   - Full test coverage for core monitoring and healing features
   - Pattern analysis and AI features thoroughly tested
   - See [Development - Testing](Development#testing) for contribution guidelines
@@ -36,7 +38,8 @@ Welcome to the HA Boss documentation! This wiki provides comprehensive guides fo
 
 ### Usage & Features
 - **[CLI Commands](CLI-Commands)** - Complete command-line interface reference
-- **[AI Features](AI-Features)** - LLM integration, automation generation, and intelligent analysis
+- **[AI Features](AI-Features)** - LLM integration, automation analysis, and intelligent insights
+- **[Multi-Instance](Multi-Instance)** - Managing multiple Home Assistant instances
 - **[Pattern Analysis](CLI-Commands#pattern-analysis-commands)** - Reliability tracking and failure analysis
 
 ### API & Dashboard
@@ -56,6 +59,7 @@ Welcome to the HA Boss documentation! This wiki provides comprehensive guides fo
 | Set up local development | [Local Development](Installation#local-development) |
 | Access the web dashboard | [Dashboard Guide](Dashboard#getting-started) |
 | Use the REST API | [API Reference](REST-API#api-reference) |
+| Monitor multiple HA instances | [Multi-Instance Setup](Multi-Instance) |
 | Configure monitoring options | [Monitoring Configuration](Configuration#monitoring-configuration) |
 | Use the CLI commands | [CLI Reference](CLI-Commands) |
 | Set up AI features | [AI Features Setup](AI-Features) |
@@ -84,8 +88,9 @@ HA Boss is production-ready with all three development phases complete:
 - ✅ **Phase 1 (MVP)** - Monitoring, auto-healing, Docker deployment
 - ✅ **Phase 2 (Pattern Analysis)** - Reliability tracking, database schema
 - ✅ **Phase 3 (AI Intelligence)** - Local LLM, Claude integration, automation analysis and tracking
+- ✅ **Multi-Instance Support** - Monitor multiple HA instances with aggregate views
 
-**Test Coverage:** 81% (528 tests passing)
+**Test Coverage:** 740+ tests passing
 
 ---
 
