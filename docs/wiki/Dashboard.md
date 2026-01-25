@@ -504,6 +504,39 @@ pytest tests/api/test_dashboard.py --cov=ha_boss/api --cov-report=html
 
 ## Usage Guide
 
+### Instance Selector
+
+The dashboard includes an instance selector dropdown in the header for multi-instance deployments.
+
+**Location:** Top-right corner of the dashboard header
+
+**Options:**
+- **🌐 All Instances** (default) - Aggregated view across all configured instances
+- **Individual instances** - Specific instance data only (with connection status indicator)
+
+**Connection Indicators:**
+| Icon | Status |
+|------|--------|
+| 🌐 | All Instances (aggregate view) |
+| 🟢 | Connected and healthy |
+| 🟡 | Connected but degraded |
+| 🔴 | Disconnected or error |
+
+**Behavior:**
+- **Default Selection**: "All Instances" is selected by default, showing combined data
+- **Persistent Selection**: Your choice is saved to browser localStorage
+- **Automatic Refresh**: All dashboard tabs update when you switch instances
+- **Aggregate Data**: When "All Instances" is selected:
+  - Statistics are summed across all instances
+  - Entity lists include which instance each entity belongs to
+  - Health checks show per-instance component status
+  - Healing history spans all instances
+
+**Usage Tips:**
+1. Use "All Instances" for an overview of your entire smart home ecosystem
+2. Switch to a specific instance when troubleshooting or focusing on one location
+3. The selector remembers your last choice across browser sessions
+
 ### Overview Tab
 
 **Purpose:** Monitor service status and healing statistics in real-time.

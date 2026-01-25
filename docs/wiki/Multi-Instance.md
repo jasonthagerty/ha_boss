@@ -86,8 +86,61 @@ Open http://localhost:8000/dashboard and use the instance selector to switch bet
 All API endpoints accept an optional `instance_id` query parameter to specify which instance to query.
 
 **Default Behavior:**
-- If `instance_id` is omitted, requests use the `"default"` instance
-- This maintains backward compatibility with single-instance deployments
+- If `instance_id` is omitted, requests default to `"all"` (aggregate mode)
+- Use `instance_id=all` explicitly for aggregated data across all instances
+- Use a specific instance ID (e.g., `instance_id=home`) for single-instance data
+
+### Aggregate Mode
+
+When `instance_id` is `"all"` or omitted, the API returns aggregated data from all configured instances:
+
+**Aggregate Behavior by Endpoint:**
+
+| Endpoint | Aggregate Behavior |
+|----------|-------------------|
+| `GET /api/status` | Sums statistics across all instances |
+| `GET /api/health` | Checks all instances, worst status determines overall |
+| `GET /api/entities` | Returns entities from all instances with `instance_id` field |
+| `GET /api/healing/history` | Returns healing actions from all instances |
+| `GET /api/patterns/reliability` | Aggregates reliability stats by integration |
+| `GET /api/patterns/failures` | Returns failures from all instances |
+| `GET /api/patterns/summary` | Aggregates summary statistics |
+| `GET /api/automations` | Returns automations from all instances |
+
+**Response Changes in Aggregate Mode:**
+
+When querying multiple instances, responses include an `instance_id` field to identify which instance each item belongs to:
+
+```json
+// GET /api/entities?instance_id=all
+[
+  {
+    "entity_id": "sensor.temperature",
+    "state": "72.5",
+    "instance_id": "home"
+  },
+  {
+    "entity_id": "sensor.humidity",
+    "state": "45",
+    "instance_id": "vacation"
+  }
+]
+```
+
+**Health Check in Aggregate Mode:**
+
+Component names are prefixed with the instance ID:
+
+```json
+// GET /api/health?instance_id=all
+{
+  "status": "healthy",
+  "critical": {
+    "home:service_state": { "status": "healthy", ... },
+    "vacation:service_state": { "status": "healthy", ... }
+  }
+}
+```
 
 ### GET /api/instances
 
@@ -399,17 +452,19 @@ curl http://localhost:8000/api/status
 
 **Single-Instance API Calls:**
 
-Multi-instance HA Boss maintains full backward compatibility:
+Multi-instance HA Boss maintains backward compatibility with single-instance deployments:
 
 ```bash
-# These calls work identically in multi-instance deployments
-# (they implicitly use instance_id=default)
+# These calls now return aggregated data from ALL instances by default
+# (they implicitly use instance_id=all)
 
-GET /api/status
-GET /api/entities
-GET /api/patterns/reliability
-POST /api/healing/sensor.temperature
+GET /api/status                    # Returns combined stats from all instances
+GET /api/entities                  # Returns entities from all instances
+GET /api/patterns/reliability      # Returns aggregated reliability stats
+POST /api/healing/sensor.temperature  # Heals entity (instance auto-detected)
 ```
+
+**Note:** If you have a single instance configured, the aggregate behavior returns the same data as before (just from that single instance).
 
 **Database Migration:**
 
@@ -420,11 +475,17 @@ The database schema automatically adds `instance_id` columns:
 
 ### Breaking Changes
 
-**None.** Multi-instance support is fully backward compatible.
+**v2.1.0+:** Default `instance_id` changed from `"default"` to `"all"`.
 
-- Single-instance configurations still work
-- API calls without `instance_id` use `"default"`
-- Existing database data migrates automatically
+- API calls without `instance_id` now return **aggregated data** from all instances
+- To get single-instance data, explicitly pass `?instance_id=<your-instance>`
+- Response models may now include `instance_id` field in aggregate mode
+- Health check component names are prefixed with instance ID in aggregate mode
+
+**Migration for v2.1.0+:**
+- If your code expects single-instance responses, add explicit `?instance_id=default` or your instance ID
+- Update any response parsing to handle the optional `instance_id` field
+- Single-instance configurations continue to work (aggregate of one = same data)
 
 ---
 

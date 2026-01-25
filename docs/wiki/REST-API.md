@@ -121,9 +121,22 @@ curl http://localhost:8000/api/status?instance_id=vacation
 
 ### Default Behavior
 
-- If `instance_id` is omitted, requests use the `"default"` instance
-- Maintains backward compatibility with single-instance deployments
-- All endpoints support multi-instance via query parameter
+- If `instance_id` is omitted, requests default to `"all"` (aggregate mode)
+- Aggregate mode returns combined data from all configured instances
+- Use explicit `?instance_id=<id>` for single-instance queries
+- All endpoints support both aggregate and single-instance modes
+
+### Aggregate Mode Responses
+
+When using aggregate mode (`instance_id=all` or omitted), responses include an `instance_id` field to identify which instance each item belongs to:
+
+```json
+// GET /api/entities (aggregate mode)
+[
+  {"entity_id": "sensor.temp", "state": "72", "instance_id": "home"},
+  {"entity_id": "sensor.motion", "state": "off", "instance_id": "vacation"}
+]
+```
 
 ### Instance Management
 
