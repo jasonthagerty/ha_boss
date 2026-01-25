@@ -671,14 +671,20 @@ class Dashboard {
       // In aggregate mode, component names are prefixed with instance_id (e.g., "sandbox:service_state")
       // We need to find any component that ends with the base name
       const findComponentStatus = (tier, baseName) => {
-        if (!tier) return false;
+        if (!tier || typeof tier !== 'object') return false;
+
+        const keys = Object.keys(tier);
+
         // Direct match (single-instance mode)
         if (tier[baseName]?.status === 'healthy') return true;
+
         // Prefixed match (aggregate mode) - all instances must be healthy
-        const prefixedKeys = Object.keys(tier).filter(k => k.endsWith(`:${baseName}`));
+        const prefixedKeys = keys.filter(k => k.endsWith(`:${baseName}`));
         if (prefixedKeys.length > 0) {
-          return prefixedKeys.every(k => tier[k]?.status === 'healthy');
+          const allHealthy = prefixedKeys.every(k => tier[k]?.status === 'healthy');
+          return allHealthy;
         }
+
         return false;
       };
 
@@ -686,6 +692,15 @@ class Dashboard {
       const haConnected = findComponentStatus(health.critical, 'ha_rest_connection');
       const websocketConnected = findComponentStatus(health.essential, 'websocket_connected');
       const databaseAccessible = findComponentStatus(health.critical, 'database_accessible');
+
+      // Debug logging for aggregate mode issues
+      if (this.currentInstance === 'all') {
+        console.log('Health check (aggregate mode):', {
+          criticalKeys: Object.keys(health.critical || {}),
+          essentialKeys: Object.keys(health.essential || {}),
+          serviceRunning, haConnected, websocketConnected, databaseAccessible
+        });
+      }
 
       document.getElementById('healthService').innerHTML = Components.booleanIndicator(serviceRunning);
       document.getElementById('healthHA').innerHTML = Components.booleanIndicator(haConnected);
