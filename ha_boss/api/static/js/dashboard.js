@@ -629,7 +629,26 @@ class Dashboard {
       document.getElementById('serviceUptime').textContent = Components.formatDuration(status.uptime_seconds);
 
       // Extract and format discovery timestamp
-      const discoveryTimestamp = health.essential?.entity_discovery_complete?.details?.last_refresh;
+      // Handle both single-instance and aggregate mode (prefixed keys)
+      const findDiscoveryTimestamp = (essential) => {
+        if (!essential) return null;
+        // Direct match (single-instance mode)
+        if (essential.entity_discovery_complete?.details?.last_refresh) {
+          return essential.entity_discovery_complete.details.last_refresh;
+        }
+        // Prefixed match (aggregate mode) - find most recent
+        const prefixedKeys = Object.keys(essential).filter(k => k.endsWith(':entity_discovery_complete'));
+        let mostRecent = null;
+        for (const key of prefixedKeys) {
+          const timestamp = essential[key]?.details?.last_refresh;
+          if (timestamp && (!mostRecent || timestamp > mostRecent)) {
+            mostRecent = timestamp;
+          }
+        }
+        return mostRecent;
+      };
+
+      const discoveryTimestamp = findDiscoveryTimestamp(health.essential);
       if (discoveryTimestamp) {
         // Format to minute granularity in local time: "Dec 28, 2025 7:57 PM"
         document.getElementById('lastDiscovery').textContent = dayjs(discoveryTimestamp).format('MMM DD, YYYY h:mm A');
@@ -649,10 +668,24 @@ class Dashboard {
       document.getElementById('healthStatus').innerHTML = Components.statusBadge(health.status, health.status.toUpperCase());
 
       // Extract health status from nested structure
-      const serviceRunning = health.critical?.service_state?.status === 'healthy';
-      const haConnected = health.critical?.ha_rest_connection?.status === 'healthy';
-      const websocketConnected = health.essential?.websocket_connected?.status === 'healthy';
-      const databaseAccessible = health.critical?.database_accessible?.status === 'healthy';
+      // In aggregate mode, component names are prefixed with instance_id (e.g., "sandbox:service_state")
+      // We need to find any component that ends with the base name
+      const findComponentStatus = (tier, baseName) => {
+        if (!tier) return false;
+        // Direct match (single-instance mode)
+        if (tier[baseName]?.status === 'healthy') return true;
+        // Prefixed match (aggregate mode) - all instances must be healthy
+        const prefixedKeys = Object.keys(tier).filter(k => k.endsWith(`:${baseName}`));
+        if (prefixedKeys.length > 0) {
+          return prefixedKeys.every(k => tier[k]?.status === 'healthy');
+        }
+        return false;
+      };
+
+      const serviceRunning = findComponentStatus(health.critical, 'service_state');
+      const haConnected = findComponentStatus(health.critical, 'ha_rest_connection');
+      const websocketConnected = findComponentStatus(health.essential, 'websocket_connected');
+      const databaseAccessible = findComponentStatus(health.critical, 'database_accessible');
 
       document.getElementById('healthService').innerHTML = Components.booleanIndicator(serviceRunning);
       document.getElementById('healthHA').innerHTML = Components.booleanIndicator(haConnected);
@@ -1577,7 +1610,26 @@ class Dashboard {
         document.getElementById('serviceUptime').textContent = Components.formatDuration(status.uptime_seconds);
 
         // Extract and format discovery timestamp
-        const discoveryTimestamp = health.essential?.entity_discovery_complete?.details?.last_refresh;
+        // Handle both single-instance and aggregate mode (prefixed keys)
+        const findDiscoveryTimestamp = (essential) => {
+          if (!essential) return null;
+          // Direct match (single-instance mode)
+          if (essential.entity_discovery_complete?.details?.last_refresh) {
+            return essential.entity_discovery_complete.details.last_refresh;
+          }
+          // Prefixed match (aggregate mode) - find most recent
+          const prefixedKeys = Object.keys(essential).filter(k => k.endsWith(':entity_discovery_complete'));
+          let mostRecent = null;
+          for (const key of prefixedKeys) {
+            const timestamp = essential[key]?.details?.last_refresh;
+            if (timestamp && (!mostRecent || timestamp > mostRecent)) {
+              mostRecent = timestamp;
+            }
+          }
+          return mostRecent;
+        };
+
+        const discoveryTimestamp = findDiscoveryTimestamp(health.essential);
         if (discoveryTimestamp) {
           // Format to minute granularity in local time: "Dec 28, 2025 7:57 PM"
           document.getElementById('lastDiscovery').textContent = dayjs(discoveryTimestamp).format('MMM DD, YYYY h:mm A');
