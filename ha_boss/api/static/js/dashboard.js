@@ -693,15 +693,6 @@ class Dashboard {
       const websocketConnected = findComponentStatus(health.essential, 'websocket_connected');
       const databaseAccessible = findComponentStatus(health.critical, 'database_accessible');
 
-      // Debug logging for aggregate mode issues
-      if (this.currentInstance === 'all') {
-        console.log('Health check (aggregate mode):', {
-          criticalKeys: Object.keys(health.critical || {}),
-          essentialKeys: Object.keys(health.essential || {}),
-          serviceRunning, haConnected, websocketConnected, databaseAccessible
-        });
-      }
-
       document.getElementById('healthService').innerHTML = Components.booleanIndicator(serviceRunning);
       document.getElementById('healthHA').innerHTML = Components.booleanIndicator(haConnected);
       document.getElementById('healthWS').innerHTML = Components.booleanIndicator(websocketConnected);
