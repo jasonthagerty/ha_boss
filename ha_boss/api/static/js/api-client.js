@@ -300,10 +300,11 @@ export class APIClient {
   async suppressHealing(entityId, instanceId = null) {
     const params = new URLSearchParams();
     // For suppression, we need a specific instance (not 'all')
-    const instance = instanceId || this.currentInstance;
-    if (instance && instance !== 'all') {
-      params.set('instance_id', instance);
+    const instance = instanceId || this.currentInstance || 'default';
+    if (instance === 'all') {
+      throw new Error('Cannot suppress healing in aggregate mode. Please select a specific instance.');
     }
+    params.set('instance_id', instance);
     return this.request('POST', `/healing/suppress/${encodeURIComponent(entityId)}?${params}`);
   }
 
@@ -316,10 +317,11 @@ export class APIClient {
   async unsuppressHealing(entityId, instanceId = null) {
     const params = new URLSearchParams();
     // For unsuppression, we need a specific instance (not 'all')
-    const instance = instanceId || this.currentInstance;
-    if (instance && instance !== 'all') {
-      params.set('instance_id', instance);
+    const instance = instanceId || this.currentInstance || 'default';
+    if (instance === 'all') {
+      throw new Error('Cannot unsuppress healing in aggregate mode. Please select a specific instance.');
     }
+    params.set('instance_id', instance);
     return this.request('DELETE', `/healing/suppress/${encodeURIComponent(entityId)}?${params}`);
   }
 
