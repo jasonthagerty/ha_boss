@@ -266,12 +266,18 @@ async def list_automations(
     """
     try:
         service = get_service()
+        logger.info(
+            f"[{instance_id}] List automations request: state={state}, limit={limit}, offset={offset}"
+        )
 
         # Get list of instances to query
         instance_ids = get_instance_ids(service, instance_id)
         aggregate = is_aggregate_mode(instance_id)
 
+        logger.debug(f"Querying automations for instances: {instance_ids}")
+
         if not service.database:
+            logger.error("Database not initialized")
             raise HTTPException(status_code=503, detail="Database not initialized") from None
 
         async with service.database.async_session() as session:
@@ -345,6 +351,7 @@ async def list_automations(
                     )
                 )
 
+            logger.info(f"[{instance_id}] Returning {len(response)} automations")
             return response
 
     except HTTPException:

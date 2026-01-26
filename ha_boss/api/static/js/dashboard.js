@@ -913,15 +913,28 @@ class Dashboard {
    */
   async populateAutomationList() {
     const datalist = document.getElementById('automationIdList');
-    if (!datalist) return;
+    if (!datalist) {
+      console.warn('automationIdList element not found');
+      return;
+    }
 
     try {
+      console.log('Fetching automations list...');
       const automations = await this.api.getAutomations(500);
-      datalist.innerHTML = automations
-        .map(a => `<option value="${a.entity_id}">${a.friendly_name || a.entity_id}</option>`)
-        .join('');
+      console.log(`Received ${automations.length} automations`);
+
+      if (automations.length === 0) {
+        console.warn('No automations found. Has auto-discovery run?');
+        datalist.innerHTML = '<option value="">No automations found</option>';
+      } else {
+        datalist.innerHTML = automations
+          .map(a => `<option value="${a.entity_id}">${a.friendly_name || a.entity_id}</option>`)
+          .join('');
+        console.log('Automation list populated successfully');
+      }
     } catch (error) {
       console.error('Error loading automations for dropdown:', error);
+      console.error('Error details:', error.message, error.stack);
       // Don't show error toast - just leave the dropdown empty
     }
   }
