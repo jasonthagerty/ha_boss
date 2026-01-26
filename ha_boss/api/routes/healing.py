@@ -377,16 +377,24 @@ async def suppress_healing(
             entity = result.scalar_one_or_none()
 
             if not entity:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Entity {entity_id} not found in instance {instance_id}",
+                # Entity doesn't exist in DB yet - create it with suppression enabled
+                # This allows users to preemptively suppress entities
+                entity = Entity(
+                    instance_id=instance_id,
+                    entity_id=entity_id,
+                    is_monitored=True,
+                    healing_suppressed=True,
                 )
+                session.add(entity)
+                logger.info(
+                    f"[{instance_id}] Created entity record with healing suppressed: {entity_id}"
+                )
+            else:
+                # Update existing entity
+                entity.healing_suppressed = True
+                logger.info(f"[{instance_id}] Healing suppressed for entity: {entity_id}")
 
-            # Update suppression status
-            entity.healing_suppressed = True
             await session.commit()
-
-            logger.info(f"[{instance_id}] Healing suppressed for entity: {entity_id}")
 
             return SuppressionActionResponse(
                 entity_id=entity_id,
@@ -439,16 +447,16 @@ async def unsuppress_healing(
             entity = result.scalar_one_or_none()
 
             if not entity:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Entity {entity_id} not found in instance {instance_id}",
+                # Entity doesn't exist in DB - healing is already not suppressed
+                logger.info(
+                    f"[{instance_id}] Entity {entity_id} not in database, "
+                    "healing already not suppressed"
                 )
-
-            # Update suppression status
-            entity.healing_suppressed = False
-            await session.commit()
-
-            logger.info(f"[{instance_id}] Healing unsuppressed for entity: {entity_id}")
+            else:
+                # Update existing entity
+                entity.healing_suppressed = False
+                await session.commit()
+                logger.info(f"[{instance_id}] Healing unsuppressed for entity: {entity_id}")
 
             return SuppressionActionResponse(
                 entity_id=entity_id,
