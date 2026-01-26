@@ -22,6 +22,9 @@ class Dashboard {
       failed: []
     };
 
+    // Current healing history filter ('all', 'success', 'failed')
+    this.healingFilter = 'all';
+
     // Per-instance history cache (max 100 data points per instance)
     this.statusHistoryCache = {};
     this.maxHistoryPoints = 100;
@@ -379,6 +382,12 @@ class Dashboard {
     document.getElementById('healingForm').addEventListener('submit', (e) => {
       e.preventDefault();
       this.triggerHealing();
+    });
+
+    document.getElementById('suppressionForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const entityId = document.getElementById('suppressEntityId').value.trim();
+      this.suppressEntity(entityId);
     });
 
     // Refresh buttons
@@ -960,13 +969,55 @@ class Dashboard {
   // ==================== Healing Tab ====================
 
   /**
+   * Navigate to Healing tab with an optional filter
+   * @param {string} filter - Filter type: 'all', 'success', or 'failed'
+   */
+  async showHealingTab(filter = 'all') {
+    // Store the filter
+    this.healingFilter = filter;
+
+    // Switch to the healing tab
+    await this.switchTab('healing');
+
+    // Update the filter dropdown to reflect current filter
+    const filterSelect = document.getElementById('healingFilterSelect');
+    if (filterSelect) {
+      filterSelect.value = filter;
+    }
+
+    // Show a toast indicating the filter
+    const filterLabels = {
+      'all': 'Showing all healing actions',
+      'success': 'Showing successful healings only',
+      'failed': 'Showing failed healings only'
+    };
+    this.showToast(filterLabels[filter] || filterLabels['all'], 'info', 2000);
+  }
+
+  /**
+   * Handle healing filter dropdown change
+   * @param {string} filter - New filter value
+   */
+  async onHealingFilterChange(filter) {
+    this.healingFilter = filter;
+    await this.loadHealingHistory(filter);
+  }
+
+  /**
    * Load healing tab
    */
   async loadHealingTab() {
+    // Update the filter dropdown to reflect current filter
+    const filterSelect = document.getElementById('healingFilterSelect');
+    if (filterSelect && this.healingFilter) {
+      filterSelect.value = this.healingFilter;
+    }
+
     await Promise.all([
       this.loadHealingHistory(),
       this.loadSuccessRate(),
-      this.populateEntityList()
+      this.populateEntityList(),
+      this.loadSuppressedEntities()
     ]);
   }
 
@@ -1023,13 +1074,17 @@ class Dashboard {
 
   /**
    * Load healing history
+   * @param {string|null} filter - Optional filter override ('all', 'success', 'failed')
    */
-  async loadHealingHistory() {
+  async loadHealingHistory(filter = null) {
     const historyDiv = document.getElementById('healingHistory');
     historyDiv.innerHTML = Components.spinner();
 
+    // Use provided filter or current filter state
+    const activeFilter = filter || this.healingFilter || 'all';
+
     try {
-      const history = await this.api.getHealingHistory(50, 24);
+      const history = await this.api.getHealingHistory(50, 24, null, activeFilter);
 
       if (history.actions.length === 0) {
         historyDiv.innerHTML = '<p class="text-gray-500 text-center py-8">No healing history found</p>';
@@ -1039,18 +1094,34 @@ class Dashboard {
       const headers = [
         { text: 'Entity', key: 'entity_id' },
         { text: 'Integration', key: 'integration' },
+        { text: 'Reason', key: 'reason' },
         { text: 'Result', key: 'result' },
+        { text: 'Error', key: 'error' },
         { text: 'Time', key: 'timestamp' }
       ];
+
+      const reasonLabels = {
+        'unavailable': '⚠️ Unavailable',
+        'stale': '⏱️ Stale',
+        'unknown': '❓ Unknown',
+        'manual_heal': '👤 Manual',
+        'recovered': '✅ Recovered'
+      };
 
       const rows = history.actions.map(action => ({
         entity_id: action.entity_id,
         integration: action.integration || '--',
-        result: action.success ? '✓ Success' : '✗ Failed',
+        reason: reasonLabels[action.trigger_reason] || action.trigger_reason || '--',
+        result: action.success
+          ? '<span class="text-green-600 font-medium">✓ Success</span>'
+          : '<span class="text-red-600 font-medium">✗ Failed</span>',
+        error: action.error_message
+          ? `<span class="text-red-600 text-xs" title="${action.error_message}">${action.error_message.substring(0, 30)}${action.error_message.length > 30 ? '...' : ''}</span>`
+          : '--',
         timestamp: Components.formatTime(action.timestamp, true)
       }));
 
-      historyDiv.innerHTML = Components.table(headers, rows);
+      historyDiv.innerHTML = Components.table(headers, rows, { hoverable: true, rawHtml: ['result', 'error'] });
 
     } catch (error) {
       console.error('Error loading healing history:', error);
@@ -1073,6 +1144,92 @@ class Dashboard {
 
     } catch (error) {
       console.error('Error loading success rate:', error);
+    }
+  }
+
+  /**
+   * Load suppressed entities list
+   */
+  async loadSuppressedEntities() {
+    const listDiv = document.getElementById('suppressedEntitiesList');
+    if (!listDiv) return;
+
+    try {
+      const data = await this.api.getSuppressedEntities();
+
+      if (data.entities.length === 0) {
+        listDiv.innerHTML = '<p class="text-gray-500 text-center py-4">No entities have healing suppressed</p>';
+        return;
+      }
+
+      const headers = [
+        { text: 'Entity', key: 'entity_id' },
+        { text: 'Name', key: 'friendly_name' },
+        { text: 'Instance', key: 'instance_id' },
+        { text: 'Since', key: 'suppressed_since' },
+        { text: 'Action', key: 'action' }
+      ];
+
+      const rows = data.entities.map(entity => ({
+        entity_id: entity.entity_id,
+        friendly_name: entity.friendly_name || '--',
+        instance_id: entity.instance_id,
+        suppressed_since: entity.suppressed_since
+          ? Components.formatTime(entity.suppressed_since, true)
+          : '--',
+        action: `<button onclick="window.dashboard.unsuppressEntity('${entity.entity_id}', '${entity.instance_id}')"
+                  class="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700">
+                  Enable Healing
+                </button>`
+      }));
+
+      listDiv.innerHTML = Components.table(headers, rows, { hoverable: true, rawHtml: ['action'] });
+
+    } catch (error) {
+      console.error('Error loading suppressed entities:', error);
+      listDiv.innerHTML = `<p class="text-red-500 text-center py-4">Failed to load: ${error.message}</p>`;
+    }
+  }
+
+  /**
+   * Suppress healing for an entity
+   * @param {string} entityId - Entity ID to suppress
+   */
+  async suppressEntity(entityId) {
+    if (!entityId) return;
+
+    // Check if we're in aggregate mode without a specific instance
+    if (this.currentInstance === 'all') {
+      this.showToast('Please select a specific instance to suppress healing', 'error');
+      return;
+    }
+
+    try {
+      await this.api.suppressHealing(entityId, this.currentInstance);
+      this.showToast(`Healing suppressed for ${entityId}`, 'success');
+      await this.loadSuppressedEntities();
+
+      // Clear the input
+      document.getElementById('suppressEntityId').value = '';
+    } catch (error) {
+      console.error('Error suppressing healing:', error);
+      this.showToast(`Failed to suppress: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Remove healing suppression for an entity
+   * @param {string} entityId - Entity ID to unsuppress
+   * @param {string} instanceId - Instance ID
+   */
+  async unsuppressEntity(entityId, instanceId) {
+    try {
+      await this.api.unsuppressHealing(entityId, instanceId);
+      this.showToast(`Healing enabled for ${entityId}`, 'success');
+      await this.loadSuppressedEntities();
+    } catch (error) {
+      console.error('Error enabling healing:', error);
+      this.showToast(`Failed to enable healing: ${error.message}`, 'error');
     }
   }
 

@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 5
+CURRENT_DB_VERSION = 6
 
 
 class Base(DeclarativeBase):
@@ -56,6 +56,7 @@ class Entity(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_state: Mapped[str | None] = mapped_column(String(255))
     is_monitored: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    healing_suppressed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), nullable=False
     )

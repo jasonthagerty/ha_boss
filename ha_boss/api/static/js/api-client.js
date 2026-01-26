@@ -269,11 +269,58 @@ export class APIClient {
    * @param {number} limit - Maximum actions to return (1-500, default: 50)
    * @param {number} hours - Hours of history (1-168, default: 24)
    * @param {string|null} instanceId - Instance ID (null to use current instance)
+   * @param {string|null} filter - Filter by result: 'all', 'success', 'failed' (default: 'all')
    */
-  async getHealingHistory(limit = 50, hours = 24, instanceId = null) {
+  async getHealingHistory(limit = 50, hours = 24, instanceId = null, filter = null) {
     const params = new URLSearchParams({ limit, hours });
     this.addInstanceParam(params, instanceId);
+    if (filter && filter !== 'all') {
+      params.set('filter', filter);
+    }
     return this.request('GET', `/healing/history?${params}`);
+  }
+
+  /**
+   * Get entities with suppressed healing
+   * GET /api/healing/suppressed
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
+   */
+  async getSuppressedEntities(instanceId = null) {
+    const params = new URLSearchParams();
+    this.addInstanceParam(params, instanceId);
+    return this.request('GET', `/healing/suppressed?${params}`);
+  }
+
+  /**
+   * Suppress healing for an entity
+   * POST /api/healing/suppress/{entity_id}
+   * @param {string} entityId - Entity ID to suppress
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
+   */
+  async suppressHealing(entityId, instanceId = null) {
+    const params = new URLSearchParams();
+    // For suppression, we need a specific instance (not 'all')
+    const instance = instanceId || this.currentInstance;
+    if (instance && instance !== 'all') {
+      params.set('instance_id', instance);
+    }
+    return this.request('POST', `/healing/suppress/${encodeURIComponent(entityId)}?${params}`);
+  }
+
+  /**
+   * Remove healing suppression for an entity
+   * DELETE /api/healing/suppress/{entity_id}
+   * @param {string} entityId - Entity ID to unsuppress
+   * @param {string|null} instanceId - Instance ID (null to use current instance)
+   */
+  async unsuppressHealing(entityId, instanceId = null) {
+    const params = new URLSearchParams();
+    // For unsuppression, we need a specific instance (not 'all')
+    const instance = instanceId || this.currentInstance;
+    if (instance && instance !== 'all') {
+      params.set('instance_id', instance);
+    }
+    return this.request('DELETE', `/healing/suppress/${encodeURIComponent(entityId)}?${params}`);
   }
 
   // ==================== Configuration Endpoints ====================

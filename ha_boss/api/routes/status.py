@@ -14,10 +14,50 @@ from ha_boss.api.models import (
     ServiceStatusResponse,
 )
 from ha_boss.api.utils.instance_helpers import get_instance_ids, is_aggregate_mode
+from ha_boss.core.database import HealingAction
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def get_healing_stats_from_db(database, instance_ids: list[str]) -> tuple[int, int, int]:
+    """Query healing statistics from the database.
+
+    Args:
+        database: Database manager
+        instance_ids: List of instance IDs to query
+
+    Returns:
+        Tuple of (attempted, succeeded, failed) counts
+    """
+    try:
+        async with database.async_session() as session:
+            from sqlalchemy import Integer, cast, func, select
+
+            # Build query for healing statistics
+            stats_stmt = select(
+                func.count(HealingAction.id).label("total"),
+                func.sum(cast(HealingAction.success, Integer)).label("success"),
+            )
+
+            # Filter by instance(s)
+            if len(instance_ids) == 1:
+                stats_stmt = stats_stmt.where(HealingAction.instance_id == instance_ids[0])
+            else:
+                stats_stmt = stats_stmt.where(HealingAction.instance_id.in_(instance_ids))
+
+            result = await session.execute(stats_stmt)
+            stats = result.first()
+
+            total = stats.total or 0
+            succeeded = stats.success or 0
+            failed = total - succeeded
+
+            return total, succeeded, failed
+    except Exception as e:
+        logger.warning(f"Failed to query healing stats from database: {e}")
+        return 0, 0, 0
 
 
 @router.get("/instances", response_model=list[InstanceInfo])
@@ -133,11 +173,20 @@ async def get_status(
 
             total_monitored += db_count
 
-            # Aggregate per-instance statistics
+            # Aggregate health checks (still from in-memory counter as this is fine)
             total_health_checks += service.health_checks_performed.get(inst_id, 0)
-            total_healings_attempted += service.healings_attempted.get(inst_id, 0)
-            total_healings_succeeded += service.healings_succeeded.get(inst_id, 0)
-            total_healings_failed += service.healings_failed.get(inst_id, 0)
+
+        # Query healing statistics from database (accurate source of truth)
+        if service.database:
+            total_healings_attempted, total_healings_succeeded, total_healings_failed = (
+                await get_healing_stats_from_db(service.database, instance_ids)
+            )
+        else:
+            # Fallback to in-memory counters if database unavailable
+            for inst_id in instance_ids:
+                total_healings_attempted += service.healings_attempted.get(inst_id, 0)
+                total_healings_succeeded += service.healings_succeeded.get(inst_id, 0)
+                total_healings_failed += service.healings_failed.get(inst_id, 0)
 
         return ServiceStatusResponse(
             state=service.state,

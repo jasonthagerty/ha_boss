@@ -157,10 +157,14 @@ export const Components = {
    * @param {Array} headers - Table headers [{text: string, key: string}]
    * @param {Array} rows - Table rows (array of objects)
    * @param {Object} options - Table options
+   * @param {boolean} options.sortable - Enable sorting
+   * @param {boolean} options.hoverable - Enable row hover effect
+   * @param {boolean} options.striped - Enable alternating row colors
+   * @param {Array} options.rawHtml - Array of column keys that contain raw HTML
    * @returns {string} HTML string
    */
   table(headers, rows, options = {}) {
-    const { sortable = false, hoverable = true, striped = true } = options;
+    const { sortable = false, hoverable = true, striped = true, rawHtml = [] } = options;
 
     if (rows.length === 0) {
       return `<p class="text-gray-500 text-center py-8">No data available</p>`;
@@ -178,7 +182,12 @@ export const Components = {
 
     const bodyRows = rows.map(row => `
       <tr class="${hoverClass} ${stripedClass}">
-        ${headers.map(h => `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${row[h.key] || '--'}</td>`).join('')}
+        ${headers.map(h => {
+          const value = row[h.key];
+          // If this column is marked as raw HTML, don't escape it
+          const cellContent = rawHtml.includes(h.key) ? (value || '--') : this.escapeHtml(String(value || '--'));
+          return `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${cellContent}</td>`;
+        }).join('')}
       </tr>
     `).join('');
 

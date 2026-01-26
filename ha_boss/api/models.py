@@ -204,6 +204,11 @@ class HealingActionResponse(BaseModel):
     timestamp: datetime = Field(..., description="Action timestamp")
     message: str = Field(..., description="Result message")
     instance_id: str | None = Field(None, description="Instance ID (present in aggregate mode)")
+    trigger_reason: str | None = Field(
+        None, description="Why healing was triggered (unavailable, stale, unknown, manual_heal)"
+    )
+    error_message: str | None = Field(None, description="Error message if healing failed")
+    attempt_number: int | None = Field(None, description="Attempt number for this entity")
 
 
 class HealingHistoryResponse(BaseModel):
@@ -213,6 +218,33 @@ class HealingHistoryResponse(BaseModel):
     total_count: int = Field(..., description="Total actions in history")
     success_count: int = Field(..., description="Successful actions")
     failure_count: int = Field(..., description="Failed actions")
+
+
+class SuppressedEntityResponse(BaseModel):
+    """Response for a suppressed entity."""
+
+    entity_id: str = Field(..., description="Entity ID")
+    instance_id: str = Field(..., description="Instance ID")
+    friendly_name: str | None = Field(None, description="Entity friendly name")
+    integration: str | None = Field(None, description="Integration name")
+    suppressed_since: datetime | None = Field(None, description="When entity was last updated")
+
+
+class SuppressedEntitiesResponse(BaseModel):
+    """Response for list of suppressed entities."""
+
+    entities: list[SuppressedEntityResponse] = Field(
+        default_factory=list, description="List of suppressed entities"
+    )
+    total_count: int = Field(..., description="Total count of suppressed entities")
+
+
+class SuppressionActionResponse(BaseModel):
+    """Response for suppression action (suppress/unsuppress)."""
+
+    entity_id: str = Field(..., description="Entity ID")
+    suppressed: bool = Field(..., description="Whether healing is now suppressed")
+    message: str = Field(..., description="Result message")
 
 
 class ErrorResponse(BaseModel):

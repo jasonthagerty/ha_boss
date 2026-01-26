@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 
 from ha_boss.core.config import Config
-from ha_boss.core.database import Database, HealingAction, Integration
+from ha_boss.core.database import Database, Entity, HealingAction, Integration
 from ha_boss.core.exceptions import (
     CircuitBreakerOpenError,
     HealingFailedError,
@@ -77,6 +77,11 @@ class HealingManager:
         issue_type = health_issue.issue_type
 
         logger.info(f"Attempting to heal {entity_id} ({issue_type})")
+
+        # Check if healing is suppressed for this entity
+        if await self._is_healing_suppressed(entity_id):
+            logger.info(f"Healing suppressed for {entity_id}, skipping (issue: {issue_type})")
+            return False
 
         # Look up integration for this entity
         integration_id = self.integration_discovery.get_integration_for_entity(entity_id)
@@ -350,6 +355,29 @@ class HealingManager:
 
                 logger.warning(f"Circuit breaker opened for {integration.title} until {reset_time}")
 
+    async def _is_healing_suppressed(self, entity_id: str) -> bool:
+        """Check if healing is suppressed for an entity.
+
+        Args:
+            entity_id: Entity ID to check
+
+        Returns:
+            True if healing is suppressed, False otherwise
+        """
+        try:
+            async with self.database.async_session() as session:
+                result = await session.execute(
+                    select(Entity.healing_suppressed).where(
+                        Entity.instance_id == self.ha_client.instance_id,
+                        Entity.entity_id == entity_id,
+                    )
+                )
+                row = result.scalar_one_or_none()
+                return bool(row) if row is not None else False
+        except Exception as e:
+            logger.warning(f"Error checking healing suppression for {entity_id}: {e}")
+            return False
+
     async def can_heal(self, entity_id: str) -> tuple[bool, str]:
         """Check if entity can be healed (without attempting).
 
@@ -359,6 +387,10 @@ class HealingManager:
         Returns:
             Tuple of (can_heal: bool, reason: str)
         """
+        # Check if healing is suppressed
+        if await self._is_healing_suppressed(entity_id):
+            return False, "Healing is suppressed for this entity"
+
         # Check if integration is known
         integration_id = self.integration_discovery.get_integration_for_entity(entity_id)
         if not integration_id:

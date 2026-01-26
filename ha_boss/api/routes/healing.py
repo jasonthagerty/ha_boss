@@ -6,8 +6,15 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Path, Query
 
 from ha_boss.api.app import get_service
-from ha_boss.api.models import HealingActionResponse, HealingHistoryResponse
+from ha_boss.api.models import (
+    HealingActionResponse,
+    HealingHistoryResponse,
+    SuppressedEntitiesResponse,
+    SuppressedEntityResponse,
+    SuppressionActionResponse,
+)
 from ha_boss.api.utils.instance_helpers import get_instance_ids
+from ha_boss.core.database import Entity, HealthEvent
 from ha_boss.monitoring.health_monitor import HealthIssue
 
 logger = logging.getLogger(__name__)
@@ -125,6 +132,7 @@ async def get_healing_history(
     instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
     limit: int = Query(50, ge=1, le=500, description="Maximum actions to return"),
     hours: int = Query(24, ge=1, le=168, description="Hours of history (1-168)"),
+    filter: str | None = Query(None, description="Filter by result: 'success' or 'failed'"),
 ) -> HealingHistoryResponse:
     """Get healing action history.
 
@@ -185,6 +193,12 @@ async def get_healing_history(
             else:
                 stmt = stmt.where(HealingAction.instance_id.in_(instance_ids))  # type: ignore[attr-defined]
 
+            # Filter by success/failed if specified
+            if filter == "success":
+                stmt = stmt.where(HealingAction.success == True)  # noqa: E712
+            elif filter == "failed":
+                stmt = stmt.where(HealingAction.success == False)  # noqa: E712
+
             stmt = stmt.order_by(HealingAction.timestamp.desc()).limit(limit)  # type: ignore[attr-defined]
 
             result = await session.execute(stmt)
@@ -210,22 +224,45 @@ async def get_healing_history(
             stats_result = await session.execute(stats_stmt)
             stats = stats_result.first()
 
-        # Convert to response models
+        # Convert to response models with enhanced details
         actions = []
-        for action, integration_domain in rows:
-            actions.append(
-                HealingActionResponse(
-                    entity_id=action.entity_id,
-                    integration=integration_domain or "unknown",
-                    action_type=action.action,  # Use 'action' attribute
-                    success=action.success,
-                    timestamp=action.timestamp,
-                    message=(
-                        action.error if not action.success else "Success"
-                    ),  # Use 'error' attribute
-                    instance_id=action.instance_id if len(instance_ids) > 1 else None,
+        async with service.database.async_session() as session:
+            for action, integration_domain in rows:
+                # Look up the trigger reason from the most recent HealthEvent for this entity
+                # that occurred before or at the same time as the healing action
+                trigger_reason = None
+                try:
+                    health_event_stmt = (
+                        select(HealthEvent.event_type)
+                        .where(
+                            HealthEvent.entity_id == action.entity_id,
+                            HealthEvent.instance_id == action.instance_id,
+                            HealthEvent.timestamp <= action.timestamp,
+                        )
+                        .order_by(HealthEvent.timestamp.desc())
+                        .limit(1)
+                    )
+                    health_result = await session.execute(health_event_stmt)
+                    health_row = health_result.first()
+                    if health_row:
+                        trigger_reason = health_row[0]
+                except Exception as e:
+                    logger.debug(f"Could not fetch trigger reason: {e}")
+
+                actions.append(
+                    HealingActionResponse(
+                        entity_id=action.entity_id,
+                        integration=integration_domain or "unknown",
+                        action_type=action.action,
+                        success=action.success,
+                        timestamp=action.timestamp,
+                        message=(action.error if not action.success else "Success"),
+                        instance_id=action.instance_id if len(instance_ids) > 1 else None,
+                        trigger_reason=trigger_reason,
+                        error_message=action.error if not action.success else None,
+                        attempt_number=action.attempt_number,
+                    )
                 )
-            )
 
         total_count = stats.total or 0
         success_count = stats.success or 0
@@ -246,3 +283,184 @@ async def get_healing_history(
     except Exception as e:
         logger.error(f"[{instance_id}] Error retrieving healing history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve healing history") from None
+
+
+@router.get("/healing/suppressed", response_model=SuppressedEntitiesResponse)
+async def get_suppressed_entities(
+    instance_id: str = Query("all", description="Instance ID or 'all' for aggregate"),
+) -> SuppressedEntitiesResponse:
+    """Get list of entities with suppressed healing.
+
+    Returns entities where auto-healing has been disabled.
+    """
+    try:
+        service = get_service()
+        instance_ids = get_instance_ids(service, instance_id)
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            # Query entities with healing suppressed
+            stmt = select(Entity).where(Entity.healing_suppressed == True)  # noqa: E712
+
+            if len(instance_ids) == 1:
+                stmt = stmt.where(Entity.instance_id == instance_ids[0])
+            else:
+                stmt = stmt.where(Entity.instance_id.in_(instance_ids))
+
+            stmt = stmt.order_by(Entity.entity_id)
+
+            result = await session.execute(stmt)
+            entities = result.scalars().all()
+
+            suppressed_list = [
+                SuppressedEntityResponse(
+                    entity_id=entity.entity_id,
+                    instance_id=entity.instance_id,
+                    friendly_name=entity.friendly_name,
+                    integration=entity.integration_id,
+                    suppressed_since=entity.updated_at,
+                )
+                for entity in entities
+            ]
+
+        return SuppressedEntitiesResponse(
+            entities=suppressed_list,
+            total_count=len(suppressed_list),
+        )
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error getting suppressed entities: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get suppressed entities") from None
+
+
+@router.post("/healing/suppress/{entity_id:path}", response_model=SuppressionActionResponse)
+async def suppress_healing(
+    entity_id: str,
+    instance_id: str = Query("default", description="Instance ID"),
+) -> SuppressionActionResponse:
+    """Suppress auto-healing for a specific entity.
+
+    The entity will still be monitored, but healing attempts will be skipped.
+    """
+    try:
+        service = get_service()
+
+        # Determine which instance to use
+        if instance_id == "all":
+            # For aggregate mode, require specific instance
+            raise HTTPException(
+                status_code=400,
+                detail="Must specify a specific instance_id when suppressing healing",
+            )
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            # Find the entity
+            stmt = select(Entity).where(
+                Entity.instance_id == instance_id,
+                Entity.entity_id == entity_id,
+            )
+            result = await session.execute(stmt)
+            entity = result.scalar_one_or_none()
+
+            if not entity:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Entity {entity_id} not found in instance {instance_id}",
+                )
+
+            # Update suppression status
+            entity.healing_suppressed = True
+            await session.commit()
+
+            logger.info(f"[{instance_id}] Healing suppressed for entity: {entity_id}")
+
+            return SuppressionActionResponse(
+                entity_id=entity_id,
+                suppressed=True,
+                message=f"Healing suppressed for {entity_id}",
+            )
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error suppressing healing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to suppress healing") from None
+
+
+@router.delete("/healing/suppress/{entity_id:path}", response_model=SuppressionActionResponse)
+async def unsuppress_healing(
+    entity_id: str,
+    instance_id: str = Query("default", description="Instance ID"),
+) -> SuppressionActionResponse:
+    """Remove healing suppression for a specific entity.
+
+    Re-enables auto-healing for this entity.
+    """
+    try:
+        service = get_service()
+
+        # Determine which instance to use
+        if instance_id == "all":
+            # For aggregate mode, require specific instance
+            raise HTTPException(
+                status_code=400,
+                detail="Must specify a specific instance_id when unsuppressing healing",
+            )
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            # Find the entity
+            stmt = select(Entity).where(
+                Entity.instance_id == instance_id,
+                Entity.entity_id == entity_id,
+            )
+            result = await session.execute(stmt)
+            entity = result.scalar_one_or_none()
+
+            if not entity:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Entity {entity_id} not found in instance {instance_id}",
+                )
+
+            # Update suppression status
+            entity.healing_suppressed = False
+            await session.commit()
+
+            logger.info(f"[{instance_id}] Healing unsuppressed for entity: {entity_id}")
+
+            return SuppressionActionResponse(
+                entity_id=entity_id,
+                suppressed=False,
+                message=f"Healing enabled for {entity_id}",
+            )
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error unsuppressing healing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to unsuppress healing") from None

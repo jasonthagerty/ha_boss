@@ -55,9 +55,18 @@ def mock_service():
     # Backward compatibility property
     service.websocket_client = websocket_client
 
-    # Mock database with engine
+    # Mock database with engine and async_session for healing stats query
     service.database = MagicMock()
     service.database.engine = MagicMock()
+
+    # Create a properly mocked async session for healing stats
+    mock_result = MagicMock()
+    mock_result.first.return_value = MagicMock(total=10, success=8)
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    service.database.async_session = MagicMock(return_value=mock_session)
 
     # Mock state tracker with cache (multi-instance)
     state_tracker = MagicMock()

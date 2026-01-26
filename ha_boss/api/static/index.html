@@ -150,15 +150,21 @@
             <div class="bg-white rounded-lg shadow p-6 mb-6">
                 <h2 class="text-lg font-semibold text-gray-900 mb-4">Healing Statistics</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="text-center">
+                    <div class="text-center cursor-pointer hover:bg-blue-50 rounded-lg p-3 transition-colors"
+                         onclick="window.dashboard.showHealingTab('all')"
+                         title="Click to view all healing history">
                         <div class="text-3xl font-bold text-blue-600" id="healingsAttempted">0</div>
                         <div class="text-sm text-gray-600">Attempted</div>
                     </div>
-                    <div class="text-center">
+                    <div class="text-center cursor-pointer hover:bg-green-50 rounded-lg p-3 transition-colors"
+                         onclick="window.dashboard.showHealingTab('success')"
+                         title="Click to view successful healings">
                         <div class="text-3xl font-bold text-green-600" id="healingsSucceeded">0</div>
                         <div class="text-sm text-gray-600">Succeeded</div>
                     </div>
-                    <div class="text-center">
+                    <div class="text-center cursor-pointer hover:bg-red-50 rounded-lg p-3 transition-colors"
+                         onclick="window.dashboard.showHealingTab('failed')"
+                         title="Click to view failed healings">
                         <div class="text-3xl font-bold text-red-600" id="healingsFailed">0</div>
                         <div class="text-sm text-gray-600">Failed</div>
                     </div>
@@ -311,9 +317,44 @@
 
             <!-- Healing History -->
             <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-lg font-semibold text-gray-900 mb-4">Healing History</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold text-gray-900">Healing History</h2>
+                    <div class="flex items-center space-x-2">
+                        <label for="healingFilterSelect" class="text-sm text-gray-600">Filter:</label>
+                        <select id="healingFilterSelect"
+                                class="rounded-md border-gray-300 text-sm focus:border-blue-500 focus:ring-blue-500"
+                                onchange="window.dashboard.onHealingFilterChange(this.value)">
+                            <option value="all">All Actions</option>
+                            <option value="success">Successful Only</option>
+                            <option value="failed">Failed Only</option>
+                        </select>
+                    </div>
+                </div>
                 <div id="healingHistory" class="overflow-x-auto">
                     <p class="text-gray-500 text-center py-8">Loading healing history...</p>
+                </div>
+            </div>
+
+            <!-- Suppressed Entities -->
+            <div class="bg-white rounded-lg shadow p-6 mt-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Suppressed Entities</h2>
+                <p class="text-sm text-gray-600 mb-4">
+                    Entities listed here will still be monitored, but auto-healing will be skipped.
+                </p>
+
+                <!-- Add Suppression Form -->
+                <form id="suppressionForm" class="mb-4 flex items-center space-x-2">
+                    <input type="text" id="suppressEntityId" list="entityIdList"
+                           class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                           placeholder="Enter entity ID to suppress">
+                    <button type="submit" class="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded hover:bg-orange-700">
+                        Suppress Healing
+                    </button>
+                </form>
+
+                <!-- Suppressed Entities List -->
+                <div id="suppressedEntitiesList" class="overflow-x-auto">
+                    <p class="text-gray-500 text-center py-4">Loading suppressed entities...</p>
                 </div>
             </div>
         </div>
