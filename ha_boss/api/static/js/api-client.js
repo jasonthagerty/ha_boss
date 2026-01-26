@@ -219,7 +219,7 @@ export class APIClient {
       params.set('state', state);
     }
     this.addInstanceParam(params, instanceId);
-    return this.request('GET', `/discovery/automations?${params}`);
+    return this.request('GET', `/automations?${params}`);
   }
 
   // ==================== Automation Management Endpoints ====================
