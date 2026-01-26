@@ -354,12 +354,22 @@ async def suppress_healing(
     try:
         service = get_service()
 
+        logger.info(f"[{instance_id}] Suppression request for entity: {entity_id}")
+
         # Determine which instance to use
         if instance_id == "all":
             # For aggregate mode, require specific instance
             raise HTTPException(
                 status_code=400,
                 detail="Must specify a specific instance_id when suppressing healing",
+            )
+
+        # Verify instance exists
+        if instance_id not in service.ha_clients:
+            available = list(service.ha_clients.keys())
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {available}",
             )
 
         if not service.database:
@@ -424,12 +434,22 @@ async def unsuppress_healing(
     try:
         service = get_service()
 
+        logger.info(f"[{instance_id}] Unsuppression request for entity: {entity_id}")
+
         # Determine which instance to use
         if instance_id == "all":
             # For aggregate mode, require specific instance
             raise HTTPException(
                 status_code=400,
                 detail="Must specify a specific instance_id when unsuppressing healing",
+            )
+
+        # Verify instance exists
+        if instance_id not in service.ha_clients:
+            available = list(service.ha_clients.keys())
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {available}",
             )
 
         if not service.database:
