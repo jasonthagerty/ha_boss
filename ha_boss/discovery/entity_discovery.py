@@ -685,6 +685,7 @@ class EntityDiscoveryService:
         """
         async with self.database.async_session() as session:
             refresh = DiscoveryRefresh(
+                instance_id=self.ha_client.instance_id,
                 trigger_type=trigger_type,
                 trigger_source=trigger_source,
                 automations_found=stats["automations_found"],
