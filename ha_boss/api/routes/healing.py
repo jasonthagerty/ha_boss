@@ -22,6 +22,163 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# IMPORTANT: More specific routes must come BEFORE the catch-all route
+# The /healing/{entity_id:path} route will match ANY path, so suppression
+# endpoints must be defined first
+
+
+@router.post("/healing/suppress/{entity_id:path}", response_model=SuppressionActionResponse)
+async def suppress_healing(
+    entity_id: str,
+    instance_id: str = Query("default", description="Instance ID"),
+) -> SuppressionActionResponse:
+    """Suppress auto-healing for a specific entity.
+
+    The entity will still be monitored, but healing attempts will be skipped.
+    """
+    try:
+        service = get_service()
+
+        logger.info(f"[{instance_id}] Suppression request for entity: {entity_id}")
+
+        # Determine which instance to use
+        if instance_id == "all":
+            # For aggregate mode, require specific instance
+            raise HTTPException(
+                status_code=400,
+                detail="Must specify a specific instance_id when suppressing healing",
+            )
+
+        # Verify instance exists
+        if instance_id not in service.ha_clients:
+            available = list(service.ha_clients.keys())
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {available}",
+            )
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            # Find the entity
+            stmt = select(Entity).where(
+                Entity.instance_id == instance_id,
+                Entity.entity_id == entity_id,
+            )
+            result = await session.execute(stmt)
+            entity = result.scalar_one_or_none()
+
+            if not entity:
+                # Entity doesn't exist in DB yet - create it with suppression enabled
+                # This allows users to preemptively suppress entities
+                entity = Entity(
+                    instance_id=instance_id,
+                    entity_id=entity_id,
+                    is_monitored=True,
+                    healing_suppressed=True,
+                )
+                session.add(entity)
+                logger.info(
+                    f"[{instance_id}] Created entity record with healing suppressed: {entity_id}"
+                )
+            else:
+                # Update existing entity
+                entity.healing_suppressed = True
+                logger.info(f"[{instance_id}] Healing suppressed for entity: {entity_id}")
+
+            await session.commit()
+
+            return SuppressionActionResponse(
+                entity_id=entity_id,
+                suppressed=True,
+                message=f"Healing suppressed for {entity_id}",
+            )
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error suppressing healing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to suppress healing") from None
+
+
+@router.delete("/healing/suppress/{entity_id:path}", response_model=SuppressionActionResponse)
+async def unsuppress_healing(
+    entity_id: str,
+    instance_id: str = Query("default", description="Instance ID"),
+) -> SuppressionActionResponse:
+    """Remove healing suppression for a specific entity.
+
+    Re-enables auto-healing for this entity.
+    """
+    try:
+        service = get_service()
+
+        logger.info(f"[{instance_id}] Unsuppression request for entity: {entity_id}")
+
+        # Determine which instance to use
+        if instance_id == "all":
+            # For aggregate mode, require specific instance
+            raise HTTPException(
+                status_code=400,
+                detail="Must specify a specific instance_id when unsuppressing healing",
+            )
+
+        # Verify instance exists
+        if instance_id not in service.ha_clients:
+            available = list(service.ha_clients.keys())
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {available}",
+            )
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            # Find the entity
+            stmt = select(Entity).where(
+                Entity.instance_id == instance_id,
+                Entity.entity_id == entity_id,
+            )
+            result = await session.execute(stmt)
+            entity = result.scalar_one_or_none()
+
+            if not entity:
+                # Entity doesn't exist in DB - healing is already not suppressed
+                logger.info(
+                    f"[{instance_id}] Entity {entity_id} not in database, "
+                    "healing already not suppressed"
+                )
+            else:
+                # Update existing entity
+                entity.healing_suppressed = False
+                await session.commit()
+                logger.info(f"[{instance_id}] Healing unsuppressed for entity: {entity_id}")
+
+            return SuppressionActionResponse(
+                entity_id=entity_id,
+                suppressed=False,
+                message=f"Healing enabled for {entity_id}",
+            )
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error unsuppressing healing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to unsuppress healing") from None
+
+
 @router.post("/healing/{entity_id:path}", response_model=HealingActionResponse)
 async def trigger_healing(
     entity_id: str = Path(..., description="Entity ID to heal"),
@@ -340,155 +497,3 @@ async def get_suppressed_entities(
     except Exception as e:
         logger.error(f"[{instance_id}] Error getting suppressed entities: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get suppressed entities") from None
-
-
-@router.post("/healing/suppress/{entity_id:path}", response_model=SuppressionActionResponse)
-async def suppress_healing(
-    entity_id: str,
-    instance_id: str = Query("default", description="Instance ID"),
-) -> SuppressionActionResponse:
-    """Suppress auto-healing for a specific entity.
-
-    The entity will still be monitored, but healing attempts will be skipped.
-    """
-    try:
-        service = get_service()
-
-        logger.info(f"[{instance_id}] Suppression request for entity: {entity_id}")
-
-        # Determine which instance to use
-        if instance_id == "all":
-            # For aggregate mode, require specific instance
-            raise HTTPException(
-                status_code=400,
-                detail="Must specify a specific instance_id when suppressing healing",
-            )
-
-        # Verify instance exists
-        if instance_id not in service.ha_clients:
-            available = list(service.ha_clients.keys())
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {available}",
-            )
-
-        if not service.database:
-            raise HTTPException(status_code=503, detail="Database not initialized") from None
-
-        async with service.database.async_session() as session:
-            from sqlalchemy import select
-
-            # Find the entity
-            stmt = select(Entity).where(
-                Entity.instance_id == instance_id,
-                Entity.entity_id == entity_id,
-            )
-            result = await session.execute(stmt)
-            entity = result.scalar_one_or_none()
-
-            if not entity:
-                # Entity doesn't exist in DB yet - create it with suppression enabled
-                # This allows users to preemptively suppress entities
-                entity = Entity(
-                    instance_id=instance_id,
-                    entity_id=entity_id,
-                    is_monitored=True,
-                    healing_suppressed=True,
-                )
-                session.add(entity)
-                logger.info(
-                    f"[{instance_id}] Created entity record with healing suppressed: {entity_id}"
-                )
-            else:
-                # Update existing entity
-                entity.healing_suppressed = True
-                logger.info(f"[{instance_id}] Healing suppressed for entity: {entity_id}")
-
-            await session.commit()
-
-            return SuppressionActionResponse(
-                entity_id=entity_id,
-                suppressed=True,
-                message=f"Healing suppressed for {entity_id}",
-            )
-
-    except HTTPException:
-        raise
-    except RuntimeError as e:
-        logger.error(f"[{instance_id}] Service not initialized: {e}")
-        raise HTTPException(status_code=503, detail=str(e)) from None
-    except Exception as e:
-        logger.error(f"[{instance_id}] Error suppressing healing: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to suppress healing") from None
-
-
-@router.delete("/healing/suppress/{entity_id:path}", response_model=SuppressionActionResponse)
-async def unsuppress_healing(
-    entity_id: str,
-    instance_id: str = Query("default", description="Instance ID"),
-) -> SuppressionActionResponse:
-    """Remove healing suppression for a specific entity.
-
-    Re-enables auto-healing for this entity.
-    """
-    try:
-        service = get_service()
-
-        logger.info(f"[{instance_id}] Unsuppression request for entity: {entity_id}")
-
-        # Determine which instance to use
-        if instance_id == "all":
-            # For aggregate mode, require specific instance
-            raise HTTPException(
-                status_code=400,
-                detail="Must specify a specific instance_id when unsuppressing healing",
-            )
-
-        # Verify instance exists
-        if instance_id not in service.ha_clients:
-            available = list(service.ha_clients.keys())
-            raise HTTPException(
-                status_code=404,
-                detail=f"Instance '{instance_id}' not found. Available instances: {available}",
-            )
-
-        if not service.database:
-            raise HTTPException(status_code=503, detail="Database not initialized") from None
-
-        async with service.database.async_session() as session:
-            from sqlalchemy import select
-
-            # Find the entity
-            stmt = select(Entity).where(
-                Entity.instance_id == instance_id,
-                Entity.entity_id == entity_id,
-            )
-            result = await session.execute(stmt)
-            entity = result.scalar_one_or_none()
-
-            if not entity:
-                # Entity doesn't exist in DB - healing is already not suppressed
-                logger.info(
-                    f"[{instance_id}] Entity {entity_id} not in database, "
-                    "healing already not suppressed"
-                )
-            else:
-                # Update existing entity
-                entity.healing_suppressed = False
-                await session.commit()
-                logger.info(f"[{instance_id}] Healing unsuppressed for entity: {entity_id}")
-
-            return SuppressionActionResponse(
-                entity_id=entity_id,
-                suppressed=False,
-                message=f"Healing enabled for {entity_id}",
-            )
-
-    except HTTPException:
-        raise
-    except RuntimeError as e:
-        logger.error(f"[{instance_id}] Service not initialized: {e}")
-        raise HTTPException(status_code=503, detail=str(e)) from None
-    except Exception as e:
-        logger.error(f"[{instance_id}] Error unsuppressing healing: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to unsuppress healing") from None
