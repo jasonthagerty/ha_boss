@@ -1526,6 +1526,11 @@ class Dashboard {
                     onclick="window.dashboard.testConfigInstance('${instance.instance_id}')">
               Test
             </button>
+            <button class="px-3 py-1 text-sm text-green-600 hover:bg-green-50 rounded"
+                    onclick="window.dashboard.triggerInstanceDiscovery('${instance.instance_id}')"
+                    title="Discover automations, scenes, and scripts">
+              Discover
+            </button>
             <button class="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
                     onclick="window.dashboard.editInstance('${instance.instance_id}')">
               Edit
@@ -1659,6 +1664,33 @@ class Dashboard {
       }
     } catch (error) {
       this.showToast(`${instanceId}: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Trigger discovery for an instance
+   * @param {string} instanceId - Instance to discover
+   */
+  async triggerInstanceDiscovery(instanceId) {
+    this.showToast(`Starting discovery for ${instanceId}...`, 'info', 2000);
+
+    try {
+      const result = await this.api.triggerDiscovery(instanceId);
+
+      if (result.success) {
+        const summary = `Found ${result.automations_found} automations, ${result.scenes_found} scenes, ${result.scripts_found} scripts (${result.entities_discovered} entities)`;
+        this.showToast(`Discovery complete: ${summary}`, 'success', 5000);
+
+        // Refresh automation list if on automations tab
+        if (this.currentTab === 'automations') {
+          await this.populateAutomationList();
+        }
+      } else {
+        this.showToast(`Discovery failed for ${instanceId}`, 'error');
+      }
+    } catch (error) {
+      console.error('Discovery error:', error);
+      this.showToast(`Discovery failed: ${error.message}`, 'error');
     }
   }
 

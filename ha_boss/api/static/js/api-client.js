@@ -206,6 +206,19 @@ export class APIClient {
   // ==================== Discovery Endpoints ====================
 
   /**
+   * Trigger manual discovery refresh for an instance
+   * POST /api/discovery/refresh
+   * @param {string} instanceId - Instance ID to trigger discovery for
+   * @param {string} triggerSource - Source of the trigger (default: "dashboard")
+   */
+  async triggerDiscovery(instanceId, triggerSource = 'dashboard') {
+    const params = new URLSearchParams({ instance_id: instanceId });
+    return this.request('POST', `/discovery/refresh?${params}`, {
+      body: JSON.stringify({ trigger_source: triggerSource })
+    });
+  }
+
+  /**
    * List all discovered automations
    * GET /api/discovery/automations
    * @param {number} limit - Maximum automations to return (1-1000, default: 100)
