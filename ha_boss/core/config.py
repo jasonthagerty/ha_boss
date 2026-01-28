@@ -441,6 +441,21 @@ class IntelligenceConfig(BaseSettings):
     )
 
 
+class OutcomeValidationConfig(BaseSettings):
+    """Outcome validation configuration."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable automatic outcome validation for automations",
+    )
+    validation_delay_seconds: float = Field(
+        default=5.0,
+        description="Delay before validating outcomes (allows states to settle)",
+        ge=0.1,
+        le=60.0,
+    )
+
+
 class APIConfig(BaseModel):
     """REST API configuration."""
 
@@ -500,6 +515,7 @@ class Config(BaseSettings):
     websocket: WebSocketConfig = Field(default_factory=WebSocketConfig)
     rest: RESTConfig = Field(default_factory=RESTConfig)
     intelligence: IntelligenceConfig = Field(default_factory=IntelligenceConfig)
+    outcome_validation: OutcomeValidationConfig = Field(default_factory=OutcomeValidationConfig)
     api: APIConfig = Field(default_factory=APIConfig)
 
     mode: Literal["production", "dry_run", "testing"] = Field(
