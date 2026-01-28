@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 6
+CURRENT_DB_VERSION = 7
 
 
 class Base(DeclarativeBase):
@@ -571,6 +571,144 @@ class AutomationServiceCall(Base):
     def __repr__(self) -> str:
         status = "success" if self.success else "failed"
         return f"<AutomationServiceCall({self.instance_id}:{self.automation_id} -> {self.service_name}, {status})>"
+
+
+# Outcome Validation Models (Schema v7)
+
+
+class AutomationDesiredState(Base):
+    """Track desired outcomes for automations (inferred or user-annotated).
+
+    Stores what state an automation is trying to achieve for each target
+    entity. Used to validate whether automation executions succeed in
+    reaching their intended goals.
+    """
+
+    __tablename__ = "automation_desired_states"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    desired_state: Mapped[str] = mapped_column(String(255), nullable=False)
+    desired_attributes: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    inference_method: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # ai_analysis, user_annotated, learned
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_automation_desired_states_automation",
+            "instance_id",
+            "automation_id",
+        ),
+        Index(
+            "idx_automation_desired_states_unique",
+            "instance_id",
+            "automation_id",
+            "entity_id",
+            unique=True,
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AutomationDesiredState({self.instance_id}:{self.automation_id} -> {self.entity_id} = {self.desired_state}, confidence={self.confidence})>"
+
+
+class AutomationOutcomeValidation(Base):
+    """Track outcome validation results for automation executions.
+
+    Records whether each automation execution achieved its desired outcomes
+    by comparing expected states to actual states after execution.
+    """
+
+    __tablename__ = "automation_outcome_validations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    execution_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True
+    )  # FK to AutomationExecution
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    desired_state: Mapped[str] = mapped_column(String(255), nullable=False)
+    desired_attributes: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    actual_state: Mapped[str | None] = mapped_column(String(255))
+    actual_attributes: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    achieved: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    time_to_achievement_ms: Mapped[int | None] = mapped_column(Integer)
+    user_description: Mapped[str | None] = mapped_column(Text)  # User-reported failure description
+    validation_timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_automation_outcome_validations_execution",
+            "instance_id",
+            "execution_id",
+        ),
+        Index(
+            "idx_automation_outcome_validations_achieved",
+            "instance_id",
+            "achieved",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        status = "achieved" if self.achieved else "failed"
+        return f"<AutomationOutcomeValidation(execution_id={self.execution_id}, {self.entity_id}, {status})>"
+
+
+class AutomationOutcomePattern(Base):
+    """Learn patterns from successful automation executions.
+
+    Tracks what states automations actually achieve when they run successfully,
+    used to refine desired state inferences and increase confidence over time.
+    """
+
+    __tablename__ = "automation_outcome_patterns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    observed_state: Mapped[str] = mapped_column(String(255), nullable=False)
+    observed_attributes: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    first_observed: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_observed: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_automation_outcome_patterns_automation",
+            "instance_id",
+            "automation_id",
+        ),
+        Index(
+            "idx_automation_outcome_patterns_unique",
+            "instance_id",
+            "automation_id",
+            "entity_id",
+            unique=True,
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AutomationOutcomePattern({self.instance_id}:{self.automation_id} -> {self.entity_id} = {self.observed_state}, count={self.occurrence_count})>"
 
 
 # Configuration Management Models (Schema v5)

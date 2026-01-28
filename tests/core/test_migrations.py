@@ -411,6 +411,8 @@ class TestMigrationRegistry:
         assert 3 in versions, "v3 migration should be registered"
         assert 4 in versions, "v4 migration should be registered"
         assert 5 in versions, "v5 migration should be registered"
+        assert 6 in versions, "v6 migration should be registered"
+        assert 7 in versions, "v7 migration should be registered"
 
     def test_registry_latest_version(self):
         """Test that latest_version returns correct value."""
@@ -510,3 +512,238 @@ async def test_migration_creates_backup(tmp_path):
     assert backup_file.stat().st_size > 0, "Backup file should not be empty"
 
     await database.close()
+
+
+# Tests for v7 Migration (Outcome Validation)
+
+
+@pytest.fixture
+async def v6_database(tmp_path):
+    """Create a v6 database for migration testing."""
+    db_path = tmp_path / "test_v6.db"
+    database = Database(str(db_path))
+
+    # Initialize database
+    await database.init_db()
+
+    # Manually set version to 6 (simulating v6 database)
+    async with database.async_session() as session:
+        # Delete current version record
+        await session.execute(text("DELETE FROM schema_version"))
+
+        # Insert v6 version
+        v6_version = DatabaseVersion(
+            version=6,
+            applied_at=datetime.now(UTC),
+            description="Test v6 database",
+        )
+        session.add(v6_version)
+        await session.commit()
+
+    yield database
+
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_migration_v6_to_v7_creates_tables(v6_database):
+    """Test that v6→v7 migration creates outcome validation tables."""
+    from ha_boss.core.migrations.v7_add_outcome_validation import migrate_v6_to_v7
+
+    # Run migration
+    async with v6_database.async_session() as session:
+        await migrate_v6_to_v7(session)
+
+    # Verify automation_desired_states table exists
+    async with v6_database.async_session() as session:
+        result = await session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='automation_desired_states'"
+            )
+        )
+        table = result.scalar()
+        assert table == "automation_desired_states"
+
+    # Verify automation_outcome_validations table exists
+    async with v6_database.async_session() as session:
+        result = await session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='automation_outcome_validations'"
+            )
+        )
+        table = result.scalar()
+        assert table == "automation_outcome_validations"
+
+    # Verify automation_outcome_patterns table exists
+    async with v6_database.async_session() as session:
+        result = await session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='automation_outcome_patterns'"
+            )
+        )
+        table = result.scalar()
+        assert table == "automation_outcome_patterns"
+
+
+@pytest.mark.asyncio
+async def test_migration_v6_to_v7_creates_indexes(v6_database):
+    """Test that v6→v7 migration creates all required indexes."""
+    from ha_boss.core.migrations.v7_add_outcome_validation import migrate_v6_to_v7
+
+    # Run migration
+    async with v6_database.async_session() as session:
+        await migrate_v6_to_v7(session)
+
+    # Get all indexes for automation_desired_states
+    async with v6_database.async_session() as session:
+        result = await session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='automation_desired_states'"
+            )
+        )
+        indexes = [row[0] for row in result.fetchall()]
+        assert "idx_automation_desired_states_automation" in indexes
+        assert "idx_automation_desired_states_unique" in indexes
+
+    # Get all indexes for automation_outcome_validations
+    async with v6_database.async_session() as session:
+        result = await session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='automation_outcome_validations'"
+            )
+        )
+        indexes = [row[0] for row in result.fetchall()]
+        assert "idx_automation_outcome_validations_execution" in indexes
+        assert "idx_automation_outcome_validations_achieved" in indexes
+
+    # Get all indexes for automation_outcome_patterns
+    async with v6_database.async_session() as session:
+        result = await session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='automation_outcome_patterns'"
+            )
+        )
+        indexes = [row[0] for row in result.fetchall()]
+        assert "idx_automation_outcome_patterns_automation" in indexes
+        assert "idx_automation_outcome_patterns_unique" in indexes
+
+
+@pytest.mark.asyncio
+async def test_migration_v6_to_v7_updates_version(v6_database):
+    """Test that v6→v7 migration updates schema version."""
+    from ha_boss.core.migrations.v7_add_outcome_validation import migrate_v6_to_v7
+
+    # Verify starting at v6
+    version = await v6_database.get_version()
+    assert version == 6
+
+    # Run migration
+    async with v6_database.async_session() as session:
+        await migrate_v6_to_v7(session)
+
+    # Verify upgraded to v7
+    version = await v6_database.get_version()
+    assert version == 7
+
+
+@pytest.mark.asyncio
+async def test_migration_v6_to_v7_can_insert_data(v6_database):
+    """Test that v6→v7 migration creates functional tables."""
+    from ha_boss.core.database import (
+        AutomationDesiredState,
+        AutomationOutcomePattern,
+        AutomationOutcomeValidation,
+    )
+    from ha_boss.core.migrations.v7_add_outcome_validation import migrate_v6_to_v7
+
+    # Run migration
+    async with v6_database.async_session() as session:
+        await migrate_v6_to_v7(session)
+
+    # Test inserting into automation_desired_states
+    async with v6_database.async_session() as session:
+        desired_state = AutomationDesiredState(
+            instance_id="default",
+            automation_id="automation.test",
+            entity_id="light.test",
+            desired_state="on",
+            confidence=0.9,
+            inference_method="ai_analysis",
+        )
+        session.add(desired_state)
+        await session.commit()
+        assert desired_state.id is not None
+
+    # Test inserting into automation_outcome_validations
+    async with v6_database.async_session() as session:
+        validation = AutomationOutcomeValidation(
+            instance_id="default",
+            execution_id=1,
+            entity_id="light.test",
+            desired_state="on",
+            actual_state="on",
+            achieved=True,
+        )
+        session.add(validation)
+        await session.commit()
+        assert validation.id is not None
+
+    # Test inserting into automation_outcome_patterns
+    async with v6_database.async_session() as session:
+        pattern = AutomationOutcomePattern(
+            instance_id="default",
+            automation_id="automation.test",
+            entity_id="light.test",
+            observed_state="on",
+            occurrence_count=1,
+        )
+        session.add(pattern)
+        await session.commit()
+        assert pattern.id is not None
+
+
+@pytest.mark.asyncio
+async def test_downgrade_v7_to_v6(v6_database):
+    """Test downgrade from v7 to v6."""
+    from ha_boss.core.migrations.v7_add_outcome_validation import (
+        downgrade_v7_to_v6,
+        migrate_v6_to_v7,
+    )
+
+    # Run migration to v7
+    async with v6_database.async_session() as session:
+        await migrate_v6_to_v7(session)
+
+    # Verify tables exist
+    async with v6_database.async_session() as session:
+        result = await session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='automation_desired_states'"
+            )
+        )
+        assert result.scalar() == "automation_desired_states"
+
+    # Run downgrade
+    async with v6_database.async_session() as session:
+        await downgrade_v7_to_v6(session)
+
+    # Verify tables are dropped
+    async with v6_database.async_session() as session:
+        result = await session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='automation_desired_states'"
+            )
+        )
+        assert result.scalar() is None
+
+    # Verify version is back to v6
+    version = await v6_database.get_version()
+    assert version == 6
