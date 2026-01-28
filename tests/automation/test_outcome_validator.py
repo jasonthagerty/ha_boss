@@ -396,6 +396,21 @@ class TestOutcomeValidator:
         actual = {"brightness": 110}  # 10% difference
         assert validator._compare_attributes(desired, actual) is False
 
+    def test_compare_attributes_zero_value_tolerance(self, validator):
+        """Test numeric attribute comparison with zero desired value."""
+        # Zero value should use minimum absolute tolerance (1.0)
+        desired = {"brightness": 0}
+        actual = {"brightness": 0}  # Exact match
+        assert validator._compare_attributes(desired, actual) is True
+
+        # Within minimum tolerance (1.0)
+        actual = {"brightness": 1}
+        assert validator._compare_attributes(desired, actual) is True
+
+        # Outside minimum tolerance
+        actual = {"brightness": 2}
+        assert validator._compare_attributes(desired, actual) is False
+
     def test_compare_attributes_missing_key(self, validator):
         """Test attribute comparison when key is missing."""
         desired = {"brightness": 100, "color_temp": 300}

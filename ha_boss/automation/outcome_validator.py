@@ -72,6 +72,8 @@ class OutcomeValidator:
 
     # Tolerance for numeric attribute comparison (percentage)
     NUMERIC_TOLERANCE_PERCENT = 5.0
+    # Minimum absolute tolerance (handles zero values)
+    NUMERIC_TOLERANCE_MIN = 1.0
 
     def __init__(
         self,
@@ -345,7 +347,9 @@ class OutcomeValidator:
 
             # Numeric comparison with tolerance
             if isinstance(desired_value, (int, float)) and isinstance(actual_value, (int, float)):
-                tolerance = abs(desired_value * self.NUMERIC_TOLERANCE_PERCENT / 100.0)
+                # Use max of percentage-based and absolute minimum tolerance
+                percentage_tolerance = abs(desired_value * self.NUMERIC_TOLERANCE_PERCENT / 100.0)
+                tolerance = max(percentage_tolerance, self.NUMERIC_TOLERANCE_MIN)
                 if abs(desired_value - actual_value) > tolerance:
                     logger.debug(
                         f"Attribute {key} mismatch: "
@@ -368,8 +372,8 @@ class OutcomeValidator:
         Args:
             result: ValidationResult to store
         """
-        try:
-            async with self.database.async_session() as session:
+        async with self.database.async_session() as session:
+            try:
                 for entity_id, entity_result in result.entity_results.items():
                     record = AutomationOutcomeValidation(
                         instance_id=result.instance_id,
@@ -390,9 +394,9 @@ class OutcomeValidator:
                     f"for execution {result.execution_id}"
                 )
 
-        except Exception as e:
-            logger.error(f"Error storing validation results: {e}", exc_info=True)
-            await session.rollback()
+            except Exception as e:
+                logger.error(f"Error storing validation results: {e}", exc_info=True)
+                await session.rollback()
 
     async def _learn_patterns(
         self,
@@ -408,8 +412,8 @@ class OutcomeValidator:
             automation_id: Automation that succeeded
             entity_results: Successful entity validation results
         """
-        try:
-            async with self.database.async_session() as session:
+        async with self.database.async_session() as session:
+            try:
                 for entity_id, entity_result in entity_results.items():
                     if not entity_result.achieved:
                         continue  # Only learn from successes
@@ -465,6 +469,6 @@ class OutcomeValidator:
                     f"{len([r for r in entity_results.values() if r.achieved])} entities"
                 )
 
-        except Exception as e:
-            logger.error(f"Error learning patterns: {e}", exc_info=True)
-            await session.rollback()
+            except Exception as e:
+                logger.error(f"Error learning patterns: {e}", exc_info=True)
+                await session.rollback()
