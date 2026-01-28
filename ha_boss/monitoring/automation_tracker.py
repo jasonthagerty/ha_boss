@@ -1,9 +1,13 @@
 """Track automation executions for pattern analysis."""
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
+from ha_boss.automation.outcome_validator import OutcomeValidator
+from ha_boss.core.config import Config
 from ha_boss.core.database import AutomationExecution, AutomationServiceCall, Database
+from ha_boss.core.ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +20,25 @@ class AutomationTracker:
     for analysis by AutomationAnalyzer.
     """
 
-    def __init__(self, instance_id: str, database: Database):
+    def __init__(
+        self,
+        instance_id: str,
+        database: Database,
+        ha_client: HomeAssistantClient | None = None,
+        config: Config | None = None,
+    ):
         """Initialize automation tracker.
 
         Args:
             instance_id: Home Assistant instance identifier
             database: Database instance for storing tracking data
+            ha_client: Home Assistant client for outcome validation (optional)
+            config: Configuration for outcome validation (optional)
         """
         self.instance_id = instance_id
         self.database = database
+        self.ha_client = ha_client
+        self.config = config
         logger.debug(f"[{instance_id}] AutomationTracker initialized")
 
     async def record_execution(
@@ -34,7 +48,7 @@ class AutomationTracker:
         duration_ms: int | None = None,
         success: bool = True,
         error_message: str | None = None,
-    ) -> None:
+    ) -> int | None:
         """Record an automation execution.
 
         Args:
@@ -43,7 +57,11 @@ class AutomationTracker:
             duration_ms: Execution duration in milliseconds
             success: Whether execution succeeded
             error_message: Error message if execution failed
+
+        Returns:
+            Execution ID if successful, None if failed
         """
+        execution_id = None
         try:
             async with self.database.async_session() as session:
                 execution = AutomationExecution(
@@ -58,10 +76,24 @@ class AutomationTracker:
                 session.add(execution)
                 await session.commit()
 
+                # Get the execution ID after commit
+                await session.refresh(execution)
+                execution_id = execution.id
+
             logger.debug(
                 f"[{self.instance_id}] Recorded execution: {automation_id} "
-                f"(trigger={trigger_type}, success={success})"
+                f"(id={execution_id}, trigger={trigger_type}, success={success})"
             )
+
+            # Trigger outcome validation in background if enabled
+            if (
+                execution_id
+                and success
+                and self.config
+                and self.config.outcome_validation.enabled
+                and self.ha_client
+            ):
+                asyncio.create_task(self._validate_execution_outcome(execution_id))
 
         except Exception as e:
             logger.error(
@@ -69,6 +101,8 @@ class AutomationTracker:
                 f"for {automation_id}: {e}",
                 exc_info=True,
             )
+
+        return execution_id
 
     async def record_service_call(
         self,
@@ -110,5 +144,58 @@ class AutomationTracker:
         except Exception as e:
             logger.error(
                 f"[{self.instance_id}] Failed to record service call " f"for {automation_id}: {e}",
+                exc_info=True,
+            )
+
+    async def _validate_execution_outcome(self, execution_id: int) -> None:
+        """Validate automation execution outcome (background task).
+
+        This method runs in the background after an automation execution is recorded.
+        It waits for states to settle, then validates whether the automation achieved
+        its desired outcomes.
+
+        Args:
+            execution_id: ID of the AutomationExecution to validate
+        """
+        if not self.ha_client or not self.config:
+            return
+
+        # Wait for states to settle
+        delay = self.config.outcome_validation.validation_delay_seconds
+        await asyncio.sleep(delay)
+
+        try:
+            validator = OutcomeValidator(
+                database=self.database,
+                ha_client=self.ha_client,
+                instance_id=self.instance_id,
+            )
+
+            result = await validator.validate_execution(
+                execution_id=execution_id,
+                validation_window_seconds=delay,
+            )
+
+            if result.overall_success:
+                logger.debug(
+                    f"[{self.instance_id}] Execution {execution_id} validated: "
+                    f"{len(result.entity_results)} entities achieved desired states"
+                )
+            else:
+                failed_entities = [
+                    entity_id
+                    for entity_id, entity_result in result.entity_results.items()
+                    if not entity_result.achieved
+                ]
+                logger.warning(
+                    f"[{self.instance_id}] Execution {execution_id} validation failed: "
+                    f"{len(failed_entities)}/{len(result.entity_results)} entities "
+                    f"did not achieve desired states ({', '.join(failed_entities[:3])})"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"[{self.instance_id}] Outcome validation failed for execution "
+                f"{execution_id}: {e}",
                 exc_info=True,
             )

@@ -1,10 +1,14 @@
 """Tests for automation tracking functionality."""
 
+import asyncio
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
 
+from ha_boss.automation.outcome_validator import ValidationResult
+from ha_boss.core.config import Config, OutcomeValidationConfig
 from ha_boss.core.database import AutomationExecution, AutomationServiceCall, Database
 from ha_boss.monitoring.automation_tracker import AutomationTracker
 
@@ -294,3 +298,249 @@ async def test_service_call_timestamp_recorded(tracker):
     if called_at.tzinfo is None:
         called_at = called_at.replace(tzinfo=UTC)
     assert before <= called_at <= after
+
+
+# Outcome Validation Integration Tests
+
+
+@pytest.fixture
+def mock_ha_client():
+    """Create mock HA client."""
+    client = AsyncMock()
+    return client
+
+
+@pytest.fixture
+def mock_config():
+    """Create mock config with outcome validation enabled."""
+    config = MagicMock(spec=Config)
+    config.outcome_validation = OutcomeValidationConfig(
+        enabled=True,
+        validation_delay_seconds=0.1,  # Short delay for tests
+    )
+    return config
+
+
+@pytest.fixture
+async def tracker_with_validation(tmp_path, mock_ha_client, mock_config):
+    """Create automation tracker with outcome validation configured."""
+    db_path = tmp_path / "test_tracking_with_validation.db"
+    database = Database(str(db_path))
+    await database.init_db()
+
+    tracker = AutomationTracker(
+        instance_id="test_instance",
+        database=database,
+        ha_client=mock_ha_client,
+        config=mock_config,
+    )
+    yield tracker
+
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_record_execution_returns_id(tracker_with_validation):
+    """Test that record_execution returns execution ID."""
+    execution_id = await tracker_with_validation.record_execution(
+        automation_id="automation.test_automation",
+        trigger_type="state",
+        success=True,
+    )
+
+    assert execution_id is not None
+    assert isinstance(execution_id, int)
+
+    # Verify ID is valid
+    async with tracker_with_validation.database.async_session() as session:
+        result = await session.execute(
+            select(AutomationExecution).where(AutomationExecution.id == execution_id)
+        )
+        execution = result.scalar_one()
+
+    assert execution.automation_id == "automation.test_automation"
+
+
+@pytest.mark.asyncio
+async def test_outcome_validation_triggered(tracker_with_validation, mock_ha_client):
+    """Test that outcome validation is triggered after successful execution."""
+    # Mock validation result
+    mock_result = ValidationResult(
+        execution_id=1,
+        automation_id="automation.test",
+        instance_id="test_instance",
+        overall_success=True,
+    )
+
+    with patch("ha_boss.monitoring.automation_tracker.OutcomeValidator") as mock_validator_class:
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution.return_value = mock_result
+        mock_validator_class.return_value = mock_validator
+
+        execution_id = await tracker_with_validation.record_execution(
+            automation_id="automation.test",
+            trigger_type="state",
+            success=True,
+        )
+
+        # Wait for background task to complete
+        await asyncio.sleep(0.2)
+
+        # Verify validator was instantiated
+        mock_validator_class.assert_called_once_with(
+            database=tracker_with_validation.database,
+            ha_client=mock_ha_client,
+            instance_id="test_instance",
+        )
+
+        # Verify validation was called
+        mock_validator.validate_execution.assert_called_once_with(
+            execution_id=execution_id,
+            validation_window_seconds=0.1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_outcome_validation_non_blocking(tracker_with_validation):
+    """Test that outcome validation runs in background without blocking."""
+    with patch("ha_boss.monitoring.automation_tracker.OutcomeValidator") as mock_validator_class:
+        # Make validation slow
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution.side_effect = lambda **kwargs: asyncio.sleep(1.0)
+        mock_validator_class.return_value = mock_validator
+
+        # Record execution should return immediately
+        start = asyncio.get_event_loop().time()
+        await tracker_with_validation.record_execution(
+            automation_id="automation.test",
+            success=True,
+        )
+        elapsed = asyncio.get_event_loop().time() - start
+
+        # Should return in much less than 1 second (validation delay + slow validation)
+        assert elapsed < 0.5
+
+
+@pytest.mark.asyncio
+async def test_outcome_validation_disabled(tracker_with_validation, mock_config):
+    """Test that validation is not triggered when disabled in config."""
+    # Disable validation
+    mock_config.outcome_validation.enabled = False
+
+    with patch("ha_boss.monitoring.automation_tracker.OutcomeValidator") as mock_validator_class:
+        await tracker_with_validation.record_execution(
+            automation_id="automation.test",
+            success=True,
+        )
+
+        # Wait a bit to ensure no background task runs
+        await asyncio.sleep(0.2)
+
+        # Validator should not have been called
+        mock_validator_class.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_outcome_validation_failed_execution(tracker_with_validation):
+    """Test that validation is not triggered for failed executions."""
+    with patch("ha_boss.monitoring.automation_tracker.OutcomeValidator") as mock_validator_class:
+        await tracker_with_validation.record_execution(
+            automation_id="automation.test",
+            success=False,
+            error_message="Test error",
+        )
+
+        await asyncio.sleep(0.2)
+
+        # Validator should not be called for failed executions
+        mock_validator_class.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_outcome_validation_no_ha_client(tmp_path, mock_config):
+    """Test that validation is skipped when ha_client is not provided."""
+    db_path = tmp_path / "test_no_client.db"
+    database = Database(str(db_path))
+    await database.init_db()
+
+    # Tracker without HA client
+    tracker = AutomationTracker(
+        instance_id="test_instance",
+        database=database,
+        ha_client=None,
+        config=mock_config,
+    )
+
+    with patch("ha_boss.monitoring.automation_tracker.OutcomeValidator") as mock_validator_class:
+        await tracker.record_execution(
+            automation_id="automation.test",
+            success=True,
+        )
+
+        await asyncio.sleep(0.2)
+
+        # Validator should not be called without HA client
+        mock_validator_class.assert_not_called()
+
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_outcome_validation_error_handling(tracker_with_validation):
+    """Test that validation errors don't crash the tracker."""
+    with patch("ha_boss.monitoring.automation_tracker.OutcomeValidator") as mock_validator_class:
+        # Make validator raise an error
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution.side_effect = Exception("Validation failed")
+        mock_validator_class.return_value = mock_validator
+
+        # Should not raise exception
+        execution_id = await tracker_with_validation.record_execution(
+            automation_id="automation.test",
+            success=True,
+        )
+
+        # Wait for background task
+        await asyncio.sleep(0.2)
+
+        # Execution should still be recorded
+        assert execution_id is not None
+
+        # Verify execution exists in database
+        async with tracker_with_validation.database.async_session() as session:
+            result = await session.execute(
+                select(AutomationExecution).where(AutomationExecution.id == execution_id)
+            )
+            execution = result.scalar_one()
+
+        assert execution is not None
+
+
+@pytest.mark.asyncio
+async def test_outcome_validation_warning_logged_on_failure(tracker_with_validation, caplog):
+    """Test that warning is logged when validation fails."""
+    mock_result = ValidationResult(
+        execution_id=1,
+        automation_id="automation.test",
+        instance_id="test_instance",
+        overall_success=False,
+        entity_results={
+            "light.bedroom": MagicMock(achieved=False),
+            "switch.fan": MagicMock(achieved=False),
+        },
+    )
+
+    with patch("ha_boss.monitoring.automation_tracker.OutcomeValidator") as mock_validator_class:
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution.return_value = mock_result
+        mock_validator_class.return_value = mock_validator
+
+        await tracker_with_validation.record_execution(
+            automation_id="automation.test",
+            success=True,
+        )
+
+        await asyncio.sleep(0.2)
+
+        # Check that warning was logged
+        assert any("validation failed" in record.message.lower() for record in caplog.records)
