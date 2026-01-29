@@ -454,6 +454,10 @@ class OutcomeValidationConfig(BaseSettings):
         ge=0.1,
         le=60.0,
     )
+    analyze_failures: bool = Field(
+        default=True,
+        description="Enable AI analysis of reported automation failures",
+    )
 
 
 class APIConfig(BaseModel):

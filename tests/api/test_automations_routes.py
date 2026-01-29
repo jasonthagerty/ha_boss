@@ -526,3 +526,420 @@ def test_infer_states_internal_error(client, mock_service):
 
         assert response.status_code == 500
         assert "Failed to infer desired states" in response.json()["detail"]
+
+
+# Report Failure Endpoint Tests
+
+
+def test_report_failure_with_execution_id(client, mock_service):
+    """Test POST /api/automations/{automation_id}/report-failure with specific execution_id."""
+    request_data = {
+        "execution_id": 123,
+        "failed_entities": ["light.bedroom"],
+        "user_description": "Light didn't turn on",
+    }
+
+    # Mock ha_client
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients = {"test_instance": mock_ha_client}
+
+    # Mock outcome validation
+    class MockValidationResult:
+        overall_success = False
+        entity_results = {
+            "light.bedroom": MagicMock(
+                achieved=False,
+                desired_state="on",
+                actual_state="off",
+            )
+        }
+
+    class MockAnalysisResult:
+        def __getitem__(self, key):
+            return {
+                "root_cause": "Light switch disconnected",
+                "suggested_healing": ["Check light connection"],
+                "healing_level": "device",
+            }[key]
+
+    # Mock config for outcome validation
+    mock_service.config.outcome_validation = MagicMock()
+    mock_service.config.outcome_validation.validation_delay_seconds = 30
+    mock_service.config.outcome_validation.analyze_failures = True
+    mock_service.config.intelligence.ollama_enabled = True
+    mock_service.config.intelligence.claude_enabled = False
+
+    with patch("ha_boss.automation.outcome_validator.OutcomeValidator") as mock_validator_class:
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution = AsyncMock(return_value=MockValidationResult())
+        mock_validator.analyze_failure = AsyncMock(return_value=MockAnalysisResult())
+        mock_validator_class.return_value = mock_validator
+
+        with patch("ha_boss.api.routes.automations.OllamaClient"):
+            response = client.post(
+                "/api/automations/automation.test_lights/report-failure",
+                params={"instance_id": "test_instance"},
+                json=request_data,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["execution_id"] == 123
+        assert data["automation_id"] == "automation.test_lights"
+        assert data["overall_success"] is False
+        assert len(data["failed_entities"]) == 1
+        assert data["failed_entities"][0]["entity_id"] == "light.bedroom"
+        assert data["ai_analysis"]["root_cause"] == "Light switch disconnected"
+        assert data["user_description"] == "Light didn't turn on"
+
+        # Verify validator was called with correct execution_id
+        mock_validator.validate_execution.assert_called_once_with(
+            execution_id=123,
+            validation_window_seconds=30,
+        )
+        mock_validator.analyze_failure.assert_called_once()
+
+
+def test_report_failure_without_execution_id(client, mock_service):
+    """Test POST /api/automations/{automation_id}/report-failure without execution_id (finds most recent)."""
+    request_data = {
+        "failed_entities": ["light.bedroom"],
+    }
+
+    # Mock ha_client
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients = {"test_instance": mock_ha_client}
+
+    # Mock outcome validation
+    class MockValidationResult:
+        overall_success = True
+        entity_results = {}
+
+    # Mock session to return most recent execution ID
+    mock_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = 456  # Most recent execution ID
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    # Mock config
+    mock_service.config.outcome_validation = MagicMock()
+    mock_service.config.outcome_validation.validation_delay_seconds = 30
+    mock_service.config.outcome_validation.analyze_failures = False
+    mock_service.config.intelligence.ollama_enabled = False
+    mock_service.config.intelligence.claude_enabled = False
+
+    with patch("ha_boss.automation.outcome_validator.OutcomeValidator") as mock_validator_class:
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution = AsyncMock(return_value=MockValidationResult())
+        mock_validator_class.return_value = mock_validator
+
+        response = client.post(
+            "/api/automations/automation.test_lights/report-failure",
+            params={"instance_id": "test_instance"},
+            json=request_data,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["execution_id"] == 456
+        assert data["automation_id"] == "automation.test_lights"
+
+        # Verify it queried for most recent execution
+        mock_session.execute.assert_called_once()
+
+
+def test_report_failure_ai_analysis_enabled(client, mock_service):
+    """Test POST /api/automations/{automation_id}/report-failure with AI analysis enabled."""
+    request_data = {
+        "execution_id": 789,
+        "user_description": "Automation failed to complete",
+    }
+
+    # Mock ha_client
+    mock_ha_client = AsyncMock()
+    automation_state = MagicMock()
+    automation_state.get.return_value = {"action": [{"service": "light.turn_on"}]}
+    mock_ha_client.get_state = AsyncMock(return_value=automation_state)
+    mock_service.ha_clients = {"test_instance": mock_ha_client}
+
+    # Mock validation result
+    class MockValidationResult:
+        overall_success = False
+        entity_results = {
+            "light.living_room": MagicMock(
+                achieved=False,
+                desired_state="on",
+                actual_state="off",
+            )
+        }
+
+    # Mock analysis result
+    class MockAnalysisResult:
+        def __getitem__(self, key):
+            return {
+                "root_cause": "Service call timeout",
+                "suggested_healing": ["Increase timeout", "Split actions"],
+                "healing_level": "integration",
+            }[key]
+
+    # Mock config
+    mock_service.config.outcome_validation = MagicMock()
+    mock_service.config.outcome_validation.validation_delay_seconds = 30
+    mock_service.config.outcome_validation.analyze_failures = True
+    mock_service.config.intelligence.ollama_enabled = True
+    mock_service.config.intelligence.claude_enabled = False
+
+    with patch("ha_boss.automation.outcome_validator.OutcomeValidator") as mock_validator_class:
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution = AsyncMock(return_value=MockValidationResult())
+        mock_validator.analyze_failure = AsyncMock(return_value=MockAnalysisResult())
+        mock_validator_class.return_value = mock_validator
+
+        with patch("ha_boss.api.routes.automations.OllamaClient"):
+            response = client.post(
+                "/api/automations/automation.test_lights/report-failure",
+                params={"instance_id": "test_instance"},
+                json=request_data,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["ai_analysis"] is not None
+        assert data["ai_analysis"]["root_cause"] == "Service call timeout"
+        assert data["ai_analysis"]["healing_level"] == "integration"
+
+        # Verify analyze_failure was called
+        mock_validator.analyze_failure.assert_called_once()
+
+
+def test_report_failure_ai_analysis_disabled(client, mock_service):
+    """Test POST /api/automations/{automation_id}/report-failure with AI analysis disabled."""
+    request_data = {
+        "execution_id": 789,
+    }
+
+    # Mock ha_client
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients = {"test_instance": mock_ha_client}
+
+    # Mock validation result
+    class MockValidationResult:
+        overall_success = True
+        entity_results = {}
+
+    # Mock config with AI analysis disabled
+    mock_service.config.outcome_validation = MagicMock()
+    mock_service.config.outcome_validation.validation_delay_seconds = 30
+    mock_service.config.outcome_validation.analyze_failures = False
+
+    with patch("ha_boss.automation.outcome_validator.OutcomeValidator") as mock_validator_class:
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution = AsyncMock(return_value=MockValidationResult())
+        mock_validator_class.return_value = mock_validator
+
+        response = client.post(
+            "/api/automations/automation.test_lights/report-failure",
+            params={"instance_id": "test_instance"},
+            json=request_data,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # AI analysis should be None when disabled
+        assert data["ai_analysis"] is None
+
+        # Verify analyze_failure was NOT called
+        mock_validator.analyze_failure.assert_not_called()
+
+
+def test_report_failure_instance_not_found(client):
+    """Test POST /api/automations/{automation_id}/report-failure returns 404 for invalid instance."""
+    request_data = {
+        "execution_id": 123,
+    }
+
+    response = client.post(
+        "/api/automations/automation.test_lights/report-failure",
+        params={"instance_id": "invalid_instance"},
+        json=request_data,
+    )
+
+    assert response.status_code == 404
+    assert "Instance 'invalid_instance' not found" in response.json()["detail"]
+
+
+def test_report_failure_no_execution_found(client, mock_service):
+    """Test POST /api/automations/{automation_id}/report-failure returns 404 when no execution exists."""
+    request_data = {
+        # No execution_id provided, will search for most recent
+    }
+
+    # Mock ha_client
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients = {"test_instance": mock_ha_client}
+
+    # Mock session to return no execution found
+    mock_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None  # No execution found
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.post(
+        "/api/automations/automation.test_lights/report-failure",
+        params={"instance_id": "test_instance"},
+        json=request_data,
+    )
+
+    assert response.status_code == 404
+    assert "No successful execution found" in response.json()["detail"]
+
+
+def test_report_failure_ai_not_configured(client, mock_service):
+    """Test POST /api/automations/{automation_id}/report-failure works without AI when LLM not configured."""
+    request_data = {
+        "execution_id": 999,
+        "failed_entities": ["switch.pump"],
+    }
+
+    # Mock ha_client
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients = {"test_instance": mock_ha_client}
+
+    # Mock validation result
+    class MockValidationResult:
+        overall_success = False
+        entity_results = {
+            "switch.pump": MagicMock(
+                achieved=False,
+                desired_state="on",
+                actual_state="off",
+            )
+        }
+
+    # Disable both Ollama and Claude
+    mock_service.config.outcome_validation = MagicMock()
+    mock_service.config.outcome_validation.validation_delay_seconds = 30
+    mock_service.config.outcome_validation.analyze_failures = True
+    mock_service.config.intelligence = MagicMock()
+    mock_service.config.intelligence.ollama_enabled = False
+    mock_service.config.intelligence.claude_enabled = False
+
+    with patch("ha_boss.automation.outcome_validator.OutcomeValidator") as mock_validator_class:
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution = AsyncMock(return_value=MockValidationResult())
+        mock_validator_class.return_value = mock_validator
+
+        response = client.post(
+            "/api/automations/automation.test_lights/report-failure",
+            params={"instance_id": "test_instance"},
+            json=request_data,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Validation should work, but AI analysis should be None
+        assert data["overall_success"] is False
+        assert data["ai_analysis"] is None
+        assert len(data["failed_entities"]) == 1
+
+
+def test_report_failure_response_structure(client, mock_service):
+    """Test POST /api/automations/{automation_id}/report-failure returns correct response structure."""
+    request_data = {
+        "execution_id": 555,
+        "failed_entities": ["light.kitchen", "switch.exhaust"],
+        "user_description": "Multiple entities failed to activate",
+    }
+
+    # Mock ha_client
+    mock_ha_client = AsyncMock()
+    automation_state = MagicMock()
+    automation_state.get.return_value = {"action": [{"service": "light.turn_on"}]}
+    mock_ha_client.get_state = AsyncMock(return_value=automation_state)
+    mock_service.ha_clients = {"test_instance": mock_ha_client}
+
+    # Mock validation result with multiple failed entities
+    class MockValidationResult:
+        overall_success = False
+        entity_results = {
+            "light.kitchen": MagicMock(
+                achieved=False,
+                desired_state="on",
+                actual_state="off",
+            ),
+            "switch.exhaust": MagicMock(
+                achieved=False,
+                desired_state="on",
+                actual_state="unavailable",
+            ),
+        }
+
+    # Mock analysis result
+    class MockAnalysisResult:
+        def __getitem__(self, key):
+            return {
+                "root_cause": "Multiple entities offline",
+                "suggested_healing": ["Check network connectivity", "Restart devices"],
+                "healing_level": "device",
+            }[key]
+
+    # Mock config
+    mock_service.config.outcome_validation = MagicMock()
+    mock_service.config.outcome_validation.validation_delay_seconds = 30
+    mock_service.config.outcome_validation.analyze_failures = True
+    mock_service.config.intelligence.ollama_enabled = True
+    mock_service.config.intelligence.claude_enabled = False
+
+    with patch("ha_boss.automation.outcome_validator.OutcomeValidator") as mock_validator_class:
+        mock_validator = AsyncMock()
+        mock_validator.validate_execution = AsyncMock(return_value=MockValidationResult())
+        mock_validator.analyze_failure = AsyncMock(return_value=MockAnalysisResult())
+        mock_validator_class.return_value = mock_validator
+
+        with patch("ha_boss.api.routes.automations.OllamaClient"):
+            response = client.post(
+                "/api/automations/automation.test_lights/report-failure",
+                params={"instance_id": "test_instance"},
+                json=request_data,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify all required fields are present
+        assert "execution_id" in data
+        assert "automation_id" in data
+        assert "overall_success" in data
+        assert "failed_entities" in data
+        assert "ai_analysis" in data
+        assert "user_description" in data
+
+        # Verify correct values
+        assert data["execution_id"] == 555
+        assert data["automation_id"] == "automation.test_lights"
+        assert data["overall_success"] is False
+        assert len(data["failed_entities"]) == 2
+        assert data["user_description"] == "Multiple entities failed to activate"
+
+        # Verify failed entity structure
+        for entity in data["failed_entities"]:
+            assert "entity_id" in entity
+            assert "desired_state" in entity
+            assert "actual_state" in entity
+            assert "root_cause" in entity
+
+        # Verify AI analysis structure
+        assert data["ai_analysis"]["root_cause"] == "Multiple entities offline"
+        assert "Check network connectivity" in data["ai_analysis"]["suggested_healing"]
+        assert data["ai_analysis"]["healing_level"] == "device"

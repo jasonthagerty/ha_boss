@@ -523,3 +523,50 @@ class InferredStateResponse(BaseModel):
     desired_state: str = Field(..., description="Inferred state")
     desired_attributes: dict[str, Any] | None = Field(None, description="Inferred attributes")
     confidence: float = Field(..., description="AI confidence score (0.0-1.0)")
+
+
+# Failure Reporting Models
+
+
+class FailureReportRequest(BaseModel):
+    """Request to report an automation failure."""
+
+    execution_id: int | None = Field(None, description="Specific execution ID (optional)")
+    failed_entities: list[str] | None = Field(
+        None, description="List of entities that failed (optional)"
+    )
+    user_description: str | None = Field(None, description="User's description of what went wrong")
+
+
+class EntityFailureDetail(BaseModel):
+    """Details about a failed entity state."""
+
+    entity_id: str = Field(..., description="Entity that failed")
+    desired_state: str | None = Field(None, description="Expected state")
+    actual_state: str | None = Field(None, description="Actual state at validation time")
+    root_cause: str | None = Field(None, description="Suspected root cause")
+
+
+class AIFailureAnalysis(BaseModel):
+    """AI-generated analysis of automation failure."""
+
+    root_cause: str = Field(..., description="AI-identified root cause of failure")
+    suggested_healing: list[str] = Field(..., description="List of suggested healing actions")
+    healing_level: Literal["entity", "device", "integration"] = Field(
+        ..., description="Level at which healing should be applied"
+    )
+
+
+class FailureReportResponse(BaseModel):
+    """Response from failure report with validation and AI analysis."""
+
+    execution_id: int = Field(..., description="Execution ID that was validated")
+    automation_id: str = Field(..., description="Automation ID")
+    overall_success: bool = Field(..., description="Whether validation passed")
+    failed_entities: list[EntityFailureDetail] = Field(
+        ..., description="Details of failed entities"
+    )
+    ai_analysis: AIFailureAnalysis | None = Field(
+        None, description="AI-generated analysis (if enabled)"
+    )
+    user_description: str | None = Field(None, description="User's reported description")
