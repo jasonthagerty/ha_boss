@@ -1,6 +1,7 @@
 """Pydantic models for API requests and responses."""
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -469,6 +470,14 @@ class ConfigInstanceTestResponse(BaseModel):
 # Automation Desired States Models
 
 
+class InferenceMethod(str, Enum):
+    """Methods for inferring automation desired states."""
+
+    AI_ANALYSIS = "ai_analysis"
+    USER_ANNOTATED = "user_annotated"
+    LEARNED = "learned"
+
+
 class DesiredStateResponse(BaseModel):
     """Desired state for an automation target entity."""
 
@@ -478,7 +487,7 @@ class DesiredStateResponse(BaseModel):
         None, description="Expected attributes (e.g., brightness, temperature)"
     )
     confidence: float = Field(..., description="Confidence score (0.0-1.0)")
-    inference_method: str = Field(
+    inference_method: InferenceMethod = Field(
         ..., description="How this was inferred (ai_analysis, user_annotated, learned)"
     )
     created_at: datetime = Field(..., description="When this was created")

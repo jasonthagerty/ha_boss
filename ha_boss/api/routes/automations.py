@@ -11,9 +11,11 @@ from ha_boss.api.models import (
     DesiredStateCreateRequest,
     DesiredStateResponse,
     DesiredStateUpdateRequest,
+    InferenceMethod,
     InferredStateResponse,
 )
 from ha_boss.automation.analyzer import AutomationAnalyzer
+from ha_boss.core.exceptions import HomeAssistantError
 from ha_boss.intelligence.claude_client import ClaudeClient
 from ha_boss.intelligence.llm_router import LLMRouter
 from ha_boss.intelligence.ollama_client import OllamaClient
@@ -250,9 +252,17 @@ async def create_desired_state(
         # Validate entity exists in HA (optional but recommended)
         try:
             await ha_client.get_state(request.entity_id)
+        except HomeAssistantError:
+            # Expected - entity might not exist yet or be temporarily unavailable
+            logger.debug(
+                f"[{instance_id}] Entity {request.entity_id} not found in HA - will create desired state anyway"
+            )
         except Exception as e:
-            logger.warning(f"[{instance_id}] Entity {request.entity_id} validation failed: {e}")
-            # Continue anyway - entity might be temporarily unavailable
+            # Unexpected error (connection, auth, etc.) - log but don't block
+            logger.error(
+                f"[{instance_id}] Unexpected error validating {request.entity_id}: {e}",
+                exc_info=True,
+            )
 
         # Create or update desired state in database
         from datetime import UTC, datetime
@@ -276,7 +286,7 @@ async def create_desired_state(
                 existing_state.desired_state = request.desired_state
                 existing_state.desired_attributes = request.desired_attributes
                 existing_state.confidence = 1.0
-                existing_state.inference_method = "user_annotated"
+                existing_state.inference_method = InferenceMethod.USER_ANNOTATED.value
                 existing_state.updated_at = datetime.now(UTC)
                 state = existing_state
             else:
@@ -288,7 +298,7 @@ async def create_desired_state(
                     desired_state=request.desired_state,
                     desired_attributes=request.desired_attributes,
                     confidence=1.0,
-                    inference_method="user_annotated",
+                    inference_method=InferenceMethod.USER_ANNOTATED.value,
                 )
                 session.add(state)
 
@@ -481,12 +491,15 @@ async def delete_desired_state(
 async def infer_desired_states(
     automation_id: str,
     instance_id: str = Query("default", description="Instance identifier"),
-    save: bool = Query(False, description="Save inferred states to database"),
+    save: bool = Query(False, description="Save inferred states to database (default: false)"),
 ) -> list[InferredStateResponse]:
     """Trigger AI inference for automation desired states.
 
     Uses the DesiredStateInference service to analyze the automation
     and infer what entity states it's trying to achieve.
+
+    By default, inference is read-only (save=false). Set save=true to
+    persist inferred states to the database for use in outcome validation.
 
     Args:
         automation_id: Automation entity ID
