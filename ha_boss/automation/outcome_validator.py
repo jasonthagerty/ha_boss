@@ -472,3 +472,150 @@ class OutcomeValidator:
             except Exception as e:
                 logger.error(f"Error learning patterns: {e}", exc_info=True)
                 await session.rollback()
+
+    async def analyze_failure(
+        self,
+        automation_id: str,
+        validation_result: ValidationResult,
+        automation_config: dict | None = None,
+        user_description: str | None = None,
+    ) -> dict:
+        """Analyze automation failure using AI.
+
+        Args:
+            automation_id: Automation that failed
+            validation_result: Outcome validation results
+            automation_config: Automation YAML/configuration (optional)
+            user_description: User's description of the failure (optional)
+
+        Returns:
+            dict with root_cause, suggested_healing, and healing_level
+        """
+        from ha_boss.intelligence.llm_router import LLMRouter, TaskComplexity
+
+        # Build context for AI analysis
+        failed_entities = []
+        for entity_id, entity_result in validation_result.entity_results.items():
+            if not entity_result.achieved:
+                failed_entities.append(
+                    {
+                        "entity_id": entity_id,
+                        "desired_state": entity_result.desired_state or "unknown",
+                        "actual_state": entity_result.actual_state or "unknown",
+                        "desired_attributes": entity_result.desired_attributes,
+                        "actual_attributes": entity_result.actual_attributes,
+                    }
+                )
+
+        # Build prompt for AI
+        prompt_parts = [
+            "Analyze this Home Assistant automation failure:\n",
+            f"Automation: {automation_id}\n",
+        ]
+
+        if user_description:
+            prompt_parts.append(f"User reported: {user_description}\n")
+
+        prompt_parts.append("\nFailed Entities:")
+        for entity in failed_entities:
+            prompt_parts.append(
+                f"\n- {entity['entity_id']}: "
+                f"Expected {entity['desired_state']}, got {entity['actual_state']}"
+            )
+            if entity["desired_attributes"] or entity["actual_attributes"]:
+                prompt_parts.append("  Attributes mismatch")
+
+        if automation_config:
+            import yaml
+
+            prompt_parts.append(f"\n\nAutomation Configuration:\n{yaml.dump(automation_config)}")
+
+        prompt_parts.append(
+            "\n\nProvide your analysis in JSON format with these fields:"
+            "\n- root_cause: Brief explanation of why the automation failed"
+            "\n- suggested_healing: List of 2-4 specific actions to fix the issue"
+            "\n- healing_level: one of ['entity', 'device', 'integration']"
+            "\n\nConsider common issues like:"
+            "\n- Device not responding (network, power)"
+            "\n- Integration offline or misconfigured"
+            "\n- Entity unavailable or disabled"
+            "\n- Timing issues (device boot time, service delays)"
+            "\n- Configuration errors (wrong entity ID, attributes)"
+        )
+
+        prompt = "".join(prompt_parts)
+
+        # Get LLM router (requires being called from a context with access to it)
+        # For now, return a basic analysis if LLM is not available
+        try:
+            from ha_boss.core.config import load_config
+            from ha_boss.intelligence.ollama_client import OllamaClient
+
+            config = load_config()
+
+            if not config.intelligence.ollama_enabled and not config.intelligence.claude_enabled:
+                # Return basic analysis without AI
+                return {
+                    "root_cause": "Unable to determine root cause (AI analysis disabled)",
+                    "suggested_healing": [
+                        "Check if entities are available in Home Assistant",
+                        "Verify integration is connected and operational",
+                        "Review automation configuration for errors",
+                    ],
+                    "healing_level": "entity",
+                }
+
+            # Create LLM router
+            ollama_client = None
+            claude_client = None
+
+            if config.intelligence.ollama_enabled:
+                ollama_client = OllamaClient(
+                    url=config.intelligence.ollama_url,
+                    model=config.intelligence.ollama_model,
+                    timeout=config.intelligence.ollama_timeout_seconds,
+                )
+
+            if config.intelligence.claude_enabled and config.intelligence.claude_api_key:
+                from ha_boss.intelligence.claude_client import ClaudeClient
+
+                claude_client = ClaudeClient(
+                    api_key=config.intelligence.claude_api_key,
+                    model=config.intelligence.claude_model,
+                )
+
+            llm_router = LLMRouter(
+                ollama_client=ollama_client,
+                claude_client=claude_client,
+                local_only=not config.intelligence.claude_enabled,
+            )
+
+            # Get AI analysis
+            response = await llm_router.complete(prompt, complexity=TaskComplexity.MODERATE)
+
+            # Parse JSON response
+            import json
+            import re
+
+            # Extract JSON from response (might be wrapped in markdown code blocks)
+            json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
+            if json_match:
+                analysis = json.loads(json_match.group(1))
+            else:
+                # Try parsing entire response as JSON
+                analysis = json.loads(response)
+
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Error analyzing failure with AI: {e}", exc_info=True)
+            # Return fallback analysis
+            return {
+                "root_cause": f"Analysis failed: {str(e)}",
+                "suggested_healing": [
+                    "Check entity availability in Home Assistant",
+                    "Verify integration connectivity",
+                    "Review automation logs for errors",
+                ],
+                "healing_level": "entity",
+            }

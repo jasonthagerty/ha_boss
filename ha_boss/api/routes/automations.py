@@ -6,11 +6,15 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import (
+    AIFailureAnalysis,
     AutomationAnalysisRequest,
     AutomationAnalysisResponse,
     DesiredStateCreateRequest,
     DesiredStateResponse,
     DesiredStateUpdateRequest,
+    EntityFailureDetail,
+    FailureReportRequest,
+    FailureReportResponse,
     InferenceMethod,
     InferredStateResponse,
 )
@@ -624,3 +628,154 @@ async def infer_desired_states(
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Failed to infer desired states") from None
+
+
+@router.post(
+    "/automations/{automation_id}/report-failure",
+    response_model=FailureReportResponse,
+)
+async def report_automation_failure(
+    automation_id: str,
+    request: FailureReportRequest,
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> FailureReportResponse:
+    """Report automation failure and get AI analysis.
+
+    Triggers retroactive outcome validation and optional AI analysis
+    of the automation failure. If no execution_id is provided, validates
+    the most recent execution.
+
+    Args:
+        automation_id: Automation entity ID
+        request: Failure report details
+        instance_id: Instance identifier (default: "default")
+
+    Returns:
+        Validation results and AI analysis
+
+    Raises:
+        HTTPException: Instance not found (404), no execution found (404),
+                      or service error (500)
+    """
+    try:
+        service = get_service()
+
+        # Validate instance exists
+        ha_client = service.ha_clients.get(instance_id)
+        if not ha_client:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found. Available instances: {list(service.ha_clients.keys())}",
+            ) from None
+
+        # Find execution_id if not provided
+        execution_id = request.execution_id
+        if not execution_id:
+            # Query for most recent execution
+            from sqlalchemy import select
+
+            from ha_boss.core.database import AutomationExecution
+
+            async with service.database.async_session() as session:
+                result = await session.execute(
+                    select(AutomationExecution.id)
+                    .where(
+                        AutomationExecution.instance_id == instance_id,
+                        AutomationExecution.automation_id == automation_id,
+                        AutomationExecution.success == True,  # noqa: E712
+                    )
+                    .order_by(AutomationExecution.executed_at.desc())
+                    .limit(1)
+                )
+                execution_id = result.scalar_one_or_none()
+
+            if not execution_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No successful execution found for {automation_id}",
+                ) from None
+
+        # Trigger outcome validation
+        from ha_boss.automation.outcome_validator import OutcomeValidator
+
+        validator = OutcomeValidator(
+            database=service.database,
+            ha_client=ha_client,
+            instance_id=instance_id,
+        )
+
+        validation_result = await validator.validate_execution(
+            execution_id=execution_id,
+            validation_window_seconds=service.config.outcome_validation.validation_delay_seconds,
+        )
+
+        # Build failed entities list
+        failed_entities = [
+            EntityFailureDetail(
+                entity_id=entity_id,
+                desired_state=entity_result.desired_state,
+                actual_state=entity_result.actual_state,
+                root_cause=None,  # Will be populated by AI analysis
+            )
+            for entity_id, entity_result in validation_result.entity_results.items()
+            if not entity_result.achieved
+        ]
+
+        # Perform AI analysis if enabled
+        ai_analysis = None
+        if service.config.outcome_validation.analyze_failures:
+            if (
+                not service.config.intelligence.ollama_enabled
+                and not service.config.intelligence.claude_enabled
+            ):
+                logger.warning(f"[{instance_id}] AI analysis requested but no LLM configured")
+            else:
+                # Get automation config if possible
+                automation_config = None
+                try:
+                    automation_state = await ha_client.get_state(automation_id)
+                    automation_config = automation_state.get("attributes", {})
+                except Exception as e:
+                    logger.warning(f"[{instance_id}] Could not fetch automation config: {e}")
+
+                # Run AI analysis
+                try:
+                    analysis_result = await validator.analyze_failure(
+                        automation_id=automation_id,
+                        validation_result=validation_result,
+                        automation_config=automation_config,
+                        user_description=request.user_description,
+                    )
+
+                    ai_analysis = AIFailureAnalysis(
+                        root_cause=analysis_result["root_cause"],
+                        suggested_healing=analysis_result["suggested_healing"],
+                        healing_level=analysis_result["healing_level"],
+                    )
+
+                except Exception as e:
+                    logger.error(
+                        f"[{instance_id}] Error running AI analysis: {e}",
+                        exc_info=True,
+                    )
+
+        return FailureReportResponse(
+            execution_id=execution_id,
+            automation_id=automation_id,
+            overall_success=validation_result.overall_success,
+            failed_entities=failed_entities,
+            ai_analysis=ai_analysis,
+            user_description=request.user_description,
+        )
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(
+            f"[{instance_id}] Error reporting failure for {automation_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to process failure report") from None
