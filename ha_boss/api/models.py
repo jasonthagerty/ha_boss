@@ -464,3 +464,53 @@ class ConfigInstanceTestResponse(BaseModel):
     message: str = Field(..., description="Result message")
     version: str | None = Field(None, description="Home Assistant version if connected")
     location_name: str | None = Field(None, description="HA location name if connected")
+
+
+# Automation Desired States Models
+
+
+class DesiredStateResponse(BaseModel):
+    """Desired state for an automation target entity."""
+
+    entity_id: str = Field(..., description="Target entity ID")
+    desired_state: str = Field(..., description="Expected state (e.g., 'on', 'off')")
+    desired_attributes: dict[str, Any] | None = Field(
+        None, description="Expected attributes (e.g., brightness, temperature)"
+    )
+    confidence: float = Field(..., description="Confidence score (0.0-1.0)")
+    inference_method: str = Field(
+        ..., description="How this was inferred (ai_analysis, user_annotated, learned)"
+    )
+    created_at: datetime = Field(..., description="When this was created")
+    updated_at: datetime = Field(..., description="When this was last updated")
+
+
+class DesiredStateCreateRequest(BaseModel):
+    """Request to create/update a desired state."""
+
+    entity_id: str = Field(..., description="Target entity ID")
+    desired_state: str = Field(..., description="Expected state")
+    desired_attributes: dict[str, Any] | None = Field(
+        None, description="Expected attributes (optional)"
+    )
+
+
+class DesiredStateUpdateRequest(BaseModel):
+    """Request to update an existing desired state."""
+
+    desired_state: str | None = Field(None, description="New desired state (optional)")
+    desired_attributes: dict[str, Any] | None = Field(
+        None, description="New desired attributes (optional)"
+    )
+    confidence: float | None = Field(
+        None, description="New confidence score (optional)", ge=0.0, le=1.0
+    )
+
+
+class InferredStateResponse(BaseModel):
+    """AI-inferred desired state (not yet saved)."""
+
+    entity_id: str = Field(..., description="Target entity ID")
+    desired_state: str = Field(..., description="Inferred state")
+    desired_attributes: dict[str, Any] | None = Field(None, description="Inferred attributes")
+    confidence: float = Field(..., description="AI confidence score (0.0-1.0)")
