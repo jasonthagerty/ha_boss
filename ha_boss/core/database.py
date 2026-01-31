@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 7
+CURRENT_DB_VERSION = 8
 
 
 class Base(DeclarativeBase):
@@ -691,6 +691,10 @@ class AutomationOutcomePattern(Base):
     last_observed: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
     )
+    # Multi-level healing tracking (v8)
+    successful_healing_level: Mapped[str | None] = mapped_column(String(50))
+    successful_healing_strategy: Mapped[str | None] = mapped_column(String(255))
+    healing_success_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     __table_args__ = (
         Index(
@@ -709,6 +713,221 @@ class AutomationOutcomePattern(Base):
 
     def __repr__(self) -> str:
         return f"<AutomationOutcomePattern({self.instance_id}:{self.automation_id} -> {self.entity_id} = {self.observed_state}, count={self.occurrence_count})>"
+
+
+# Multi-Level Healing Models (Schema v8)
+
+
+class HealingStrategy(Base):
+    """Available healing actions at each level.
+
+    Defines the strategies available for healing failures at different levels:
+    entity (retry, alternative parameters), device (reconnect, reboot, rediscover),
+    and integration (reload, restart).
+    """
+
+    __tablename__ = "healing_strategies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    level: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # entity, device, integration
+    strategy_type: Mapped[str] = mapped_column(
+        String(100), nullable=False
+    )  # retry_service_call, device_reconnect, reload_integration, etc.
+    parameters: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # Strategy-specific parameters
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<HealingStrategy({self.level}::{self.strategy_type}, enabled={self.enabled})>"
+
+
+class DeviceHealingAction(Base):
+    """Track device-level healing attempts.
+
+    Records when healing actions are performed at the device level (reconnect,
+    reboot, rediscover) and their outcomes.
+    """
+
+    __tablename__ = "device_healing_actions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )  # References stored_instances
+    device_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    action_type: Mapped[str] = mapped_column(
+        String(100), nullable=False
+    )  # reconnect, reboot, rediscover
+    triggered_by: Mapped[str | None] = mapped_column(
+        String(100)
+    )  # automation_failure, manual, pattern
+    automation_id: Mapped[str | None] = mapped_column(String(255))
+    execution_id: Mapped[int | None] = mapped_column(Integer)  # FK to AutomationExecution
+    success: Mapped[bool | None] = mapped_column(Boolean)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        Index("idx_device_healing_actions_instance_device", "instance_id", "device_id"),
+    )
+
+    def __repr__(self) -> str:
+        status = "success" if self.success else "failed" if self.success is False else "pending"
+        return f"<DeviceHealingAction({self.instance_id}:{self.device_id}, {self.action_type}, {status})>"
+
+
+class EntityHealingAction(Base):
+    """Track entity-level healing attempts.
+
+    Records when healing actions are performed at the entity level (retry service
+    call with same or alternative parameters) and their outcomes.
+    """
+
+    __tablename__ = "entity_healing_actions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )  # References stored_instances
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    action_type: Mapped[str] = mapped_column(
+        String(100), nullable=False
+    )  # retry_service_call, alternative_params
+    service_domain: Mapped[str | None] = mapped_column(String(100))
+    service_name: Mapped[str | None] = mapped_column(String(100))
+    service_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # Service call parameters
+    triggered_by: Mapped[str | None] = mapped_column(
+        String(100)
+    )  # automation_failure, manual, pattern
+    automation_id: Mapped[str | None] = mapped_column(String(255))
+    execution_id: Mapped[int | None] = mapped_column(Integer)  # FK to AutomationExecution
+    success: Mapped[bool | None] = mapped_column(Boolean)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        Index("idx_entity_healing_actions_instance_entity", "instance_id", "entity_id"),
+    )
+
+    def __repr__(self) -> str:
+        status = "success" if self.success else "failed" if self.success is False else "pending"
+        return f"<EntityHealingAction({self.instance_id}:{self.entity_id}, {self.action_type}, {status})>"
+
+
+class HealingCascadeExecution(Base):
+    """Track full healing cascade attempts.
+
+    Records the progression of healing attempts through multiple levels (entity,
+    device, integration) and whether each level's healing was successful. Tracks
+    which routing strategy was used (intelligent vs sequential) and final outcome.
+    """
+
+    __tablename__ = "healing_cascade_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )  # References stored_instances
+    automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    execution_id: Mapped[int | None] = mapped_column(Integer)  # FK to AutomationExecution
+    trigger_type: Mapped[str] = mapped_column(
+        String(100), nullable=False
+    )  # trigger_failure, outcome_failure
+    failed_entities: Mapped[list[str] | None] = mapped_column(JSON)  # List of entities that failed
+
+    # Cascade progression
+    entity_level_attempted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    entity_level_success: Mapped[bool | None] = mapped_column(Boolean)
+    device_level_attempted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    device_level_success: Mapped[bool | None] = mapped_column(Boolean)
+    integration_level_attempted: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    integration_level_success: Mapped[bool | None] = mapped_column(Boolean)
+
+    # Routing
+    routing_strategy: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # intelligent, sequential
+    matched_pattern_id: Mapped[int | None] = mapped_column(
+        Integer
+    )  # FK to AutomationOutcomePattern
+
+    # Results
+    final_success: Mapped[bool | None] = mapped_column(Boolean)
+    total_duration_seconds: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    __table_args__ = (
+        Index("idx_healing_cascade_executions_instance_automation", "instance_id", "automation_id"),
+    )
+
+    def __repr__(self) -> str:
+        status = (
+            "success"
+            if self.final_success
+            else "failed" if self.final_success is False else "in_progress"
+        )
+        return f"<HealingCascadeExecution({self.instance_id}:{self.automation_id}, {self.routing_strategy}, {status})>"
+
+
+class AutomationHealthStatus(Base):
+    """Track consecutive success/failure counts for validation gating.
+
+    Maintains per-automation counters for consecutive successes and failures,
+    used to determine when an automation is "validated healthy" (meets consecutive
+    success threshold) for reliability scoring.
+    """
+
+    __tablename__ = "automation_health_status"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )  # References stored_instances
+    automation_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    # Consecutive tracking
+    consecutive_successes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Validation gating
+    is_validated_healthy: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_validation_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    # Statistics
+    total_executions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_successes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_automation_health_status_instance_automation",
+            "instance_id",
+            "automation_id",
+            unique=True,
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AutomationHealthStatus({self.instance_id}:{self.automation_id}, successes={self.consecutive_successes}, failures={self.consecutive_failures})>"
 
 
 # Configuration Management Models (Schema v5)
