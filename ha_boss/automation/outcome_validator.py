@@ -8,9 +8,12 @@ Implements pattern learning to improve confidence scores over time.
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, update
+
+if TYPE_CHECKING:
+    from ha_boss.intelligence.llm_router import LLMRouter
 
 from ha_boss.core.database import (
     AutomationDesiredState,
@@ -80,6 +83,7 @@ class OutcomeValidator:
         database: Database,
         ha_client: HomeAssistantClient,
         instance_id: str = "default",
+        llm_router: "LLMRouter | None" = None,
     ) -> None:
         """Initialize outcome validator.
 
@@ -87,10 +91,12 @@ class OutcomeValidator:
             database: Database for querying desired states and storing results
             ha_client: Home Assistant client for querying state history
             instance_id: Home Assistant instance identifier
+            llm_router: Optional LLM router for AI-powered failure analysis
         """
         self.database = database
         self.ha_client = ha_client
         self.instance_id = instance_id
+        self.llm_router = llm_router
 
     async def validate_execution(
         self,
@@ -490,8 +496,25 @@ class OutcomeValidator:
 
         Returns:
             dict with root_cause, suggested_healing, and healing_level
+
+        Raises:
+            ValueError: If LLM router is not configured
         """
-        from ha_boss.intelligence.llm_router import LLMRouter, TaskComplexity
+        from ha_boss.intelligence.llm_router import TaskComplexity
+
+        # Check if LLM router is available
+        if self.llm_router is None:
+            # Return basic analysis without AI
+            logger.warning("LLM router not configured, returning basic failure analysis")
+            return {
+                "root_cause": "Unable to determine root cause (AI analysis not configured)",
+                "suggested_healing": [
+                    "Check if entities are available in Home Assistant",
+                    "Verify integration is connected and operational",
+                    "Review automation configuration for errors",
+                ],
+                "healing_level": "entity",
+            }
 
         # Build context for AI analysis
         failed_entities = []
@@ -545,53 +568,9 @@ class OutcomeValidator:
 
         prompt = "".join(prompt_parts)
 
-        # Get LLM router (requires being called from a context with access to it)
-        # For now, return a basic analysis if LLM is not available
         try:
-            from ha_boss.core.config import load_config
-            from ha_boss.intelligence.ollama_client import OllamaClient
-
-            config = load_config()
-
-            if not config.intelligence.ollama_enabled and not config.intelligence.claude_enabled:
-                # Return basic analysis without AI
-                return {
-                    "root_cause": "Unable to determine root cause (AI analysis disabled)",
-                    "suggested_healing": [
-                        "Check if entities are available in Home Assistant",
-                        "Verify integration is connected and operational",
-                        "Review automation configuration for errors",
-                    ],
-                    "healing_level": "entity",
-                }
-
-            # Create LLM router
-            ollama_client = None
-            claude_client = None
-
-            if config.intelligence.ollama_enabled:
-                ollama_client = OllamaClient(
-                    url=config.intelligence.ollama_url,
-                    model=config.intelligence.ollama_model,
-                    timeout=config.intelligence.ollama_timeout_seconds,
-                )
-
-            if config.intelligence.claude_enabled and config.intelligence.claude_api_key:
-                from ha_boss.intelligence.claude_client import ClaudeClient
-
-                claude_client = ClaudeClient(
-                    api_key=config.intelligence.claude_api_key,
-                    model=config.intelligence.claude_model,
-                )
-
-            llm_router = LLMRouter(
-                ollama_client=ollama_client,
-                claude_client=claude_client,
-                local_only=not config.intelligence.claude_enabled,
-            )
-
-            # Get AI analysis
-            response = await llm_router.complete(prompt, complexity=TaskComplexity.MODERATE)
+            # Get AI analysis using injected LLM router
+            response = await self.llm_router.generate(prompt, complexity=TaskComplexity.MODERATE)
 
             # Parse JSON response
             import json

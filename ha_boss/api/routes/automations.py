@@ -695,6 +695,43 @@ async def report_automation_failure(
                     detail=f"No successful execution found for {automation_id}",
                 ) from None
 
+        # Create LLM router if AI analysis is enabled
+        llm_router = None
+        if service.config.outcome_validation.analyze_failures:
+            if (
+                service.config.intelligence.ollama_enabled
+                or service.config.intelligence.claude_enabled
+            ):
+                from ha_boss.intelligence.llm_router import LLMRouter
+                from ha_boss.intelligence.ollama_client import OllamaClient
+
+                ollama_client = None
+                claude_client = None
+
+                if service.config.intelligence.ollama_enabled:
+                    ollama_client = OllamaClient(
+                        url=service.config.intelligence.ollama_url,
+                        model=service.config.intelligence.ollama_model,
+                        timeout=service.config.intelligence.ollama_timeout_seconds,
+                    )
+
+                if (
+                    service.config.intelligence.claude_enabled
+                    and service.config.intelligence.claude_api_key
+                ):
+                    from ha_boss.intelligence.claude_client import ClaudeClient
+
+                    claude_client = ClaudeClient(
+                        api_key=service.config.intelligence.claude_api_key,
+                        model=service.config.intelligence.claude_model,
+                    )
+
+                llm_router = LLMRouter(
+                    ollama_client=ollama_client,
+                    claude_client=claude_client,
+                    local_only=not service.config.intelligence.claude_enabled,
+                )
+
         # Trigger outcome validation
         from ha_boss.automation.outcome_validator import OutcomeValidator
 
@@ -702,6 +739,7 @@ async def report_automation_failure(
             database=service.database,
             ha_client=ha_client,
             instance_id=instance_id,
+            llm_router=llm_router,
         )
 
         validation_result = await validator.validate_execution(
@@ -721,43 +759,39 @@ async def report_automation_failure(
             if not entity_result.achieved
         ]
 
-        # Perform AI analysis if enabled
+        # Perform AI analysis if enabled and LLM router is available
         ai_analysis = None
-        if service.config.outcome_validation.analyze_failures:
-            if (
-                not service.config.intelligence.ollama_enabled
-                and not service.config.intelligence.claude_enabled
-            ):
-                logger.warning(f"[{instance_id}] AI analysis requested but no LLM configured")
-            else:
-                # Get automation config if possible
-                automation_config = None
-                try:
-                    automation_state = await ha_client.get_state(automation_id)
-                    automation_config = automation_state.get("attributes", {})
-                except Exception as e:
-                    logger.warning(f"[{instance_id}] Could not fetch automation config: {e}")
+        if service.config.outcome_validation.analyze_failures and llm_router is not None:
+            # Get automation config if possible
+            automation_config = None
+            try:
+                automation_state = await ha_client.get_state(automation_id)
+                automation_config = automation_state.get("attributes", {})
+            except Exception as e:
+                logger.warning(f"[{instance_id}] Could not fetch automation config: {e}")
 
-                # Run AI analysis
-                try:
-                    analysis_result = await validator.analyze_failure(
-                        automation_id=automation_id,
-                        validation_result=validation_result,
-                        automation_config=automation_config,
-                        user_description=request.user_description,
-                    )
+            # Run AI analysis
+            try:
+                analysis_result = await validator.analyze_failure(
+                    automation_id=automation_id,
+                    validation_result=validation_result,
+                    automation_config=automation_config,
+                    user_description=request.user_description,
+                )
 
-                    ai_analysis = AIFailureAnalysis(
-                        root_cause=analysis_result["root_cause"],
-                        suggested_healing=analysis_result["suggested_healing"],
-                        healing_level=analysis_result["healing_level"],
-                    )
+                ai_analysis = AIFailureAnalysis(
+                    root_cause=analysis_result["root_cause"],
+                    suggested_healing=analysis_result["suggested_healing"],
+                    healing_level=analysis_result["healing_level"],
+                )
 
-                except Exception as e:
-                    logger.error(
-                        f"[{instance_id}] Error running AI analysis: {e}",
-                        exc_info=True,
-                    )
+            except Exception as e:
+                logger.error(
+                    f"[{instance_id}] Error running AI analysis: {e}",
+                    exc_info=True,
+                )
+        elif service.config.outcome_validation.analyze_failures:
+            logger.warning(f"[{instance_id}] AI analysis requested but no LLM configured")
 
         return FailureReportResponse(
             execution_id=execution_id,

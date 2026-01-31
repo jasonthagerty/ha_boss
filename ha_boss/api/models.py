@@ -533,9 +533,17 @@ class FailureReportRequest(BaseModel):
 
     execution_id: int | None = Field(None, description="Specific execution ID (optional)")
     failed_entities: list[str] | None = Field(
-        None, description="List of entities that failed (optional)"
+        None,
+        min_length=1,
+        max_length=50,
+        description="List of entities that failed (1-50 entities, optional)",
     )
-    user_description: str | None = Field(None, description="User's description of what went wrong")
+    user_description: str | None = Field(
+        None,
+        min_length=1,
+        max_length=1000,
+        description="User's description of what went wrong (1-1000 characters, optional)",
+    )
 
 
 class EntityFailureDetail(BaseModel):
