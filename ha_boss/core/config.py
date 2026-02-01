@@ -458,6 +458,12 @@ class OutcomeValidationConfig(BaseSettings):
         default=True,
         description="Enable AI analysis of reported automation failures",
     )
+    consecutive_success_threshold: int = Field(
+        default=3,
+        ge=1,
+        le=100,
+        description="Number of consecutive successes required for validation gating",
+    )
 
 
 class APIConfig(BaseModel):
