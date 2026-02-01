@@ -175,6 +175,9 @@ class TriggerFailureDetector:
     ) -> bool:
         """Check if state change should have triggered automation.
 
+        This checks if the trigger CONDITION was met (the "IF" part),
+        not if the desired outcome was achieved (the "THEN" part).
+
         Args:
             automation_id: Automation ID
             state_change: State change event with initial and final states
@@ -184,6 +187,7 @@ class TriggerFailureDetector:
 
         Raises:
             ValueError: If automation_id or state_change is invalid
+            asyncio.TimeoutError: If database query times out
         """
         if not automation_id or not isinstance(automation_id, str):
             raise ValueError(f"Invalid automation_id: {automation_id}")
@@ -191,36 +195,156 @@ class TriggerFailureDetector:
         if not state_change or not isinstance(state_change, dict):
             raise ValueError(f"Invalid state_change: {state_change}")
 
-        try:
-            # Get automation configuration
-            desired_states = await self._get_automation_config(automation_id)
+        # Get trigger configuration from database
+        trigger_config = await self._get_trigger_config(automation_id)
 
-            if not desired_states:
-                logger.debug(f"No desired states found for {automation_id}")
-                return False
+        if not trigger_config:
+            logger.debug(f"No trigger config found for {automation_id}")
+            return False
 
-            # Check if any desired state changed
-            final = state_change.get("final", {})
+        # Extract initial and final states
+        initial = state_change.get("initial", {})
+        final = state_change.get("final", {})
 
-            for desired in desired_states:
-                entity_id = desired.entity_id
-                desired_state = desired.desired_state
+        # Check if state change matches trigger condition
+        for trigger in trigger_config:
+            platform = trigger.get("platform", "state")
 
-                final_state = final.get(entity_id, {}).get("state")
-
-                # Check if state transitioned to desired state
-                if final_state and self._compare_states(desired_state, final_state):
-                    # State reached desired value - trigger should have fired
+            if platform == "state":
+                if self._check_state_trigger(trigger, initial, final):
+                    return True
+            elif platform == "numeric_state":
+                if self._check_numeric_trigger(trigger, initial, final):
                     return True
 
+        return False
+
+    def _check_state_trigger(
+        self,
+        trigger: dict[str, Any],
+        initial: dict[str, dict[str, Any]],
+        final: dict[str, dict[str, Any]],
+    ) -> bool:
+        """Check if state change matches state trigger condition.
+
+        Args:
+            trigger: State trigger configuration
+            initial: Initial entity states
+            final: Final entity states
+
+        Returns:
+            True if state change matches trigger condition
+        """
+        entity_id = trigger.get("entity_id")
+        if not entity_id:
             return False
 
-        except Exception as e:
-            logger.error(
-                f"Error validating trigger for {automation_id}: {e}",
-                exc_info=True,
-            )
+        # Get initial and final states for entity
+        initial_state = initial.get(entity_id, {}).get("state")
+        final_state = final.get(entity_id, {}).get("state")
+
+        # Check 'to' condition (must transition TO this state)
+        to_state = trigger.get("to")
+        if to_state and not self._compare_states(to_state, final_state):
             return False
+
+        # Check 'from' condition (must transition FROM this state)
+        from_state = trigger.get("from")
+        if from_state and not self._compare_states(from_state, initial_state):
+            return False
+
+        # If both 'to' and 'from' specified, both must match
+        # If only 'to', just final state must match
+        # If neither, any state change triggers
+        return True
+
+    def _check_numeric_trigger(
+        self,
+        trigger: dict[str, Any],
+        initial: dict[str, dict[str, Any]],
+        final: dict[str, dict[str, Any]],
+    ) -> bool:
+        """Check if state change matches numeric trigger condition.
+
+        Args:
+            trigger: Numeric trigger configuration
+            initial: Initial entity states
+            final: Final entity states
+
+        Returns:
+            True if numeric condition met
+        """
+        entity_id = trigger.get("entity_id")
+        if not entity_id:
+            return False
+
+        # Get final numeric state
+        final_state = final.get(entity_id, {}).get("state")
+        if final_state is None:
+            return False
+
+        try:
+            final_value = float(final_state)
+        except (ValueError, TypeError):
+            logger.debug(f"Cannot convert {final_state} to float for {entity_id}")
+            return False
+
+        # Check 'above' condition
+        above = trigger.get("above")
+        if above is not None:
+            try:
+                if final_value <= float(above):
+                    return False
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid 'above' value: {above}")
+                return False
+
+        # Check 'below' condition
+        below = trigger.get("below")
+        if below is not None:
+            try:
+                if final_value >= float(below):
+                    return False
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid 'below' value: {below}")
+                return False
+
+        return True
+
+    async def _get_trigger_config(self, automation_id: str) -> list[dict[str, Any]]:
+        """Get trigger configuration for automation.
+
+        For now, this constructs trigger config from desired states.
+        In the future, this could query actual automation YAML configs.
+
+        Args:
+            automation_id: Automation entity ID
+
+        Returns:
+            List of trigger configurations
+
+        Raises:
+            asyncio.TimeoutError: If database query times out
+        """
+        try:
+            desired_states = await self._get_automation_config(automation_id)
+
+            # Convert desired states to basic trigger configs
+            triggers = []
+            for desired in desired_states:
+                triggers.append(
+                    {
+                        "platform": "state",
+                        "entity_id": desired.entity_id,
+                        "to": desired.desired_state,
+                    }
+                )
+
+            return triggers
+
+        except TimeoutError:
+            logger.error(f"Timeout getting trigger config for {automation_id}")
+            raise
 
     async def _get_trigger_entity_states(
         self, expected_trigger: dict[str, Any]
@@ -247,25 +371,35 @@ class TriggerFailureDetector:
                 logger.debug("No entity IDs found in trigger")
                 return None
 
-            # Query states for all entities
-            states: dict[str, dict[str, Any]] = {}
-            for entity_id in entity_ids:
+            # Query states for all entities concurrently
+            async def get_entity_state(entity_id: str) -> tuple[str, dict[str, Any] | None]:
                 try:
                     state = await self.ha_client.get_state(entity_id)
-                    if state:
-                        states[entity_id] = state
+                    return (entity_id, state)
                 except Exception as e:
                     logger.warning(f"Failed to get state for {entity_id}: {e}")
-                    # Continue with other entities
+                    return (entity_id, None)
+
+            # Gather all state queries concurrently
+            results = await asyncio.gather(*[get_entity_state(eid) for eid in entity_ids])
+
+            # Build state dictionary from results
+            states: dict[str, dict[str, Any]] = {}
+            for entity_id, state in results:
+                if state:
+                    states[entity_id] = state
 
             return states if states else None
 
+        except TimeoutError:
+            logger.error("Timeout getting trigger entity states")
+            raise
         except Exception as e:
             logger.error(
                 f"Error getting trigger entity states: {e}",
                 exc_info=True,
             )
-            return None
+            raise
 
     async def _get_automation_config(self, automation_id: str) -> list[AutomationDesiredState]:
         """Get automation configuration from database.
@@ -278,6 +412,7 @@ class TriggerFailureDetector:
 
         Raises:
             ValueError: If automation_id is invalid
+            asyncio.TimeoutError: If database query times out
         """
         if not automation_id or not isinstance(automation_id, str):
             raise ValueError(f"Invalid automation_id: {automation_id}")
@@ -294,12 +429,15 @@ class TriggerFailureDetector:
                 )
                 return list(result.scalars().all())
 
-        except Exception as e:
+        except TimeoutError:
+            logger.error(f"Timeout querying automation config for {automation_id}")
+            raise
+        except Exception:
             logger.error(
-                f"Error querying automation config for {automation_id}: {e}",
+                f"Database error querying automation config for {automation_id}",
                 exc_info=True,
             )
-            return []
+            raise
 
     def _extract_entity_ids_from_trigger(self, trigger: dict[str, Any]) -> set[str]:
         """Extract entity IDs from trigger configuration.
@@ -339,7 +477,7 @@ class TriggerFailureDetector:
 
         return entity_ids
 
-    def _compare_states(self, desired: str, actual: str | None) -> bool:
+    def _compare_states(self, desired: str | None, actual: str | None) -> bool:
         """Compare desired and actual states.
 
         Args:
@@ -349,7 +487,12 @@ class TriggerFailureDetector:
         Returns:
             True if states match (case-insensitive)
         """
-        if actual is None:
+        # Handle None cases
+        if desired is None or actual is None:
+            return False
+
+        # Ensure both are strings
+        if not isinstance(desired, str) or not isinstance(actual, str):
             return False
 
         # Case-insensitive comparison

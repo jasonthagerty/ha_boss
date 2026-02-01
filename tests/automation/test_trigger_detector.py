@@ -216,11 +216,11 @@ class TestValidateTriggerFired:
     """Test validate_trigger_fired method."""
 
     @pytest.mark.asyncio
-    async def test_trigger_should_fire_on_state_match(
+    async def test_trigger_should_fire_on_state_transition_to(
         self, detector: TriggerFailureDetector, mock_database: MagicMock
     ) -> None:
-        """Test trigger should fire when state reaches desired value."""
-        # Mock automation config
+        """Test trigger should fire when state transitions to target value."""
+        # Mock automation config - creates trigger with 'to' condition
         desired_state = MagicMock(spec=AutomationDesiredState)
         desired_state.entity_id = "sensor.temp"
         desired_state.desired_state = "on"
@@ -235,6 +235,7 @@ class TestValidateTriggerFired:
         mock_database.async_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_database.async_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
+        # State changes from 'off' to 'on', matching the trigger condition
         state_change = {
             "initial": {"sensor.temp": {"state": "off"}},
             "final": {"sensor.temp": {"state": "on"}},
@@ -248,11 +249,11 @@ class TestValidateTriggerFired:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_trigger_should_not_fire_when_state_unchanged(
+    async def test_trigger_should_not_fire_when_to_condition_not_met(
         self, detector: TriggerFailureDetector, mock_database: MagicMock
     ) -> None:
-        """Test trigger should not fire when state doesn't reach desired value."""
-        # Mock automation config
+        """Test trigger should not fire when 'to' condition not met."""
+        # Mock automation config - trigger requires transition TO 'on'
         desired_state = MagicMock(spec=AutomationDesiredState)
         desired_state.entity_id = "sensor.temp"
         desired_state.desired_state = "on"
@@ -267,6 +268,7 @@ class TestValidateTriggerFired:
         mock_database.async_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_database.async_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
+        # State stays 'off', does not transition to 'on'
         state_change = {
             "initial": {"sensor.temp": {"state": "off"}},
             "final": {"sensor.temp": {"state": "off"}},
@@ -531,15 +533,15 @@ class TestGetAutomationConfig:
     async def test_get_config_database_error(
         self, detector: TriggerFailureDetector, mock_database: MagicMock
     ) -> None:
-        """Test graceful handling of database errors."""
+        """Test that database errors propagate correctly."""
         mock_database.async_session.return_value = AsyncMock()
         mock_database.async_session.return_value.__aenter__ = AsyncMock(
             side_effect=Exception("Database error")
         )
 
-        config = await detector._get_automation_config("automation.test")
-
-        assert config == []
+        # Should propagate exception instead of returning empty list
+        with pytest.raises(Exception, match="Database error"):
+            await detector._get_automation_config("automation.test")
 
 
 class TestExtractEntityIdsFromTrigger:
@@ -623,6 +625,117 @@ class TestExtractEntityIdsFromTrigger:
         }
 
 
+class TestCheckStateTrigger:
+    """Test _check_state_trigger method."""
+
+    def test_state_trigger_to_condition_match(self, detector: TriggerFailureDetector) -> None:
+        """Test state trigger with 'to' condition matching."""
+        trigger = {"entity_id": "light.living_room", "to": "on"}
+        initial = {"light.living_room": {"state": "off"}}
+        final = {"light.living_room": {"state": "on"}}
+
+        result = detector._check_state_trigger(trigger, initial, final)
+        assert result is True
+
+    def test_state_trigger_to_condition_no_match(self, detector: TriggerFailureDetector) -> None:
+        """Test state trigger with 'to' condition not matching."""
+        trigger = {"entity_id": "light.living_room", "to": "on"}
+        initial = {"light.living_room": {"state": "off"}}
+        final = {"light.living_room": {"state": "off"}}
+
+        result = detector._check_state_trigger(trigger, initial, final)
+        assert result is False
+
+    def test_state_trigger_from_to_condition_match(self, detector: TriggerFailureDetector) -> None:
+        """Test state trigger with both 'from' and 'to' conditions matching."""
+        trigger = {"entity_id": "light.living_room", "from": "off", "to": "on"}
+        initial = {"light.living_room": {"state": "off"}}
+        final = {"light.living_room": {"state": "on"}}
+
+        result = detector._check_state_trigger(trigger, initial, final)
+        assert result is True
+
+    def test_state_trigger_from_condition_no_match(self, detector: TriggerFailureDetector) -> None:
+        """Test state trigger with 'from' condition not matching."""
+        trigger = {"entity_id": "light.living_room", "from": "off", "to": "on"}
+        initial = {"light.living_room": {"state": "unknown"}}
+        final = {"light.living_room": {"state": "on"}}
+
+        result = detector._check_state_trigger(trigger, initial, final)
+        assert result is False
+
+    def test_state_trigger_no_entity_id(self, detector: TriggerFailureDetector) -> None:
+        """Test state trigger without entity_id."""
+        trigger = {"to": "on"}
+        initial = {}
+        final = {}
+
+        result = detector._check_state_trigger(trigger, initial, final)
+        assert result is False
+
+
+class TestCheckNumericTrigger:
+    """Test _check_numeric_trigger method."""
+
+    def test_numeric_trigger_above_condition_match(self, detector: TriggerFailureDetector) -> None:
+        """Test numeric trigger with 'above' condition matching."""
+        trigger = {"entity_id": "sensor.temp", "above": 25}
+        initial = {"sensor.temp": {"state": "20"}}
+        final = {"sensor.temp": {"state": "30"}}
+
+        result = detector._check_numeric_trigger(trigger, initial, final)
+        assert result is True
+
+    def test_numeric_trigger_above_condition_no_match(
+        self, detector: TriggerFailureDetector
+    ) -> None:
+        """Test numeric trigger with 'above' condition not matching."""
+        trigger = {"entity_id": "sensor.temp", "above": 25}
+        initial = {"sensor.temp": {"state": "20"}}
+        final = {"sensor.temp": {"state": "24"}}
+
+        result = detector._check_numeric_trigger(trigger, initial, final)
+        assert result is False
+
+    def test_numeric_trigger_below_condition_match(self, detector: TriggerFailureDetector) -> None:
+        """Test numeric trigger with 'below' condition matching."""
+        trigger = {"entity_id": "sensor.temp", "below": 15}
+        initial = {"sensor.temp": {"state": "20"}}
+        final = {"sensor.temp": {"state": "10"}}
+
+        result = detector._check_numeric_trigger(trigger, initial, final)
+        assert result is True
+
+    def test_numeric_trigger_below_condition_no_match(
+        self, detector: TriggerFailureDetector
+    ) -> None:
+        """Test numeric trigger with 'below' condition not matching."""
+        trigger = {"entity_id": "sensor.temp", "below": 15}
+        initial = {"sensor.temp": {"state": "20"}}
+        final = {"sensor.temp": {"state": "16"}}
+
+        result = detector._check_numeric_trigger(trigger, initial, final)
+        assert result is False
+
+    def test_numeric_trigger_invalid_state(self, detector: TriggerFailureDetector) -> None:
+        """Test numeric trigger with non-numeric state."""
+        trigger = {"entity_id": "sensor.temp", "above": 25}
+        initial = {"sensor.temp": {"state": "unknown"}}
+        final = {"sensor.temp": {"state": "unavailable"}}
+
+        result = detector._check_numeric_trigger(trigger, initial, final)
+        assert result is False
+
+    def test_numeric_trigger_none_state(self, detector: TriggerFailureDetector) -> None:
+        """Test numeric trigger with None state."""
+        trigger = {"entity_id": "sensor.temp", "above": 25}
+        initial = {"sensor.temp": {"state": None}}
+        final = {"sensor.temp": {"state": None}}
+
+        result = detector._check_numeric_trigger(trigger, initial, final)
+        assert result is False
+
+
 class TestCompareStates:
     """Test _compare_states method."""
 
@@ -644,6 +757,16 @@ class TestCompareStates:
     def test_compare_none_actual(self, detector: TriggerFailureDetector) -> None:
         """Test with None actual state."""
         result = detector._compare_states("on", None)
+        assert result is False
+
+    def test_compare_none_desired(self, detector: TriggerFailureDetector) -> None:
+        """Test with None desired state."""
+        result = detector._compare_states(None, "on")
+        assert result is False
+
+    def test_compare_both_none(self, detector: TriggerFailureDetector) -> None:
+        """Test with both states None."""
+        result = detector._compare_states(None, None)
         assert result is False
 
     def test_compare_numeric_strings(self, detector: TriggerFailureDetector) -> None:
