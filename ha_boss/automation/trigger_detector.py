@@ -253,9 +253,12 @@ class TriggerFailureDetector:
         if from_state and not self._compare_states(from_state, initial_state):
             return False
 
+        # If neither 'to' nor 'from' specified, state must have actually changed
+        if not to_state and not from_state:
+            return not self._compare_states(initial_state, final_state)
+
         # If both 'to' and 'from' specified, both must match
         # If only 'to', just final state must match
-        # If neither, any state change triggers
         return True
 
     def _check_numeric_trigger(

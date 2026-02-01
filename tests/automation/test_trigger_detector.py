@@ -673,6 +673,28 @@ class TestCheckStateTrigger:
         result = detector._check_state_trigger(trigger, initial, final)
         assert result is False
 
+    def test_state_trigger_no_conditions_state_changed(
+        self, detector: TriggerFailureDetector
+    ) -> None:
+        """Test state trigger with no from/to conditions when state changes."""
+        trigger = {"entity_id": "light.living_room"}
+        initial = {"light.living_room": {"state": "off"}}
+        final = {"light.living_room": {"state": "on"}}
+
+        result = detector._check_state_trigger(trigger, initial, final)
+        assert result is True
+
+    def test_state_trigger_no_conditions_state_unchanged(
+        self, detector: TriggerFailureDetector
+    ) -> None:
+        """Test state trigger with no from/to conditions when state doesn't change."""
+        trigger = {"entity_id": "light.living_room"}
+        initial = {"light.living_room": {"state": "on"}}
+        final = {"light.living_room": {"state": "on"}}
+
+        result = detector._check_state_trigger(trigger, initial, final)
+        assert result is False
+
 
 class TestCheckNumericTrigger:
     """Test _check_numeric_trigger method."""
