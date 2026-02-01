@@ -73,6 +73,9 @@ Thumbs.db
 .claude/settings.local.json
 .claude/*.local.json
 
+# oh-my-claudecode runtime state (should not be committed)
+.omc/
+
 # Logs
 *.log
 
