@@ -180,13 +180,20 @@ class AutomationHealthTracker:
         if not automation_id or not automation_id.strip():
             raise ValueError("automation_id cannot be empty")
 
-        async with self.database.async_session() as session:
-            status = await self._get_status(session, instance_id, automation_id)
+        try:
+            async with self.database.async_session() as session:
+                status = await self._get_status(session, instance_id, automation_id)
 
-            if not status or status.total_executions == 0:
-                return 0.0
+                if not status or status.total_executions == 0:
+                    return 0.0
 
-            return status.total_successes / status.total_executions
+                return status.total_successes / status.total_executions
+        except Exception as e:
+            logger.error(
+                f"Failed to get reliability score for {instance_id}:{automation_id}: {e}",
+                exc_info=True,
+            )
+            raise
 
     async def get_health_status(
         self,
@@ -210,8 +217,15 @@ class AutomationHealthTracker:
         if not automation_id or not automation_id.strip():
             raise ValueError("automation_id cannot be empty")
 
-        async with self.database.async_session() as session:
-            return await self._get_status(session, instance_id, automation_id)
+        try:
+            async with self.database.async_session() as session:
+                return await self._get_status(session, instance_id, automation_id)
+        except Exception as e:
+            logger.error(
+                f"Failed to get health status for {instance_id}:{automation_id}: {e}",
+                exc_info=True,
+            )
+            raise
 
     async def reset_validation(
         self,
@@ -236,22 +250,29 @@ class AutomationHealthTracker:
         if not automation_id or not automation_id.strip():
             raise ValueError("automation_id cannot be empty")
 
-        async with self.database.async_session() as session:
-            status = await self._get_status(session, instance_id, automation_id)
+        try:
+            async with self.database.async_session() as session:
+                status = await self._get_status(session, instance_id, automation_id)
 
-            if status:
-                status.consecutive_successes = 0
-                status.consecutive_failures = 0
-                status.is_validated_healthy = False
-                status.last_validation_at = None
-                status.updated_at = datetime.now(UTC)
+                if status:
+                    status.consecutive_successes = 0
+                    status.consecutive_failures = 0
+                    status.is_validated_healthy = False
+                    status.last_validation_at = None
+                    status.updated_at = datetime.now(UTC)
 
-                await self._save_status(session, status)
+                    await self._save_status(session, status)
 
-                logger.info(
-                    f"Reset validation for {instance_id}:{automation_id} "
-                    f"(total_executions={status.total_executions} preserved)"
-                )
+                    logger.info(
+                        f"Reset validation for {instance_id}:{automation_id} "
+                        f"(total_executions={status.total_executions} preserved)"
+                    )
+        except Exception as e:
+            logger.error(
+                f"Failed to reset validation for {instance_id}:{automation_id}: {e}",
+                exc_info=True,
+            )
+            raise
 
     # Private helper methods
 
