@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from ha_boss.core.database import AutomationHealthStatus, Database
 
@@ -127,7 +128,7 @@ class AutomationHealthTracker:
                     if status.is_validated_healthy:
                         logger.info(
                             f"Automation {instance_id}:{automation_id} lost validated status "
-                            f"(failed after {status.consecutive_failures} failure)"
+                            f"(consecutive_failures={status.consecutive_failures})"
                         )
                     status.is_validated_healthy = False
 
@@ -307,6 +308,10 @@ class AutomationHealthTracker:
     ) -> AutomationHealthStatus:
         """Get existing or create new health status record.
 
+        Handles concurrent requests by using session.flush() to detect unique
+        constraint violations before commit. If another request creates the
+        same record concurrently, we catch the IntegrityError and retry the get.
+
         Args:
             session: Active database session
             instance_id: Home Assistant instance identifier
@@ -331,7 +336,25 @@ class AutomationHealthTracker:
                 updated_at=datetime.now(UTC),
             )
             session.add(status)
-            logger.debug(f"Created new health status for {instance_id}:{automation_id}")
+
+            try:
+                # Flush to detect unique constraint violations before commit
+                await session.flush()
+                logger.debug(f"Created new health status for {instance_id}:{automation_id}")
+            except IntegrityError:
+                # Another request created the same record concurrently
+                # Rollback and retry the get operation
+                await session.rollback()
+                status = await self._get_status(session, instance_id, automation_id)
+                if not status:
+                    # This shouldn't happen, but handle gracefully
+                    raise RuntimeError(
+                        f"Failed to create or retrieve status for {instance_id}:{automation_id}"
+                    ) from None
+                logger.debug(
+                    f"Concurrent creation detected for {instance_id}:{automation_id}, "
+                    "using existing record"
+                )
 
         return status
 
