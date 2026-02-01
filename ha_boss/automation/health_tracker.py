@@ -98,54 +98,61 @@ class AutomationHealthTracker:
         if not automation_id or not automation_id.strip():
             raise ValueError("automation_id cannot be empty")
 
-        async with self.database.async_session() as session:
-            # Get or create status record
-            status = await self._get_or_create_status(session, instance_id, automation_id)
+        try:
+            async with self.database.async_session() as session:
+                # Get or create status record
+                status = await self._get_or_create_status(session, instance_id, automation_id)
 
-            # Update counters based on result
-            if success:
-                status.consecutive_successes += 1
-                status.consecutive_failures = 0
-                status.total_successes += 1
+                # Update counters based on result
+                if success:
+                    status.consecutive_successes += 1
+                    status.consecutive_failures = 0
+                    status.total_successes += 1
 
-                # Check validation threshold
-                if status.consecutive_successes >= self.consecutive_success_threshold:
-                    if not status.is_validated_healthy:
+                    # Check validation threshold
+                    if status.consecutive_successes >= self.consecutive_success_threshold:
+                        if not status.is_validated_healthy:
+                            logger.info(
+                                f"Automation {instance_id}:{automation_id} validated healthy "
+                                f"({status.consecutive_successes} consecutive successes)"
+                            )
+                        status.is_validated_healthy = True
+                        status.last_validation_at = datetime.now(UTC)
+                else:
+                    status.consecutive_failures += 1
+                    status.consecutive_successes = 0
+                    status.total_failures += 1
+
+                    # Reset validation on any failure
+                    if status.is_validated_healthy:
                         logger.info(
-                            f"Automation {instance_id}:{automation_id} validated healthy "
-                            f"({status.consecutive_successes} consecutive successes)"
+                            f"Automation {instance_id}:{automation_id} lost validated status "
+                            f"(failed after {status.consecutive_failures} failure)"
                         )
-                    status.is_validated_healthy = True
-                    status.last_validation_at = datetime.now(UTC)
-            else:
-                status.consecutive_failures += 1
-                status.consecutive_successes = 0
-                status.total_failures += 1
+                    status.is_validated_healthy = False
 
-                # Reset validation on any failure
-                if status.is_validated_healthy:
-                    logger.warning(
-                        f"Automation {instance_id}:{automation_id} lost validated status "
-                        f"(failed after {status.consecutive_failures} failure)"
-                    )
-                status.is_validated_healthy = False
+                # Update totals and timestamp
+                status.total_executions += 1
+                status.updated_at = datetime.now(UTC)
 
-            # Update totals and timestamp
-            status.total_executions += 1
-            status.updated_at = datetime.now(UTC)
+                # Save and return
+                await self._save_status(session, status)
 
-            # Save and return
-            await self._save_status(session, status)
+                logger.debug(
+                    f"Recorded {'success' if success else 'failure'} for "
+                    f"{instance_id}:{automation_id} - "
+                    f"consecutive_successes={status.consecutive_successes}, "
+                    f"consecutive_failures={status.consecutive_failures}, "
+                    f"validated={status.is_validated_healthy}"
+                )
 
-            logger.debug(
-                f"Recorded {'success' if success else 'failure'} for "
-                f"{instance_id}:{automation_id} - "
-                f"consecutive_successes={status.consecutive_successes}, "
-                f"consecutive_failures={status.consecutive_failures}, "
-                f"validated={status.is_validated_healthy}"
+                return status
+        except Exception as e:
+            logger.error(
+                f"Failed to record execution result for {instance_id}:{automation_id}: {e}",
+                exc_info=True,
             )
-
-            return status
+            raise
 
     async def get_reliability_score(
         self,
