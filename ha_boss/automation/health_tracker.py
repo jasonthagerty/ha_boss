@@ -99,61 +99,85 @@ class AutomationHealthTracker:
         if not automation_id or not automation_id.strip():
             raise ValueError("automation_id cannot be empty")
 
-        try:
-            async with self.database.async_session() as session:
-                # Get or create status record
-                status = await self._get_or_create_status(session, instance_id, automation_id)
+        # Retry once on IntegrityError (concurrent creation race condition)
+        for attempt in range(2):
+            try:
+                async with self.database.async_session() as session:
+                    # Get or create status record
+                    status = await self._get_or_create_status(session, instance_id, automation_id)
 
-                # Update counters based on result
-                if success:
-                    status.consecutive_successes += 1
-                    status.consecutive_failures = 0
-                    status.total_successes += 1
+                    # Update counters based on result
+                    if success:
+                        status.consecutive_successes += 1
+                        status.consecutive_failures = 0
+                        status.total_successes += 1
 
-                    # Check validation threshold
-                    if status.consecutive_successes >= self.consecutive_success_threshold:
-                        if not status.is_validated_healthy:
+                        # Check validation threshold
+                        if status.consecutive_successes >= self.consecutive_success_threshold:
+                            if not status.is_validated_healthy:
+                                logger.info(
+                                    f"Automation {instance_id}:{automation_id} validated healthy "
+                                    f"({status.consecutive_successes} consecutive successes)"
+                                )
+                            status.is_validated_healthy = True
+                            status.last_validation_at = datetime.now(UTC)
+                    else:
+                        status.consecutive_failures += 1
+                        status.consecutive_successes = 0
+                        status.total_failures += 1
+
+                        # Reset validation on any failure
+                        if status.is_validated_healthy:
                             logger.info(
-                                f"Automation {instance_id}:{automation_id} validated healthy "
-                                f"({status.consecutive_successes} consecutive successes)"
+                                f"Automation {instance_id}:{automation_id} lost validated status "
+                                f"(consecutive_failures={status.consecutive_failures})"
                             )
-                        status.is_validated_healthy = True
-                        status.last_validation_at = datetime.now(UTC)
+                        status.is_validated_healthy = False
+
+                    # Update totals and timestamp
+                    status.total_executions += 1
+                    status.updated_at = datetime.now(UTC)
+
+                    # Save and return
+                    await self._save_status(session, status)
+
+                    logger.debug(
+                        f"Recorded {'success' if success else 'failure'} for "
+                        f"{instance_id}:{automation_id} - "
+                        f"consecutive_successes={status.consecutive_successes}, "
+                        f"consecutive_failures={status.consecutive_failures}, "
+                        f"validated={status.is_validated_healthy}"
+                    )
+
+                    return status
+
+            except IntegrityError:
+                # Concurrent creation - another request created the record
+                # Retry once to load existing record and update it
+                if attempt == 0:
+                    logger.debug(
+                        f"Concurrent creation detected for {instance_id}:{automation_id}, retrying"
+                    )
+                    continue
                 else:
-                    status.consecutive_failures += 1
-                    status.consecutive_successes = 0
-                    status.total_failures += 1
+                    # Second attempt also failed - this shouldn't happen
+                    logger.error(
+                        f"Failed to create or update status for {instance_id}:{automation_id} "
+                        "after retry"
+                    )
+                    raise
 
-                    # Reset validation on any failure
-                    if status.is_validated_healthy:
-                        logger.info(
-                            f"Automation {instance_id}:{automation_id} lost validated status "
-                            f"(consecutive_failures={status.consecutive_failures})"
-                        )
-                    status.is_validated_healthy = False
-
-                # Update totals and timestamp
-                status.total_executions += 1
-                status.updated_at = datetime.now(UTC)
-
-                # Save and return
-                await self._save_status(session, status)
-
-                logger.debug(
-                    f"Recorded {'success' if success else 'failure'} for "
-                    f"{instance_id}:{automation_id} - "
-                    f"consecutive_successes={status.consecutive_successes}, "
-                    f"consecutive_failures={status.consecutive_failures}, "
-                    f"validated={status.is_validated_healthy}"
+            except Exception as e:
+                logger.error(
+                    f"Failed to record execution result for {instance_id}:{automation_id}: {e}",
+                    exc_info=True,
                 )
+                raise
 
-                return status
-        except Exception as e:
-            logger.error(
-                f"Failed to record execution result for {instance_id}:{automation_id}: {e}",
-                exc_info=True,
-            )
-            raise
+        # Should never reach here
+        raise RuntimeError(
+            f"Failed to record execution result for {instance_id}:{automation_id} after retries"
+        )
 
     async def get_reliability_score(
         self,
@@ -308,9 +332,9 @@ class AutomationHealthTracker:
     ) -> AutomationHealthStatus:
         """Get existing or create new health status record.
 
-        Handles concurrent requests by using session.flush() to detect unique
-        constraint violations before commit. If another request creates the
-        same record concurrently, we catch the IntegrityError and retry the get.
+        Uses optimistic approach: create the object and add to session, but
+        don't flush yet. If commit fails with IntegrityError (concurrent creation),
+        the caller will handle it.
 
         Args:
             session: Active database session
@@ -336,25 +360,7 @@ class AutomationHealthTracker:
                 updated_at=datetime.now(UTC),
             )
             session.add(status)
-
-            try:
-                # Flush to detect unique constraint violations before commit
-                await session.flush()
-                logger.debug(f"Created new health status for {instance_id}:{automation_id}")
-            except IntegrityError:
-                # Another request created the same record concurrently
-                # Rollback and retry the get operation
-                await session.rollback()
-                status = await self._get_status(session, instance_id, automation_id)
-                if not status:
-                    # This shouldn't happen, but handle gracefully
-                    raise RuntimeError(
-                        f"Failed to create or retrieve status for {instance_id}:{automation_id}"
-                    ) from None
-                logger.debug(
-                    f"Concurrent creation detected for {instance_id}:{automation_id}, "
-                    "using existing record"
-                )
+            logger.debug(f"Created new health status for {instance_id}:{automation_id}")
 
         return status
 
@@ -370,4 +376,3 @@ class AutomationHealthTracker:
             status: Status record to save
         """
         await session.commit()
-        await session.refresh(status)
