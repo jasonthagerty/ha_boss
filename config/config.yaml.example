@@ -183,6 +183,27 @@ intelligence:
   claude_api_key: "${CLAUDE_API_KEY}"  # Set in .env file
   claude_model: "claude-3-5-sonnet-20241022"
 
+# Outcome validation configuration (Phase 2)
+# Validates that automations achieve their intended outcomes
+outcome_validation:
+  # Enable automatic outcome validation for automations
+  enabled: true
+
+  # Delay before validating outcomes (seconds)
+  # Allows states to settle before checking if automation succeeded
+  validation_delay_seconds: 5.0
+
+  # Enable AI analysis of reported automation failures
+  # Uses LLM to analyze failure patterns and suggest fixes
+  # Requires Ollama or Claude configured in intelligence section
+  analyze_failures: true
+
+  # Consecutive success threshold for validation gating
+  # Number of consecutive successful executions required before marking
+  # an automation as "validated healthy" in reliability scoring
+  # Range: 1-100, recommended: 3-5
+  consecutive_success_threshold: 3
+
 # REST API server configuration
 api:
   # Enable the REST API server (required for health checks)
