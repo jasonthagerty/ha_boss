@@ -83,6 +83,13 @@ healing:
   # After this time with no failures, reset counter
   circuit_breaker_reset_seconds: 3600  # 1 hour
 
+  # Entity-level healing configuration
+  entity_healing_max_attempts: 3  # Maximum retry attempts for entity-level healing
+  entity_healing_base_delay: 1.0  # Base delay in seconds for exponential backoff
+
+  # Device-level healing configuration
+  device_healing_reboot_timeout: 30.0  # Timeout in seconds for device reboot operations
+
 notifications:
   # Send notifications when auto-healing fails
   on_healing_failure: true

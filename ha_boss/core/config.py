@@ -289,6 +289,14 @@ class HealingConfig(BaseSettings):
         description="Base delay in seconds for exponential backoff",
     )
 
+    # Device-level healing configuration
+    device_healing_reboot_timeout: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description="Timeout in seconds for device reboot operations",
+    )
+
 
 class NotificationsConfig(BaseSettings):
     """Notification configuration."""
