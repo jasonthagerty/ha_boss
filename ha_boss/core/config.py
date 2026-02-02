@@ -275,6 +275,20 @@ class HealingConfig(BaseSettings):
         ge=0,
     )
 
+    # Entity-level healing configuration
+    entity_healing_max_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum retry attempts for entity-level healing",
+    )
+    entity_healing_base_delay: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=60.0,
+        description="Base delay in seconds for exponential backoff",
+    )
+
 
 class NotificationsConfig(BaseSettings):
     """Notification configuration."""
