@@ -117,6 +117,20 @@ class TestCascadeOrchestratorInit:
         assert orchestrator.instance_id == "custom"
         assert orchestrator.pattern_match_threshold == 5
 
+    def test_init_with_invalid_threshold(
+        self, database, entity_healer, device_healer, integration_healer, escalator
+    ):
+        """Test initialization with invalid pattern_match_threshold."""
+        with pytest.raises(ValueError, match="pattern_match_threshold must be >= 1"):
+            CascadeOrchestrator(
+                database=database,
+                entity_healer=entity_healer,
+                device_healer=device_healer,
+                integration_healer=integration_healer,
+                escalator=escalator,
+                pattern_match_threshold=0,
+            )
+
 
 class TestSequentialCascade:
     """Test sequential cascade execution."""

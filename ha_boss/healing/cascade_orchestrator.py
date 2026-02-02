@@ -73,6 +73,12 @@ class CascadeOrchestrator:
     Coordinates healing attempts across entity, device, and integration levels,
     using intelligent pattern-based routing when possible, falling back to
     sequential cascade execution.
+
+    Pattern Learning:
+        Patterns are learned from successful healing attempts and stored per automation.
+        Currently, patterns are recorded using the first failed entity as a representative.
+        This works well when all entities in an automation share the same healing strategy,
+        but may be less effective for heterogeneous entity failures.
     """
 
     def __init__(
@@ -97,6 +103,9 @@ class CascadeOrchestrator:
             pattern_match_threshold: Minimum successful healing count for pattern matching
         """
         self.database = database
+        if pattern_match_threshold < 1:
+            raise ValueError("pattern_match_threshold must be >= 1")
+
         self.entity_healer = entity_healer
         self.device_healer = device_healer
         self.integration_healer = integration_healer
@@ -123,6 +132,8 @@ class CascadeOrchestrator:
         """
         start_time = datetime.now(UTC)
         cascade_exec_id: int | None = None
+        success = False
+        routing_strategy = "sequential"
 
         try:
             # Create cascade execution record
@@ -142,6 +153,8 @@ class CascadeOrchestrator:
                     if result.success:
                         # Update pattern success count
                         await self._update_pattern_success(pattern.id)
+                        success = True
+                        routing_strategy = "intelligent"
                         return result
 
             # Fall back to sequential cascade
@@ -157,6 +170,8 @@ class CascadeOrchestrator:
                     context, result.successful_level, result.successful_strategy
                 )
 
+            success = result.success
+            routing_strategy = result.routing_strategy
             return result
 
         except TimeoutError:
@@ -166,7 +181,10 @@ class CascadeOrchestrator:
             )
             if cascade_exec_id:
                 await self._finalize_cascade_record(
-                    cascade_exec_id, success=False, duration=duration
+                    cascade_exec_id,
+                    success=False,
+                    duration=duration,
+                    routing_strategy=routing_strategy,
                 )
             return CascadeResult(
                 success=False,
@@ -185,7 +203,10 @@ class CascadeOrchestrator:
             )
             if cascade_exec_id:
                 await self._finalize_cascade_record(
-                    cascade_exec_id, success=False, duration=duration
+                    cascade_exec_id,
+                    success=False,
+                    duration=duration,
+                    routing_strategy=routing_strategy,
                 )
             return CascadeResult(
                 success=False,
@@ -202,8 +223,9 @@ class CascadeOrchestrator:
             if cascade_exec_id:
                 await self._finalize_cascade_record(
                     cascade_exec_id,
-                    success=result.success if "result" in locals() else False,
+                    success=success,
                     duration=duration,
+                    routing_strategy=routing_strategy,
                 )
 
     async def _execute_sequential_cascade(
@@ -337,7 +359,8 @@ class CascadeOrchestrator:
         integration_success = False
         for entity_id in context.failed_entities:
             try:
-                # Create a minimal health issue for integration healing
+                # Import here to avoid circular dependency
+                # (health_monitor imports healing components)
                 from ha_boss.monitoring.health_monitor import HealthIssue
 
                 health_issue = HealthIssue(
@@ -486,6 +509,8 @@ class CascadeOrchestrator:
 
             for entity_id in context.failed_entities:
                 try:
+                    # Import here to avoid circular dependency
+                    # (health_monitor imports healing components)
                     from ha_boss.monitoring.health_monitor import HealthIssue
 
                     health_issue = HealthIssue(
@@ -658,6 +683,7 @@ class CascadeOrchestrator:
         cascade_exec_id: int,
         success: bool,
         duration: float,
+        routing_strategy: str | None = None,
     ) -> None:
         """Finalize cascade execution record.
 
@@ -665,6 +691,7 @@ class CascadeOrchestrator:
             cascade_exec_id: Cascade execution record ID
             success: Overall cascade success
             duration: Total duration in seconds
+            routing_strategy: Routing strategy used (intelligent or sequential)
         """
         try:
             async with self.database.async_session() as session:
@@ -681,6 +708,8 @@ class CascadeOrchestrator:
                 cascade_exec.final_success = success
                 cascade_exec.total_duration_seconds = duration
                 cascade_exec.completed_at = datetime.now(UTC)
+                if routing_strategy:
+                    cascade_exec.routing_strategy = routing_strategy
 
                 await session.commit()
 
@@ -694,6 +723,11 @@ class CascadeOrchestrator:
         strategy: str,
     ) -> None:
         """Record or update successful healing pattern.
+
+        Note: This method currently records patterns only for the first failed entity
+        as a representative for the automation. This is a simplification that works well
+        when all entities in an automation typically share the same healing strategy.
+        For heterogeneous entity failures, consider recording patterns per entity.
 
         Args:
             context: Healing context
