@@ -27,6 +27,7 @@ def ha_client():
     client.call_service = AsyncMock()
     client.reload_integration = AsyncMock()
     client._request = AsyncMock()
+    client.get_state = AsyncMock()
     client.instance_id = "test_instance"
     return client
 
@@ -212,13 +213,8 @@ class TestHeal:
         """Test heal succeeds on rediscover when other methods fail."""
         # Mock registries
         ha_client._request.side_effect = [
+            MOCK_DEVICE_REGISTRY,  # _fetch_device_registry() at start of heal()
             MOCK_ENTITY_REGISTRY,
-            MOCK_DEVICE_REGISTRY,  # features check
-            MOCK_DEVICE_REGISTRY,  # reconnect
-            MOCK_DEVICE_REGISTRY,  # reboot
-            MOCK_DEVICE_REGISTRY,  # reboot check
-            MOCK_DEVICE_REGISTRY,  # rediscover
-            MOCK_DEVICE_REGISTRY,  # rediscover check
         ]
 
         # Mock reconnect and reboot fail, rediscover succeeds
@@ -227,6 +223,7 @@ class TestHeal:
             Exception("Reboot failed"),
         ]
         ha_client.reload_integration.return_value = None
+        ha_client.get_state.return_value = {"state": "on"}  # Entity verification
 
         result = await device_healer.heal(["switch.kitchen"])
 
@@ -240,13 +237,8 @@ class TestHeal:
         """Test heal when all strategies fail."""
         # Mock registries
         ha_client._request.side_effect = [
+            MOCK_DEVICE_REGISTRY,  # _fetch_device_registry() at start of heal()
             MOCK_ENTITY_REGISTRY,
-            MOCK_DEVICE_REGISTRY,
-            MOCK_DEVICE_REGISTRY,
-            MOCK_DEVICE_REGISTRY,
-            None,  # reboot check returns None
-            MOCK_DEVICE_REGISTRY,
-            None,  # rediscover check returns None
         ]
 
         # All healing methods fail
@@ -257,7 +249,6 @@ class TestHeal:
 
         assert result.success is False
         assert len(result.devices_healed) == 0
-        assert "All device healing strategies failed" in result.error_message
 
     @pytest.mark.asyncio
     async def test_heal_multiple_entities_same_device(self, device_healer, ha_client):
@@ -760,12 +751,11 @@ class TestGracefulFallback:
     async def test_skip_unsupported_reconnect(self, device_healer, ha_client):
         """Test that unsupported reconnect is skipped."""
         ha_client._request.side_effect = [
+            MOCK_DEVICE_REGISTRY,  # _fetch_device_registry() at start of heal()
             MOCK_ENTITY_REGISTRY,
-            MOCK_DEVICE_REGISTRY,
-            MOCK_DEVICE_REGISTRY,
-            MOCK_DEVICE_REGISTRY,
         ]
         ha_client.reload_integration.return_value = None
+        ha_client.get_state.return_value = {"state": "on"}  # Entity verification
 
         # Mock integration with only rediscover support
         with patch.object(

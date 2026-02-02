@@ -39,6 +39,9 @@ class DeviceHealer:
     or rediscovering devices through their integrations.
     """
 
+    # Class-level dict to track locks for concurrent healing protection
+    _device_locks: dict[str, asyncio.Lock] = {}
+
     def __init__(
         self,
         database: Database,
@@ -106,6 +109,10 @@ class DeviceHealer:
             )
 
         try:
+            # Cache device registry once at start to avoid repeated full-registry fetches
+            logger.debug("Fetching device registry (cached for this healing attempt)")
+            device_registry = await self._fetch_device_registry()
+
             # Map entities to devices
             device_map = await self._get_devices_for_entities(entity_ids)
 
@@ -128,64 +135,89 @@ class DeviceHealer:
             # Attempt healing for each device
             final_action: str | None = None
             for device_id in devices_attempted:
-                device_entities = device_map[device_id]
-                logger.info(
-                    f"Attempting healing for device {device_id} "
-                    f"(affects {len(device_entities)} entities)"
-                )
+                # Check for concurrent healing - use lock to prevent multiple simultaneous heals
+                if device_id not in self._device_locks:
+                    self._device_locks[device_id] = asyncio.Lock()
 
-                # Check which healing features are supported
-                features = await self._check_integration_features(device_id)
+                lock = self._device_locks[device_id]
+                if lock.locked():
+                    logger.info(
+                        f"Skipping device {device_id} - already being healed by concurrent operation"
+                    )
+                    continue
 
-                # Try healing strategies in order
-                healing_strategies = [
-                    ("reconnect", self._reconnect_device, features["reconnect"]),
-                    ("reboot", self._reboot_device, features["reboot"]),
-                    ("rediscover", self._rediscover_device, features["rediscover"]),
-                ]
-
-                for action_type, strategy_func, supported in healing_strategies:
-                    if not supported:
-                        logger.debug(
-                            f"Skipping {action_type} for device {device_id} (not supported)"
-                        )
-                        continue
-
-                    if action_type not in actions_attempted:
-                        actions_attempted.append(action_type)
-
-                    logger.info(f"Trying {action_type} for device {device_id}")
-                    action_start = datetime.now(UTC)
-                    success = False
-                    action_error: str | None = None
-
-                    try:
-                        success = await strategy_func(device_id)
-                    except Exception as e:
-                        action_error = f"Strategy exception: {str(e)}"
-                        logger.error(
-                            f"Device healing strategy {action_type} failed for {device_id}: {e}",
-                            exc_info=True,
-                        )
-
-                    # Record this healing attempt
-                    duration = (datetime.now(UTC) - action_start).total_seconds()
-                    await self._record_action(
-                        device_id=device_id,
-                        action_type=action_type,
-                        triggered_by=triggered_by,
-                        automation_id=automation_id,
-                        execution_id=execution_id,
-                        success=success,
-                        error_message=action_error,
-                        duration_seconds=duration,
+                async with lock:
+                    device_entities = device_map[device_id]
+                    logger.info(
+                        f"Attempting healing for device {device_id} "
+                        f"(affects {len(device_entities)} entities)"
                     )
 
-                    if success:
-                        final_action = action_type
-                        devices_healed.append(device_id)
-                        logger.info(f"Device {device_id} healed successfully via {action_type}")
-                        break  # Move to next device
+                    # Check which healing features are supported (using cached registry)
+                    features = await self._check_integration_features(device_id, device_registry)
+
+                    # Try healing strategies in order
+                    healing_strategies = [
+                        ("reconnect", self._reconnect_device, features["reconnect"]),
+                        ("reboot", self._reboot_device, features["reboot"]),
+                        ("rediscover", self._rediscover_device, features["rediscover"]),
+                    ]
+
+                    for action_type, strategy_func, supported in healing_strategies:
+                        if not supported:
+                            logger.debug(
+                                f"Skipping {action_type} for device {device_id} (not supported)"
+                            )
+                            continue
+
+                        if action_type not in actions_attempted:
+                            actions_attempted.append(action_type)
+
+                        logger.info(f"Trying {action_type} for device {device_id}")
+                        action_start = datetime.now(UTC)
+                        success = False
+                        action_error: str | None = None
+
+                        try:
+                            success = await strategy_func(device_id, device_registry)
+
+                            # Verify entity states if healing reported success
+                            if success:
+                                verified = await self._verify_entity_states(device_entities)
+                                if not verified:
+                                    success = False
+                                    action_error = (
+                                        "Healing completed but entities still unavailable"
+                                    )
+                                    logger.warning(
+                                        f"Device {device_id} healing reported success but "
+                                        f"entities not available"
+                                    )
+                        except Exception as e:
+                            action_error = f"Strategy exception: {str(e)}"
+                            logger.error(
+                                f"Device healing strategy {action_type} failed for {device_id}: {e}",
+                                exc_info=True,
+                            )
+
+                        # Record this healing attempt
+                        duration = (datetime.now(UTC) - action_start).total_seconds()
+                        await self._record_action(
+                            device_id=device_id,
+                            action_type=action_type,
+                            triggered_by=triggered_by,
+                            automation_id=automation_id,
+                            execution_id=execution_id,
+                            success=success,
+                            error_message=action_error,
+                            duration_seconds=duration,
+                        )
+
+                        if success:
+                            final_action = action_type
+                            devices_healed.append(device_id)
+                            logger.info(f"Device {device_id} healed successfully via {action_type}")
+                            break  # Move to next device
 
             # Overall success if any device was healed
             overall_success = len(devices_healed) > 0
@@ -279,6 +311,7 @@ class DeviceHealer:
     async def _reconnect_device(
         self,
         device_id: str,
+        device_registry: list[dict[str, Any]] | None = None,
     ) -> bool:
         """Attempt device reconnection.
 
@@ -289,13 +322,14 @@ class DeviceHealer:
 
         Args:
             device_id: Device ID to reconnect
+            device_registry: Optional cached device registry to avoid API calls
 
         Returns:
             True on success, False otherwise
         """
         try:
             # Get device info to determine integration
-            device_info = await self._get_device_info(device_id)
+            device_info = await self._get_device_info(device_id, device_registry)
             if not device_info:
                 logger.warning(f"Cannot reconnect: device {device_id} not found")
                 return False
@@ -346,6 +380,7 @@ class DeviceHealer:
     async def _reboot_device(
         self,
         device_id: str,
+        device_registry: list[dict[str, Any]] | None = None,
     ) -> bool:
         """Attempt device reboot/power cycle.
 
@@ -356,13 +391,14 @@ class DeviceHealer:
 
         Args:
             device_id: Device ID to reboot
+            device_registry: Optional cached device registry to avoid API calls
 
         Returns:
             True on success, False otherwise
         """
         try:
             # Get device info
-            device_info = await self._get_device_info(device_id)
+            device_info = await self._get_device_info(device_id, device_registry)
             if not device_info:
                 logger.warning(f"Cannot reboot: device {device_id} not found")
                 return False
@@ -390,7 +426,7 @@ class DeviceHealer:
                     await asyncio.sleep(self.reboot_timeout_seconds)
 
                     # Check if device is back online by getting its info
-                    updated_info = await self._get_device_info(device_id)
+                    updated_info = await self._get_device_info(device_id, device_registry)
                     return updated_info is not None
 
                 except TimeoutError:
@@ -411,6 +447,7 @@ class DeviceHealer:
     async def _rediscover_device(
         self,
         device_id: str,
+        device_registry: list[dict[str, Any]] | None = None,
     ) -> bool:
         """Attempt device re-discovery.
 
@@ -420,13 +457,14 @@ class DeviceHealer:
 
         Args:
             device_id: Device ID to rediscover
+            device_registry: Optional cached device registry to avoid API calls
 
         Returns:
             True on success, False otherwise
         """
         try:
             # Get device info
-            device_info = await self._get_device_info(device_id)
+            device_info = await self._get_device_info(device_id, device_registry)
             if not device_info:
                 logger.warning(f"Cannot rediscover: device {device_id} not found")
                 return False
@@ -450,7 +488,7 @@ class DeviceHealer:
                     await asyncio.sleep(5.0)
 
                     # Check if device still exists
-                    updated_info = await self._get_device_info(device_id)
+                    updated_info = await self._get_device_info(device_id, device_registry)
                     if updated_info:
                         logger.info(f"Device {device_id} rediscovered successfully")
                         return True
@@ -508,6 +546,7 @@ class DeviceHealer:
     async def _check_integration_features(
         self,
         device_id: str,
+        device_registry: list[dict[str, Any]] | None = None,
     ) -> dict[str, bool]:
         """Check which healing features are supported by device's integration.
 
@@ -523,12 +562,13 @@ class DeviceHealer:
 
         Args:
             device_id: Device to check
+            device_registry: Optional cached device registry (avoids repeated fetches)
 
         Returns:
             Dictionary of supported features
         """
         try:
-            device_info = await self._get_device_info(device_id)
+            device_info = await self._get_device_info(device_id, device_registry)
             if not device_info:
                 # Default: only rediscover supported (generic fallback)
                 return {"reconnect": False, "reboot": False, "rediscover": True}
@@ -556,19 +596,76 @@ class DeviceHealer:
             logger.debug(f"Failed to check features for device {device_id}: {e}")
             return {"reconnect": False, "reboot": False, "rediscover": True}
 
-    async def _get_device_info(self, device_id: str) -> dict[str, Any] | None:
-        """Get device information from HA device registry.
-
-        Args:
-            device_id: Device ID to look up
+    async def _fetch_device_registry(self) -> list[dict[str, Any]]:
+        """Fetch device registry from Home Assistant.
 
         Returns:
-            Device info dictionary or None if not found
+            List of device dictionaries from HA device registry
         """
         try:
             device_registry = await self.ha_client._request(
                 "GET", "/api/config/device_registry/list"
             )
+
+            if not isinstance(device_registry, list):
+                logger.warning("Device registry returned non-list type")
+                return []
+
+            return device_registry
+
+        except Exception as e:
+            logger.error(f"Failed to fetch device registry: {e}", exc_info=True)
+            return []
+
+    async def _verify_entity_states(self, entity_ids: list[str]) -> bool:
+        """Verify that entities are now available after healing.
+
+        Args:
+            entity_ids: List of entity IDs to check
+
+        Returns:
+            True if ALL entities are now available, False otherwise
+        """
+        try:
+            # Wait briefly for entity states to settle after healing
+            await asyncio.sleep(2.0)
+
+            for entity_id in entity_ids:
+                try:
+                    state_data = await self.ha_client.get_state(entity_id)
+                    # Consider unavailable or unknown states as failure
+                    if isinstance(state_data, dict):
+                        state_value = state_data.get("state")
+                        if state_value in ("unavailable", "unknown"):
+                            logger.debug(f"Entity {entity_id} still {state_value} after healing")
+                            return False
+                except Exception as e:
+                    logger.debug(f"Failed to get state for {entity_id}: {e}")
+                    return False
+
+            # All entities are available
+            return True
+
+        except Exception as e:
+            logger.debug(f"Entity state verification failed: {e}")
+            return False
+
+    async def _get_device_info(
+        self, device_id: str, device_registry: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
+        """Get device information from HA device registry.
+
+        Args:
+            device_id: Device ID to look up
+            device_registry: Optional cached device registry (avoids fetching again)
+
+        Returns:
+            Device info dictionary or None if not found
+        """
+        try:
+            # Use cached registry if provided, otherwise fetch
+            if device_registry is None:
+                device_registry = await self._fetch_device_registry()
 
             if not isinstance(device_registry, list):
                 return None
