@@ -84,9 +84,26 @@ class CascadeOrchestrator:
 
     Pattern Learning:
         Patterns are learned from successful healing attempts and stored per automation.
-        Currently, patterns are recorded using the first failed entity as a representative.
-        This works well when all entities in an automation share the same healing strategy,
-        but may be less effective for heterogeneous entity failures.
+
+        **LIMITATION**: Currently, patterns are recorded using the first failed entity as a
+        representative. This is a known simplification that works well when all entities in
+        an automation share the same healing strategy (e.g., all lights in a room, all sensors
+        from the same integration), but may be less effective for heterogeneous entity failures
+        (e.g., light + sensor + switch from different integrations).
+
+        Future enhancement (Issue #210): Implement per-entity pattern matching to improve
+        accuracy for mixed-entity scenarios.
+
+    Database Transaction Lifecycle:
+        For MVP simplicity, cascade execution records are created upfront and updated
+        throughout the cascade. This means orphaned records may exist if the process crashes
+        mid-cascade. This is acceptable for MVP as:
+        - Records include timestamps for cleanup
+        - Failed cascades still provide valuable debugging info
+        - Transaction overhead would impact healing latency
+
+        Future enhancement: Consider wrapping entire cascade in a single transaction with
+        appropriate timeout handling if orphaned records become problematic.
     """
 
     def __init__(
@@ -147,36 +164,13 @@ class CascadeOrchestrator:
             # Create cascade execution record
             cascade_exec_id = await self._create_cascade_record(context)
 
-            # Try intelligent routing first if enabled
-            if use_intelligent_routing:
-                pattern = await self._get_matching_pattern(context)
-                if pattern:
-                    logger.info(
-                        f"Found matching pattern for {context.automation_id}, "
-                        f"routing to {pattern.successful_healing_level} level"
-                    )
-                    result = await self._execute_intelligent_healing(
-                        context, pattern, cascade_exec_id
-                    )
-                    if result.success:
-                        # Update pattern success count
-                        await self._update_pattern_success(pattern.id)
-                        success = True
-                        routing_strategy = ROUTING_STRATEGY_INTELLIGENT
-                        return result
-
-            # Fall back to sequential cascade
-            logger.info(
-                f"Executing sequential cascade for {context.automation_id} "
-                f"({len(context.failed_entities)} entities)"
+            # Execute healing with timeout (single timeout point for entire cascade)
+            result = await asyncio.wait_for(
+                self._execute_healing_with_routing(
+                    context, cascade_exec_id, use_intelligent_routing
+                ),
+                timeout=context.timeout_seconds,
             )
-            result = await self._execute_sequential_cascade(context, cascade_exec_id)
-
-            # Learn from successful healing
-            if result.success and result.successful_level and result.successful_strategy:
-                await self._record_successful_pattern(
-                    context, result.successful_level, result.successful_strategy
-                )
 
             success = result.success
             routing_strategy = result.routing_strategy
@@ -236,6 +230,63 @@ class CascadeOrchestrator:
                     routing_strategy=routing_strategy,
                 )
 
+    async def _execute_healing_with_routing(
+        self,
+        context: HealingContext,
+        cascade_exec_id: int,
+        use_intelligent_routing: bool,
+    ) -> CascadeResult:
+        """Execute healing with intelligent routing or sequential fallback.
+
+        This method contains the routing logic and is wrapped by a single timeout
+        in execute_cascade to avoid nested timeout handling.
+
+        Args:
+            context: Healing context
+            cascade_exec_id: Cascade execution record ID
+            use_intelligent_routing: Whether to try intelligent routing first
+
+        Returns:
+            CascadeResult with outcome
+        """
+        # Try intelligent routing first if enabled
+        if use_intelligent_routing:
+            pattern = await self._get_matching_pattern(context)
+            if pattern:
+                # Re-fetch pattern to avoid race condition (pattern may have been deleted/updated)
+                pattern = await self._refetch_pattern(pattern.id)
+                if pattern:
+                    logger.info(
+                        f"Found matching pattern for {context.automation_id}, "
+                        f"routing to {pattern.successful_healing_level} level"
+                    )
+                    result = await self._execute_intelligent_healing(
+                        context, pattern, cascade_exec_id
+                    )
+                    if result.success:
+                        # Update pattern success count
+                        await self._update_pattern_success(pattern.id)
+                        return result
+                else:
+                    logger.warning(
+                        "Pattern was deleted/updated after match, falling back to sequential"
+                    )
+
+        # Fall back to sequential cascade
+        logger.info(
+            f"Executing sequential cascade for {context.automation_id} "
+            f"({len(context.failed_entities)} entities)"
+        )
+        result = await self._execute_sequential_cascade(context, cascade_exec_id)
+
+        # Learn from successful healing
+        if result.success and result.successful_level and result.successful_strategy:
+            await self._record_successful_pattern(
+                context, result.successful_level, result.successful_strategy
+            )
+
+        return result
+
     async def _execute_sequential_cascade(
         self,
         context: HealingContext,
@@ -244,6 +295,7 @@ class CascadeOrchestrator:
         """Execute sequential cascade: Level 1 → Level 2 → Level 3.
 
         Attempts healing at each level, stopping on first success.
+        Timeout is handled by the caller (execute_cascade).
 
         Args:
             context: Healing context
@@ -252,32 +304,13 @@ class CascadeOrchestrator:
         Returns:
             CascadeResult with outcome
         """
-        start_time = datetime.now(UTC)
         levels_attempted: list[HealingLevel] = []
         entity_results: dict[str, bool] = {}
 
-        try:
-            # Wrap in timeout
-            result = await asyncio.wait_for(
-                self._execute_cascade_levels(
-                    context, cascade_exec_id, levels_attempted, entity_results
-                ),
-                timeout=context.timeout_seconds,
-            )
-            return result
-
-        except TimeoutError:
-            duration = (datetime.now(UTC) - start_time).total_seconds()
-            return CascadeResult(
-                success=False,
-                routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,
-                levels_attempted=levels_attempted,
-                successful_level=None,
-                successful_strategy=None,
-                entity_results=entity_results,
-                total_duration_seconds=duration,
-                error_message="Cascade execution timed out",
-            )
+        # Execute cascade levels (timeout handled by caller)
+        return await self._execute_cascade_levels(
+            context, cascade_exec_id, levels_attempted, entity_results
+        )
 
     async def _execute_cascade_levels(
         self,
@@ -390,6 +423,23 @@ class CascadeOrchestrator:
             f"All healing levels failed for {context.automation_id}, escalating to notification"
         )
         duration = (datetime.now(UTC) - start_time).total_seconds()
+
+        # Send failure notification for each failed entity
+        for entity_id in context.failed_entities:
+            try:
+                health_issue = HealthIssue(
+                    entity_id=entity_id,
+                    issue_type=ISSUE_TYPE_UNAVAILABLE,
+                    detected_at=datetime.now(UTC),
+                    details={
+                        "automation_id": context.automation_id,
+                        "cascade_failure": True,
+                        "levels_attempted": [level.value for level in levels_attempted],
+                    },
+                )
+                await self.escalator.notify_healing_failure(health_issue)
+            except Exception as e:
+                logger.error(f"Failed to send escalation notification for {entity_id}: {e}")
 
         return CascadeResult(
             success=False,
@@ -533,6 +583,27 @@ class CascadeOrchestrator:
             total_duration_seconds=duration,
             matched_pattern_id=pattern.id,
         )
+
+    async def _refetch_pattern(self, pattern_id: int) -> AutomationOutcomePattern | None:
+        """Re-fetch pattern by ID to avoid stale data race conditions.
+
+        Args:
+            pattern_id: Pattern ID to fetch
+
+        Returns:
+            Pattern if still exists, None if deleted
+        """
+        try:
+            async with self.database.async_session() as session:
+                stmt = select(AutomationOutcomePattern).where(
+                    AutomationOutcomePattern.id == pattern_id
+                )
+                result = await session.execute(stmt)
+                return result.scalar_one_or_none()
+
+        except Exception as e:
+            logger.error(f"Failed to refetch pattern {pattern_id}: {e}", exc_info=True)
+            return None
 
     async def _get_matching_pattern(
         self,
