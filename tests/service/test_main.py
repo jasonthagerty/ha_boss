@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from ha_boss.core.config import Config
-from ha_boss.monitoring.health_monitor import HealthIssue
+from ha_boss.core.types import HealthIssue
 from ha_boss.monitoring.state_tracker import EntityState
 from ha_boss.service.main import HABossService, ServiceState
 

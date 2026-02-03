@@ -494,7 +494,7 @@ async def _perform_healing(config: Config, entity_id: str) -> None:
     from ha_boss.core.database import Database
     from ha_boss.healing.heal_strategies import HealingManager
     from ha_boss.healing.integration_manager import IntegrationDiscovery
-    from ha_boss.monitoring.health_monitor import HealthIssue
+    from ha_boss.core.types import HealthIssue
 
     with Progress(
         SpinnerColumn(),

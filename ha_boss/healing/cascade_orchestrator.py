@@ -24,12 +24,20 @@ from ha_boss.core.database import (
     Database,
     HealingCascadeExecution,
 )
+from ha_boss.core.types import HealthIssue
 from ha_boss.healing.device_healer import DeviceHealer
 from ha_boss.healing.entity_healer import EntityHealer
 from ha_boss.healing.escalation import NotificationEscalator
 from ha_boss.healing.heal_strategies import HealingManager
 
 logger = logging.getLogger(__name__)
+
+# Constants for routing strategies
+ROUTING_STRATEGY_SEQUENTIAL = "sequential"
+ROUTING_STRATEGY_INTELLIGENT = "intelligent"
+
+# Constants for issue types
+ISSUE_TYPE_UNAVAILABLE = "unavailable"
 
 
 class HealingLevel(Enum):
@@ -133,7 +141,7 @@ class CascadeOrchestrator:
         start_time = datetime.now(UTC)
         cascade_exec_id: int | None = None
         success = False
-        routing_strategy = "sequential"
+        routing_strategy = ROUTING_STRATEGY_SEQUENTIAL
 
         try:
             # Create cascade execution record
@@ -154,7 +162,7 @@ class CascadeOrchestrator:
                         # Update pattern success count
                         await self._update_pattern_success(pattern.id)
                         success = True
-                        routing_strategy = "intelligent"
+                        routing_strategy = ROUTING_STRATEGY_INTELLIGENT
                         return result
 
             # Fall back to sequential cascade
@@ -188,7 +196,7 @@ class CascadeOrchestrator:
                 )
             return CascadeResult(
                 success=False,
-                routing_strategy="sequential",
+                routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,
                 levels_attempted=[],
                 successful_level=None,
                 successful_strategy=None,
@@ -210,7 +218,7 @@ class CascadeOrchestrator:
                 )
             return CascadeResult(
                 success=False,
-                routing_strategy="sequential",
+                routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,
                 levels_attempted=[],
                 successful_level=None,
                 successful_strategy=None,
@@ -262,7 +270,7 @@ class CascadeOrchestrator:
             duration = (datetime.now(UTC) - start_time).total_seconds()
             return CascadeResult(
                 success=False,
-                routing_strategy="sequential",
+                routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,
                 levels_attempted=levels_attempted,
                 successful_level=None,
                 successful_strategy=None,
@@ -306,7 +314,7 @@ class CascadeOrchestrator:
             duration = (datetime.now(UTC) - start_time).total_seconds()
             return CascadeResult(
                 success=True,
-                routing_strategy="sequential",
+                routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,
                 levels_attempted=levels_attempted,
                 successful_level=HealingLevel.ENTITY,
                 successful_strategy=final_action,
@@ -339,7 +347,7 @@ class CascadeOrchestrator:
             duration = (datetime.now(UTC) - start_time).total_seconds()
             return CascadeResult(
                 success=True,
-                routing_strategy="sequential",
+                routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,
                 levels_attempted=levels_attempted,
                 successful_level=HealingLevel.DEVICE,
                 successful_strategy=device_result.final_action,
@@ -356,25 +364,9 @@ class CascadeOrchestrator:
         levels_attempted.append(HealingLevel.INTEGRATION)
         await self._update_cascade_level(cascade_exec_id, HealingLevel.INTEGRATION, attempted=True)
 
-        integration_success = False
-        for entity_id in context.failed_entities:
-            try:
-                # Import here to avoid circular dependency
-                # (health_monitor imports healing components)
-                from ha_boss.monitoring.health_monitor import HealthIssue
-
-                health_issue = HealthIssue(
-                    entity_id=entity_id,
-                    issue_type="unavailable",
-                    detected_at=datetime.now(UTC),
-                )
-                success = await self.integration_healer.heal(health_issue)
-                entity_results[entity_id] = success
-                if success:
-                    integration_success = True
-            except Exception as e:
-                logger.error(f"Integration healing failed for {entity_id}: {e}")
-                entity_results[entity_id] = False
+        integration_success = await self._execute_integration_healing(
+            context.failed_entities, entity_results
+        )
 
         if integration_success:
             await self._update_cascade_level(
@@ -383,7 +375,7 @@ class CascadeOrchestrator:
             duration = (datetime.now(UTC) - start_time).total_seconds()
             return CascadeResult(
                 success=True,
-                routing_strategy="sequential",
+                routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,
                 levels_attempted=levels_attempted,
                 successful_level=HealingLevel.INTEGRATION,
                 successful_strategy="reload_integration",
@@ -401,7 +393,7 @@ class CascadeOrchestrator:
 
         return CascadeResult(
             success=False,
-            routing_strategy="sequential",
+            routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,
             levels_attempted=levels_attempted,
             successful_level=None,
             successful_strategy=None,
@@ -465,7 +457,7 @@ class CascadeOrchestrator:
                 duration = (datetime.now(UTC) - start_time).total_seconds()
                 return CascadeResult(
                     success=True,
-                    routing_strategy="intelligent",
+                    routing_strategy=ROUTING_STRATEGY_INTELLIGENT,
                     levels_attempted=levels_attempted,
                     successful_level=HealingLevel.ENTITY,
                     successful_strategy=final_action,
@@ -491,7 +483,7 @@ class CascadeOrchestrator:
                 duration = (datetime.now(UTC) - start_time).total_seconds()
                 return CascadeResult(
                     success=True,
-                    routing_strategy="intelligent",
+                    routing_strategy=ROUTING_STRATEGY_INTELLIGENT,
                     levels_attempted=levels_attempted,
                     successful_level=HealingLevel.DEVICE,
                     successful_strategy=device_result.final_action,
@@ -505,26 +497,9 @@ class CascadeOrchestrator:
             await self._update_cascade_level(
                 cascade_exec_id, HealingLevel.INTEGRATION, attempted=True
             )
-            integration_success = False
-
-            for entity_id in context.failed_entities:
-                try:
-                    # Import here to avoid circular dependency
-                    # (health_monitor imports healing components)
-                    from ha_boss.monitoring.health_monitor import HealthIssue
-
-                    health_issue = HealthIssue(
-                        entity_id=entity_id,
-                        issue_type="unavailable",
-                        detected_at=datetime.now(UTC),
-                    )
-                    success = await self.integration_healer.heal(health_issue)
-                    entity_results[entity_id] = success
-                    if success:
-                        integration_success = True
-                except Exception as e:
-                    logger.error(f"Integration healing failed for {entity_id}: {e}")
-                    entity_results[entity_id] = False
+            integration_success = await self._execute_integration_healing(
+                context.failed_entities, entity_results
+            )
 
             if integration_success:
                 await self._update_cascade_level(
@@ -533,7 +508,7 @@ class CascadeOrchestrator:
                 duration = (datetime.now(UTC) - start_time).total_seconds()
                 return CascadeResult(
                     success=True,
-                    routing_strategy="intelligent",
+                    routing_strategy=ROUTING_STRATEGY_INTELLIGENT,
                     levels_attempted=levels_attempted,
                     successful_level=HealingLevel.INTEGRATION,
                     successful_strategy="reload_integration",
@@ -550,7 +525,7 @@ class CascadeOrchestrator:
         duration = (datetime.now(UTC) - start_time).total_seconds()
         return CascadeResult(
             success=False,
-            routing_strategy="intelligent",
+            routing_strategy=ROUTING_STRATEGY_INTELLIGENT,
             levels_attempted=levels_attempted,
             successful_level=None,
             successful_strategy=None,
@@ -614,7 +589,7 @@ class CascadeOrchestrator:
                     execution_id=context.execution_id,
                     trigger_type=context.trigger_type,
                     failed_entities=context.failed_entities,
-                    routing_strategy="sequential",  # Will be updated if intelligent routing used
+                    routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,  # Will be updated if intelligent routing used
                     entity_level_attempted=False,
                     device_level_attempted=False,
                     integration_level_attempted=False,
@@ -629,6 +604,37 @@ class CascadeOrchestrator:
         except Exception as e:
             logger.error(f"Failed to create cascade record: {e}", exc_info=True)
             raise
+
+    async def _execute_integration_healing(
+        self, failed_entities: list[str], entity_results: dict[str, bool]
+    ) -> bool:
+        """Execute integration-level healing for failed entities.
+
+        Args:
+            failed_entities: List of entity IDs to heal
+            entity_results: Dict to update with healing results
+
+        Returns:
+            True if any entity was successfully healed
+        """
+        integration_success = False
+
+        for entity_id in failed_entities:
+            try:
+                health_issue = HealthIssue(
+                    entity_id=entity_id,
+                    issue_type=ISSUE_TYPE_UNAVAILABLE,
+                    detected_at=datetime.now(UTC),
+                )
+                success = await self.integration_healer.heal(health_issue)
+                entity_results[entity_id] = success
+                if success:
+                    integration_success = True
+            except Exception as e:
+                logger.error(f"Integration healing failed for {entity_id}: {e}")
+                entity_results[entity_id] = False
+
+        return integration_success
 
     async def _update_cascade_level(
         self,

@@ -7,7 +7,7 @@ from typing import Any
 from ha_boss.core.config import Config
 from ha_boss.core.ha_client import HomeAssistantClient
 from ha_boss.intelligence.llm_router import LLMRouter
-from ha_boss.monitoring.health_monitor import HealthIssue
+from ha_boss.core.types import HealthIssue
 from ha_boss.notifications import (
     NotificationContext,
     NotificationManager,

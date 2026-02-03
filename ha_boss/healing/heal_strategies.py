@@ -16,7 +16,7 @@ from ha_boss.core.exceptions import (
 )
 from ha_boss.core.ha_client import HomeAssistantClient
 from ha_boss.healing.integration_manager import IntegrationDiscovery
-from ha_boss.monitoring.health_monitor import HealthIssue
+from ha_boss.core.types import HealthIssue
 
 logger = logging.getLogger(__name__)
 
