@@ -100,6 +100,7 @@ select = [
 ignore = [
     "E501", # line too long (handled by black)
     "B008", # function call in argument defaults (required for Typer)
+    "UP042", # str, Enum → StrEnum (requires Python 3.11+, deferred for now)
 ]
 
 [tool.mypy]

@@ -326,7 +326,7 @@ async def test_service_healing_flow(integration_config: Config) -> None:
             await service.start()
 
         # Simulate a health issue
-        from ha_boss.monitoring.health_monitor import HealthIssue
+        from ha_boss.core.types import HealthIssue
 
         issue = HealthIssue(
             entity_id="sensor.test",

@@ -15,7 +15,7 @@ from ha_boss.api.models import (
 )
 from ha_boss.api.utils.instance_helpers import get_instance_ids
 from ha_boss.core.database import Entity, HealthEvent
-from ha_boss.monitoring.health_monitor import HealthIssue
+from ha_boss.core.types import HealthIssue
 
 logger = logging.getLogger(__name__)
 

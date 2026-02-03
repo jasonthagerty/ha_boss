@@ -13,11 +13,12 @@ from ha_boss.core.exceptions import (
     CircuitBreakerOpenError,
     DatabaseError,
 )
+from ha_boss.core.types import HealthIssue
 from ha_boss.healing.escalation import NotificationEscalator
 from ha_boss.healing.heal_strategies import HealingManager
 from ha_boss.healing.integration_manager import IntegrationDiscovery
 from ha_boss.monitoring.automation_tracker import AutomationTracker
-from ha_boss.monitoring.health_monitor import HealthIssue, HealthMonitor
+from ha_boss.monitoring.health_monitor import HealthMonitor
 from ha_boss.monitoring.state_tracker import EntityState, StateTracker
 from ha_boss.monitoring.websocket_client import WebSocketClient
 from ha_boss.notifications.manager import NotificationManager

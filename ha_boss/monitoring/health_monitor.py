@@ -10,36 +10,10 @@ from typing import Any
 from ha_boss.core.config import Config
 from ha_boss.core.database import Database, HealthEvent
 from ha_boss.core.exceptions import DatabaseError
+from ha_boss.core.types import HealthIssue
 from ha_boss.monitoring.state_tracker import EntityState, StateTracker
 
 logger = logging.getLogger(__name__)
-
-
-class HealthIssue:
-    """Represents a detected health issue for an entity."""
-
-    def __init__(
-        self,
-        entity_id: str,
-        issue_type: str,
-        detected_at: datetime,
-        details: dict[str, Any] | None = None,
-    ) -> None:
-        """Initialize health issue.
-
-        Args:
-            entity_id: Entity identifier
-            issue_type: Type of issue (unavailable, unknown, stale, recovered)
-            detected_at: When issue was detected
-            details: Optional additional details
-        """
-        self.entity_id = entity_id
-        self.issue_type = issue_type
-        self.detected_at = detected_at
-        self.details = details or {}
-
-    def __repr__(self) -> str:
-        return f"<HealthIssue({self.entity_id}, {self.issue_type}, {self.detected_at})>"
 
 
 class HealthMonitor:
