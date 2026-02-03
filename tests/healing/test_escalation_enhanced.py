@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from ha_boss.core.config import Config, NotificationsConfig
+from ha_boss.core.types import HealthIssue
 from ha_boss.healing.escalation import NotificationEscalator
 from ha_boss.intelligence.llm_router import LLMRouter
-from ha_boss.core.types import HealthIssue
 from ha_boss.notifications import NotificationContext
 
 

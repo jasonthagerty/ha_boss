@@ -8,8 +8,8 @@ import pytest
 from ha_boss.core.config import Config, HomeAssistantConfig, NotificationsConfig
 from ha_boss.core.exceptions import HealingFailedError
 from ha_boss.core.ha_client import HomeAssistantClient
-from ha_boss.healing.escalation import NotificationEscalator, create_notification_escalator
 from ha_boss.core.types import HealthIssue
+from ha_boss.healing.escalation import NotificationEscalator, create_notification_escalator
 
 
 @pytest.fixture
