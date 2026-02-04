@@ -50,6 +50,7 @@ class AutomationTracker:
         self.config = config
         self.cascade_orchestrator = cascade_orchestrator
         self.health_tracker = health_tracker
+        self._validators: list[OutcomeValidator] = []  # Track validators for cleanup
         logger.debug(f"[{instance_id}] AutomationTracker initialized")
 
     async def record_execution(
@@ -184,6 +185,8 @@ class AutomationTracker:
                 health_tracker=self.health_tracker,
                 config=self.config,
             )
+            # Track validator for cleanup
+            self._validators.append(validator)
 
             result = await validator.validate_execution(
                 execution_id=execution_id,
@@ -213,3 +216,16 @@ class AutomationTracker:
                 f"{execution_id}: {e}",
                 exc_info=True,
             )
+
+    async def cleanup(self) -> None:
+        """Clean up all validators and their background tasks.
+
+        This method should be called during service shutdown to ensure
+        all background cascade tasks complete gracefully.
+        """
+        if self._validators:
+            logger.debug(f"[{self.instance_id}] Cleaning up {len(self._validators)} validators")
+            cleanup_tasks = [validator.cleanup() for validator in self._validators]
+            await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            self._validators.clear()
+            logger.debug(f"[{self.instance_id}] Validator cleanup complete")

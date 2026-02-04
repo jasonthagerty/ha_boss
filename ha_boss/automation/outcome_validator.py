@@ -114,7 +114,7 @@ class OutcomeValidator:
         self.cascade_orchestrator = cascade_orchestrator
         self.health_tracker = health_tracker
         self.config = config
-        self._background_tasks: set[asyncio.Task] = set()
+        self._background_tasks: set[asyncio.Task[CascadeResult | None]] = set()
 
     async def validate_execution(
         self,
@@ -459,8 +459,8 @@ class OutcomeValidator:
 
         # Get cascade timeout from config with fallback to default
         timeout_seconds = 120.0  # Default
-        if self.config and hasattr(self.config, "healing") and self.config.healing:
-            timeout_seconds = getattr(self.config.healing, "cascade_timeout_seconds", 120.0)
+        if self.config and self.config.healing:
+            timeout_seconds = self.config.healing.cascade_timeout_seconds
 
         context = HealingContext(
             instance_id=self.instance_id,

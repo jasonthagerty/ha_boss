@@ -1168,6 +1168,14 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 except Exception as e:
                     logger.error(f"[{instance_id}] Error closing HA client: {e}")
 
+            # Cleanup automation tracker validators
+            automation_tracker = self.automation_trackers.get(instance_id)
+            if automation_tracker:
+                try:
+                    await automation_tracker.cleanup()
+                except Exception as e:
+                    logger.error(f"[{instance_id}] Error cleaning up automation tracker: {e}")
+
             # Remove new components from dictionaries
             self.health_trackers.pop(instance_id, None)
             self.cascade_orchestrators.pop(instance_id, None)
