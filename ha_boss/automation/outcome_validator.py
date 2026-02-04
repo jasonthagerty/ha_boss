@@ -30,6 +30,7 @@ from ha_boss.core.database import (
     Database,
 )
 from ha_boss.core.ha_client import HomeAssistantClient
+from ha_boss.healing.cascade_orchestrator import HealingContext
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,7 @@ class OutcomeValidator:
         self.cascade_orchestrator = cascade_orchestrator
         self.health_tracker = health_tracker
         self.config = config
+        self._background_tasks: set[asyncio.Task] = set()
 
     async def validate_execution(
         self,
@@ -212,9 +214,11 @@ class OutcomeValidator:
 
         # Trigger cascade orchestrator on validation failure
         if not validation_result.overall_success and self.cascade_orchestrator:
-            asyncio.create_task(
+            task = asyncio.create_task(
                 self._trigger_cascade_on_failure(automation_id, execution_id, validation_result)
             )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
         logger.info(
             f"Validation complete for {automation_id}: "
@@ -224,6 +228,20 @@ class OutcomeValidator:
         )
 
         return validation_result
+
+    async def cleanup(self) -> None:
+        """Wait for all background cascade tasks to complete.
+
+        This method should be called during service shutdown to ensure
+        all background cascade operations complete gracefully.
+        """
+        if self._background_tasks:
+            logger.debug(
+                f"[{self.instance_id}] Waiting for {len(self._background_tasks)} "
+                f"background cascade tasks to complete"
+            )
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            logger.debug(f"[{self.instance_id}] All background cascade tasks completed")
 
     async def _get_desired_states(self, automation_id: str) -> list[AutomationDesiredState]:
         """Query desired states for an automation.
@@ -439,15 +457,12 @@ class OutcomeValidator:
             logger.debug(f"No failed entities to heal for {automation_id}")
             return None
 
-        # Build healing context
-        from ha_boss.healing.cascade_orchestrator import HealingContext
-
         # Get cascade timeout from config with fallback to default
-        timeout_seconds = (
-            self.config.healing.cascade_timeout_seconds
-            if self.config
-            else 120.0  # Default if config not provided
-        )
+        timeout_seconds = 120.0  # Default
+        if self.config and hasattr(self.config, "healing") and self.config.healing:
+            timeout_seconds = getattr(
+                self.config.healing, "cascade_timeout_seconds", 120.0
+            )
 
         context = HealingContext(
             instance_id=self.instance_id,

@@ -323,7 +323,8 @@ class HABossService:
 
         # 9b. Initialize entity healer
         logger.info(f"[{instance_id}] Initializing entity healer...")
-        assert self.database is not None, "Database must be initialized before creating healers"
+        if self.database is None:
+            raise RuntimeError("Database must be initialized before creating healers")
         self.entity_healers[instance_id] = EntityHealer(
             database=self.database,
             ha_client=self.ha_clients[instance_id],
