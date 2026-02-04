@@ -740,6 +740,7 @@ async def report_automation_failure(
             ha_client=ha_client,
             instance_id=instance_id,
             llm_router=llm_router,
+            config=service.config,
         )
 
         validation_result = await validator.validate_execution(

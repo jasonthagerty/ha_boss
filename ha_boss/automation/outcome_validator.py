@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     )
     from ha_boss.intelligence.llm_router import LLMRouter
 
+from ha_boss.core.config import Config
 from ha_boss.core.database import (
     AutomationDesiredState,
     AutomationExecution,
@@ -92,6 +93,7 @@ class OutcomeValidator:
         llm_router: "LLMRouter | None" = None,
         cascade_orchestrator: "CascadeOrchestrator | None" = None,
         health_tracker: "AutomationHealthTracker | None" = None,
+        config: Config | None = None,
     ) -> None:
         """Initialize outcome validator.
 
@@ -102,6 +104,7 @@ class OutcomeValidator:
             llm_router: Optional LLM router for AI-powered failure analysis
             cascade_orchestrator: Optional cascade orchestrator for triggering healing
             health_tracker: Optional health tracker for recording execution results
+            config: Optional configuration for healing timeouts and settings
         """
         self.database = database
         self.ha_client = ha_client
@@ -109,6 +112,7 @@ class OutcomeValidator:
         self.llm_router = llm_router
         self.cascade_orchestrator = cascade_orchestrator
         self.health_tracker = health_tracker
+        self.config = config
 
     async def validate_execution(
         self,
@@ -201,7 +205,10 @@ class OutcomeValidator:
                     success=validation_result.overall_success,
                 )
             except Exception as e:
-                logger.error(f"Failed to record health status for {automation_id}: {e}")
+                logger.error(
+                    f"Failed to record health status for {automation_id}: {e}",
+                    exc_info=True,
+                )
 
         # Trigger cascade orchestrator on validation failure
         if not validation_result.overall_success and self.cascade_orchestrator:
@@ -435,13 +442,20 @@ class OutcomeValidator:
         # Build healing context
         from ha_boss.healing.cascade_orchestrator import HealingContext
 
+        # Get cascade timeout from config with fallback to default
+        timeout_seconds = (
+            self.config.healing.cascade_timeout_seconds
+            if self.config
+            else 120.0  # Default if config not provided
+        )
+
         context = HealingContext(
             instance_id=self.instance_id,
             automation_id=automation_id,
             execution_id=execution_id,
             trigger_type="outcome_failure",
             failed_entities=failed_entities,
-            timeout_seconds=120.0,  # Default cascade timeout
+            timeout_seconds=timeout_seconds,
         )
 
         logger.info(

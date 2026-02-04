@@ -182,6 +182,7 @@ class AutomationTracker:
                 instance_id=self.instance_id,
                 cascade_orchestrator=self.cascade_orchestrator,
                 health_tracker=self.health_tracker,
+                config=self.config,
             )
 
             result = await validator.validate_execution(
