@@ -460,9 +460,7 @@ class OutcomeValidator:
         # Get cascade timeout from config with fallback to default
         timeout_seconds = 120.0  # Default
         if self.config and hasattr(self.config, "healing") and self.config.healing:
-            timeout_seconds = getattr(
-                self.config.healing, "cascade_timeout_seconds", 120.0
-            )
+            timeout_seconds = getattr(self.config.healing, "cascade_timeout_seconds", 120.0)
 
         context = HealingContext(
             instance_id=self.instance_id,
