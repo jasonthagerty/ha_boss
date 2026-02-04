@@ -2,15 +2,13 @@
 
 import asyncio
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from ha_boss.automation.health_tracker import AutomationHealthTracker
 from ha_boss.automation.outcome_validator import (
-    EntityValidationResult,
     OutcomeValidator,
-    ValidationResult,
 )
 from ha_boss.core.config import (
     Config,
@@ -300,7 +298,7 @@ class TestOutcomeValidatorIntegration:
             health_tracker=health_tracker,
         )
 
-        result = await validator.validate_execution(
+        await validator.validate_execution(
             execution_id=execution_id,
             validation_window_seconds=0.1,
         )
@@ -338,7 +336,7 @@ class TestOutcomeValidatorIntegration:
             health_tracker=health_tracker,
         )
 
-        result = await validator.validate_execution(
+        await validator.validate_execution(
             execution_id=execution_id,
             validation_window_seconds=0.1,
         )
@@ -415,7 +413,7 @@ class TestOutcomeValidatorIntegration:
             health_tracker=health_tracker,
         )
 
-        result = await validator.validate_execution(
+        await validator.validate_execution(
             execution_id=execution_id,
             validation_window_seconds=0.1,
         )
