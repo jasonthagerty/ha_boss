@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
+from ha_boss.automation.health_tracker import AutomationHealthTracker
 from ha_boss.core.config import Config
 from ha_boss.core.database import Database
 from ha_boss.core.exceptions import (
@@ -14,6 +15,9 @@ from ha_boss.core.exceptions import (
     DatabaseError,
 )
 from ha_boss.core.types import HealthIssue
+from ha_boss.healing.cascade_orchestrator import CascadeOrchestrator
+from ha_boss.healing.device_healer import DeviceHealer
+from ha_boss.healing.entity_healer import EntityHealer
 from ha_boss.healing.escalation import NotificationEscalator
 from ha_boss.healing.heal_strategies import HealingManager
 from ha_boss.healing.integration_manager import IntegrationDiscovery
@@ -71,6 +75,10 @@ class HABossService:
         self.escalation_managers: dict[str, NotificationEscalator] = {}
         self.pattern_collectors: dict[str, Any] = {}  # PatternCollector (Phase 2)
         self.automation_trackers: dict[str, AutomationTracker] = {}  # Automation usage tracking
+        self.health_trackers: dict[str, AutomationHealthTracker] = {}
+        self.cascade_orchestrators: dict[str, CascadeOrchestrator] = {}
+        self.entity_healers: dict[str, EntityHealer] = {}
+        self.device_healers: dict[str, DeviceHealer] = {}
 
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
@@ -305,11 +313,64 @@ class HABossService:
                 logger.warning(f"[{instance_id}] Failed to initialize pattern collector: {e}")
                 logger.info(f"[{instance_id}] Continuing without pattern collection")
 
-        # 9b. Initialize automation tracker for usage-based optimization
+        # 9a. Initialize automation health tracker (depends only on database)
+        logger.info(f"[{instance_id}] Initializing automation health tracker...")
+        self.health_trackers[instance_id] = AutomationHealthTracker(
+            database=self.database,
+            consecutive_success_threshold=self.config.outcome_validation.consecutive_success_threshold,
+        )
+        logger.info(f"[{instance_id}] ✓ Automation health tracker initialized")
+
+        # 9b. Initialize entity healer
+        logger.info(f"[{instance_id}] Initializing entity healer...")
+        if self.database is None:
+            raise RuntimeError("Database must be initialized before creating healers")
+        self.entity_healers[instance_id] = EntityHealer(
+            database=self.database,
+            ha_client=self.ha_clients[instance_id],
+            instance_id=instance_id,
+            max_retry_attempts=self.config.healing.entity_healing_max_attempts,
+            retry_base_delay=self.config.healing.entity_healing_base_delay,
+        )
+        logger.info(f"[{instance_id}] ✓ Entity healer initialized")
+
+        # 9c. Initialize device healer
+        logger.info(f"[{instance_id}] Initializing device healer...")
+        self.device_healers[instance_id] = DeviceHealer(
+            database=self.database,
+            ha_client=self.ha_clients[instance_id],
+            instance_id=instance_id,
+            reboot_timeout_seconds=self.config.healing.device_healing_reboot_timeout,
+        )
+        logger.info(f"[{instance_id}] ✓ Device healer initialized")
+
+        # 9d. Initialize cascade orchestrator
+        logger.info(f"[{instance_id}] Initializing cascade orchestrator...")
+        self.cascade_orchestrators[instance_id] = CascadeOrchestrator(
+            database=self.database,
+            entity_healer=self.entity_healers[instance_id],
+            device_healer=self.device_healers[instance_id],
+            integration_healer=self.healing_managers[instance_id],
+            escalator=self.escalation_managers[instance_id],
+            instance_id=instance_id,
+            pattern_match_threshold=2,  # Default threshold
+        )
+        logger.info(f"[{instance_id}] ✓ Cascade orchestrator initialized")
+
+        # 9e. Initialize automation tracker for usage-based optimization
         logger.info(f"[{instance_id}] Initializing automation tracker...")
+        ha_client_for_tracker = (
+            self.ha_clients[instance_id] if self.config.outcome_validation.enabled else None
+        )
+        config_for_tracker = self.config if self.config.outcome_validation.enabled else None
+
         self.automation_trackers[instance_id] = AutomationTracker(
             instance_id=instance_id,
             database=self.database,
+            ha_client=ha_client_for_tracker,
+            config=config_for_tracker,
+            cascade_orchestrator=self.cascade_orchestrators[instance_id],
+            health_tracker=self.health_trackers[instance_id],
         )
         logger.info(f"[{instance_id}] ✓ Automation tracker initialized")
 
@@ -1106,6 +1167,20 @@ Access the web dashboard at `/dashboard` for a visual interface.
                     await ha_client.close()
                 except Exception as e:
                     logger.error(f"[{instance_id}] Error closing HA client: {e}")
+
+            # Cleanup automation tracker validators
+            automation_tracker = self.automation_trackers.get(instance_id)
+            if automation_tracker:
+                try:
+                    await automation_tracker.cleanup()
+                except Exception as e:
+                    logger.error(f"[{instance_id}] Error cleaning up automation tracker: {e}")
+
+            # Remove new components from dictionaries
+            self.health_trackers.pop(instance_id, None)
+            self.cascade_orchestrators.pop(instance_id, None)
+            self.entity_healers.pop(instance_id, None)
+            self.device_healers.pop(instance_id, None)
 
         # Close database (shared)
         if self.database:

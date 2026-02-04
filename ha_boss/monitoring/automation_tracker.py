@@ -3,11 +3,16 @@
 import asyncio
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from ha_boss.automation.outcome_validator import OutcomeValidator
 from ha_boss.core.config import Config
 from ha_boss.core.database import AutomationExecution, AutomationServiceCall, Database
 from ha_boss.core.ha_client import HomeAssistantClient
+
+if TYPE_CHECKING:
+    from ha_boss.automation.health_tracker import AutomationHealthTracker
+    from ha_boss.healing.cascade_orchestrator import CascadeOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,8 @@ class AutomationTracker:
         database: Database,
         ha_client: HomeAssistantClient | None = None,
         config: Config | None = None,
+        cascade_orchestrator: "CascadeOrchestrator | None" = None,
+        health_tracker: "AutomationHealthTracker | None" = None,
     ):
         """Initialize automation tracker.
 
@@ -34,11 +41,16 @@ class AutomationTracker:
             database: Database instance for storing tracking data
             ha_client: Home Assistant client for outcome validation (optional)
             config: Configuration for outcome validation (optional)
+            cascade_orchestrator: CascadeOrchestrator for cascading healing (optional)
+            health_tracker: AutomationHealthTracker for health tracking (optional)
         """
         self.instance_id = instance_id
         self.database = database
         self.ha_client = ha_client
         self.config = config
+        self.cascade_orchestrator = cascade_orchestrator
+        self.health_tracker = health_tracker
+        self._validators: list[OutcomeValidator] = []  # Track validators for cleanup
         logger.debug(f"[{instance_id}] AutomationTracker initialized")
 
     async def record_execution(
@@ -169,7 +181,12 @@ class AutomationTracker:
                 database=self.database,
                 ha_client=self.ha_client,
                 instance_id=self.instance_id,
+                cascade_orchestrator=self.cascade_orchestrator,
+                health_tracker=self.health_tracker,
+                config=self.config,
             )
+            # Track validator for cleanup
+            self._validators.append(validator)
 
             result = await validator.validate_execution(
                 execution_id=execution_id,
@@ -199,3 +216,16 @@ class AutomationTracker:
                 f"{execution_id}: {e}",
                 exc_info=True,
             )
+
+    async def cleanup(self) -> None:
+        """Clean up all validators and their background tasks.
+
+        This method should be called during service shutdown to ensure
+        all background cascade tasks complete gracefully.
+        """
+        if self._validators:
+            logger.debug(f"[{self.instance_id}] Cleaning up {len(self._validators)} validators")
+            cleanup_tasks = [validator.cleanup() for validator in self._validators]
+            await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            self._validators.clear()
+            logger.debug(f"[{self.instance_id}] Validator cleanup complete")

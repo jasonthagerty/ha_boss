@@ -297,6 +297,14 @@ class HealingConfig(BaseSettings):
         description="Timeout in seconds for device reboot operations",
     )
 
+    # Cascade orchestration configuration
+    cascade_timeout_seconds: float = Field(
+        default=120.0,
+        ge=10.0,
+        le=600.0,
+        description="Timeout in seconds for cascade healing operations",
+    )
+
 
 class NotificationsConfig(BaseSettings):
     """Notification configuration."""

@@ -5,6 +5,7 @@ outcomes by comparing expected states to actual states within a time window.
 Implements pattern learning to improve confidence scores over time.
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -13,8 +14,14 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select, update
 
 if TYPE_CHECKING:
+    from ha_boss.automation.health_tracker import AutomationHealthTracker
+    from ha_boss.healing.cascade_orchestrator import (
+        CascadeOrchestrator,
+        CascadeResult,
+    )
     from ha_boss.intelligence.llm_router import LLMRouter
 
+from ha_boss.core.config import Config
 from ha_boss.core.database import (
     AutomationDesiredState,
     AutomationExecution,
@@ -23,6 +30,7 @@ from ha_boss.core.database import (
     Database,
 )
 from ha_boss.core.ha_client import HomeAssistantClient
+from ha_boss.healing.cascade_orchestrator import HealingContext
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +92,9 @@ class OutcomeValidator:
         ha_client: HomeAssistantClient,
         instance_id: str = "default",
         llm_router: "LLMRouter | None" = None,
+        cascade_orchestrator: "CascadeOrchestrator | None" = None,
+        health_tracker: "AutomationHealthTracker | None" = None,
+        config: Config | None = None,
     ) -> None:
         """Initialize outcome validator.
 
@@ -92,11 +103,18 @@ class OutcomeValidator:
             ha_client: Home Assistant client for querying state history
             instance_id: Home Assistant instance identifier
             llm_router: Optional LLM router for AI-powered failure analysis
+            cascade_orchestrator: Optional cascade orchestrator for triggering healing
+            health_tracker: Optional health tracker for recording execution results
+            config: Optional configuration for healing timeouts and settings
         """
         self.database = database
         self.ha_client = ha_client
         self.instance_id = instance_id
         self.llm_router = llm_router
+        self.cascade_orchestrator = cascade_orchestrator
+        self.health_tracker = health_tracker
+        self.config = config
+        self._background_tasks: set[asyncio.Task[CascadeResult | None]] = set()
 
     async def validate_execution(
         self,
@@ -180,6 +198,28 @@ class OutcomeValidator:
         if overall_success:
             await self._learn_patterns(automation_id, entity_results)
 
+        # Record result in health tracker if configured
+        if self.health_tracker:
+            try:
+                await self.health_tracker.record_execution_result(
+                    instance_id=self.instance_id,
+                    automation_id=automation_id,
+                    success=validation_result.overall_success,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to record health status for {automation_id}: {e}",
+                    exc_info=True,
+                )
+
+        # Trigger cascade orchestrator on validation failure
+        if not validation_result.overall_success and self.cascade_orchestrator:
+            task = asyncio.create_task(
+                self._trigger_cascade_on_failure(automation_id, execution_id, validation_result)
+            )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+
         logger.info(
             f"Validation complete for {automation_id}: "
             f"overall_success={overall_success}, "
@@ -188,6 +228,20 @@ class OutcomeValidator:
         )
 
         return validation_result
+
+    async def cleanup(self) -> None:
+        """Wait for all background cascade tasks to complete.
+
+        This method should be called during service shutdown to ensure
+        all background cascade operations complete gracefully.
+        """
+        if self._background_tasks:
+            logger.debug(
+                f"[{self.instance_id}] Waiting for {len(self._background_tasks)} "
+                f"background cascade tasks to complete"
+            )
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            logger.debug(f"[{self.instance_id}] All background cascade tasks completed")
 
     async def _get_desired_states(self, automation_id: str) -> list[AutomationDesiredState]:
         """Query desired states for an automation.
@@ -371,6 +425,69 @@ class OutcomeValidator:
                 return False
 
         return True
+
+    async def _trigger_cascade_on_failure(
+        self,
+        automation_id: str,
+        execution_id: int,
+        validation_result: ValidationResult,
+    ) -> "CascadeResult | None":
+        """Trigger healing cascade when validation fails.
+
+        Args:
+            automation_id: Automation that failed validation
+            execution_id: Execution ID
+            validation_result: Validation results with failed entities
+
+        Returns:
+            CascadeResult if cascade was triggered, None if skipped
+        """
+        if not self.cascade_orchestrator:
+            logger.debug(f"Cascade orchestrator not configured, skipping for {automation_id}")
+            return None
+
+        # Extract failed entities from validation result
+        failed_entities = [
+            entity_id
+            for entity_id, entity_result in validation_result.entity_results.items()
+            if not entity_result.achieved
+        ]
+
+        if not failed_entities:
+            logger.debug(f"No failed entities to heal for {automation_id}")
+            return None
+
+        # Get cascade timeout from config with fallback to default
+        timeout_seconds = 120.0  # Default
+        if self.config and self.config.healing:
+            timeout_seconds = self.config.healing.cascade_timeout_seconds
+
+        context = HealingContext(
+            instance_id=self.instance_id,
+            automation_id=automation_id,
+            execution_id=execution_id,
+            trigger_type="outcome_failure",
+            failed_entities=failed_entities,
+            timeout_seconds=timeout_seconds,
+        )
+
+        logger.info(
+            f"Triggering healing cascade for {automation_id} "
+            f"({len(failed_entities)} failed entities)"
+        )
+
+        try:
+            result = await self.cascade_orchestrator.execute_cascade(
+                context, use_intelligent_routing=True
+            )
+            logger.info(
+                f"Cascade {'succeeded' if result.success else 'failed'} for {automation_id} "
+                f"(strategy: {result.routing_strategy}, duration: {result.total_duration_seconds:.2f}s)"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Cascade execution failed for {automation_id}: {e}", exc_info=True)
+            return None
 
     async def _store_validation_results(self, result: ValidationResult) -> None:
         """Store validation results in database.

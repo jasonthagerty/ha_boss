@@ -386,11 +386,14 @@ async def test_outcome_validation_triggered(tracker_with_validation, mock_ha_cli
         # Wait for background task to complete
         await asyncio.sleep(0.2)
 
-        # Verify validator was instantiated
+        # Verify validator was instantiated with all parameters
         mock_validator_class.assert_called_once_with(
             database=tracker_with_validation.database,
             ha_client=mock_ha_client,
             instance_id="test_instance",
+            cascade_orchestrator=tracker_with_validation.cascade_orchestrator,
+            health_tracker=tracker_with_validation.health_tracker,
+            config=tracker_with_validation.config,
         )
 
         # Verify validation was called
