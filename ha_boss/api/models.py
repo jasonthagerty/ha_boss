@@ -578,3 +578,144 @@ class FailureReportResponse(BaseModel):
         None, description="AI-generated analysis (if enabled)"
     )
     user_description: str | None = Field(None, description="User's reported description")
+
+
+# ==================== Healing API Models ====================
+
+
+class EntityActionResponse(BaseModel):
+    """Entity-level healing action details."""
+
+    id: int = Field(..., description="Entity healing action ID")
+    entity_id: str = Field(..., description="Entity ID")
+    action_type: str = Field(
+        ..., description="Healing action type (retry_service_call, alternative_params)"
+    )
+    service_domain: str | None = Field(None, description="Service domain")
+    service_name: str | None = Field(None, description="Service name")
+    success: bool | None = Field(None, description="Whether action succeeded")
+    error_message: str | None = Field(None, description="Error message if failed")
+    duration_seconds: float | None = Field(None, description="Action duration in seconds")
+
+
+class DeviceActionResponse(BaseModel):
+    """Device-level healing action details."""
+
+    id: int = Field(..., description="Device healing action ID")
+    device_id: str = Field(..., description="Device ID")
+    action_type: str = Field(..., description="Healing action type (reconnect, reboot, rediscover)")
+    success: bool | None = Field(None, description="Whether action succeeded")
+    error_message: str | None = Field(None, description="Error message if failed")
+    duration_seconds: float | None = Field(None, description="Action duration in seconds")
+
+
+class HealingCascadeResponse(BaseModel):
+    """Detailed healing cascade execution information."""
+
+    id: int = Field(..., description="Healing cascade execution ID")
+    instance_id: str = Field(..., description="Home Assistant instance ID")
+    automation_id: str = Field(..., description="Automation ID that triggered healing")
+    execution_id: int | None = Field(
+        None, description="Automation execution ID that triggered healing"
+    )
+    trigger_type: str = Field(
+        ..., description="What triggered the cascade (trigger_failure, outcome_failure)"
+    )
+    routing_strategy: str = Field(
+        ..., description="Routing strategy used (intelligent, sequential)"
+    )
+
+    # Level attempt/success flags
+    entity_level_attempted: bool = Field(
+        ..., description="Whether entity-level healing was attempted"
+    )
+    entity_level_success: bool | None = Field(None, description="Entity level healing success")
+    device_level_attempted: bool = Field(
+        ..., description="Whether device-level healing was attempted"
+    )
+    device_level_success: bool | None = Field(None, description="Device level healing success")
+    integration_level_attempted: bool = Field(
+        ..., description="Whether integration-level healing was attempted"
+    )
+    integration_level_success: bool | None = Field(
+        None, description="Integration level healing success"
+    )
+
+    # Results
+    final_success: bool | None = Field(
+        None,
+        description="Overall cascade success (true if final outcome achieved, false if all levels failed)",
+    )
+    total_duration_seconds: float | None = Field(None, description="Total cascade execution time")
+
+    # Timestamps
+    created_at: datetime = Field(..., description="When cascade was initiated")
+    completed_at: datetime | None = Field(None, description="When cascade completed")
+
+    # Child actions
+    entity_actions: list[EntityActionResponse] = Field(
+        default_factory=list, description="Entity-level healing actions performed"
+    )
+    device_actions: list[DeviceActionResponse] = Field(
+        default_factory=list, description="Device-level healing actions performed"
+    )
+
+
+class HealingStatisticsByLevel(BaseModel):
+    """Healing statistics for a specific level (entity/device/integration)."""
+
+    level: Literal["entity", "device", "integration"] = Field(..., description="Healing level")
+    total_attempts: int = Field(..., description="Total attempts at this level")
+    successful_attempts: int = Field(..., description="Successful attempts")
+    failed_attempts: int = Field(..., description="Failed attempts")
+    success_rate: float = Field(..., description="Success rate as percentage (0-100)", ge=0, le=100)
+    average_duration_seconds: float | None = Field(
+        None, description="Average healing duration at this level in seconds"
+    )
+
+
+class HealingStatisticsResponse(BaseModel):
+    """Overall healing statistics aggregated by level."""
+
+    instance_id: str = Field(..., description="Home Assistant instance ID")
+    time_range: dict[str, datetime] = Field(
+        ..., description="Time range as dict with 'start_date' and 'end_date'"
+    )
+    statistics_by_level: list[HealingStatisticsByLevel] = Field(
+        ..., description="Statistics broken down by healing level"
+    )
+    total_cascades: int = Field(..., description="Total healing cascades in time range")
+    successful_cascades: int = Field(
+        ..., description="Successful healing cascades (final_success=true)"
+    )
+
+
+class AutomationHealthResponse(BaseModel):
+    """Health and validation status for an automation."""
+
+    instance_id: str = Field(..., description="Home Assistant instance ID")
+    automation_id: str = Field(..., description="Automation ID")
+
+    # Consecutive tracking
+    consecutive_successes: int = Field(..., description="Current consecutive successful executions")
+    consecutive_failures: int = Field(..., description="Current consecutive failed executions")
+
+    # Validation status
+    is_validated_healthy: bool = Field(
+        ..., description="Whether automation has met consecutive success threshold"
+    )
+
+    # Statistics
+    total_executions: int = Field(..., description="Total execution attempts")
+    total_successes: int = Field(..., description="Successful executions")
+    total_failures: int = Field(..., description="Failed executions")
+
+    # Reliability score
+    reliability_score: float = Field(
+        ..., description="Success rate as percentage (0-100)", ge=0, le=100
+    )
+
+    # Recent activity
+    last_execution_at: datetime | None = Field(None, description="Last execution time")
+    last_success_at: datetime | None = Field(None, description="Last successful execution")
+    last_failure_at: datetime | None = Field(None, description="Last failed execution")
