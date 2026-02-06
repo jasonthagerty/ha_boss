@@ -2,24 +2,169 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Path, Query
+from sqlalchemy import func
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import (
+    AutomationHealthResponse,
+    DeviceActionResponse,
+    EntityActionResponse,
     HealingActionResponse,
+    HealingCascadeResponse,
     HealingHistoryResponse,
+    HealingStatisticsByLevel,
+    HealingStatisticsResponse,
     SuppressedEntitiesResponse,
     SuppressedEntityResponse,
     SuppressionActionResponse,
 )
 from ha_boss.api.utils.instance_helpers import get_instance_ids
-from ha_boss.core.database import Entity, HealthEvent
+from ha_boss.core.database import (
+    AutomationHealthStatus,
+    DeviceHealingAction,
+    Entity,
+    EntityHealingAction,
+    HealingCascadeExecution,
+    HealthEvent,
+)
 from ha_boss.core.types import HealthIssue
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _validate_instance_id(service: Any, instance_id: str) -> None:
+    """Validate that instance_id exists.
+
+    Args:
+        service: HA Boss service instance
+        instance_id: Instance ID to validate
+
+    Raises:
+        HTTPException: If instance not found
+    """
+    if instance_id not in service.ha_clients:
+        available = list(service.ha_clients.keys())
+        raise HTTPException(
+            status_code=404,
+            detail=f"Instance '{instance_id}' not found. Available instances: {available}",
+        )
+
+
+def _calculate_success_rate(successes: int, total: int) -> float:
+    """Calculate success rate percentage.
+
+    Args:
+        successes: Number of successful attempts
+        total: Total number of attempts
+
+    Returns:
+        Success rate as percentage (0.0-100.0)
+    """
+    return (successes / total * 100) if total > 0 else 0.0
+
+
+async def _fetch_cascade_actions(
+    session: Any,
+    instance_id: str,
+    automation_id: str,
+    execution_id: int,
+) -> tuple[list[EntityHealingAction], list[DeviceHealingAction]]:
+    """Fetch entity and device actions for a cascade.
+
+    Args:
+        session: Database session
+        instance_id: Instance ID
+        automation_id: Automation ID
+        execution_id: Execution ID
+
+    Returns:
+        Tuple of (entity_actions, device_actions)
+    """
+    from sqlalchemy import select
+
+    # Fetch entity-level actions
+    entity_actions_stmt = select(EntityHealingAction).where(
+        EntityHealingAction.instance_id == instance_id,
+        EntityHealingAction.automation_id == automation_id,
+        EntityHealingAction.execution_id == execution_id,
+    )
+    entity_actions_result = await session.execute(entity_actions_stmt)
+    entity_actions = entity_actions_result.scalars().all()
+
+    # Fetch device-level actions
+    device_actions_stmt = select(DeviceHealingAction).where(
+        DeviceHealingAction.instance_id == instance_id,
+        DeviceHealingAction.automation_id == automation_id,
+        DeviceHealingAction.execution_id == execution_id,
+    )
+    device_actions_result = await session.execute(device_actions_stmt)
+    device_actions = device_actions_result.scalars().all()
+
+    return entity_actions, device_actions
+
+
+def _build_cascade_response(
+    cascade: HealingCascadeExecution,
+    entity_actions: list[EntityHealingAction],
+    device_actions: list[DeviceHealingAction],
+) -> HealingCascadeResponse:
+    """Build a HealingCascadeResponse from cascade and actions.
+
+    Args:
+        cascade: Cascade execution record
+        entity_actions: List of entity-level healing actions
+        device_actions: List of device-level healing actions
+
+    Returns:
+        Complete cascade response with actions
+    """
+    return HealingCascadeResponse(
+        id=cascade.id,
+        instance_id=cascade.instance_id,
+        automation_id=cascade.automation_id,
+        execution_id=cascade.execution_id,
+        trigger_type=cascade.trigger_type,
+        routing_strategy=cascade.routing_strategy,
+        entity_level_attempted=cascade.entity_level_attempted,
+        entity_level_success=cascade.entity_level_success,
+        device_level_attempted=cascade.device_level_attempted,
+        device_level_success=cascade.device_level_success,
+        integration_level_attempted=cascade.integration_level_attempted,
+        integration_level_success=cascade.integration_level_success,
+        final_success=cascade.final_success,
+        total_duration_seconds=cascade.total_duration_seconds,
+        created_at=cascade.created_at,
+        completed_at=cascade.completed_at,
+        entity_actions=[
+            EntityActionResponse(
+                id=action.id,
+                entity_id=action.entity_id,
+                action_type=action.action_type,
+                service_domain=action.service_domain,
+                service_name=action.service_name,
+                success=action.success,
+                error_message=action.error_message,
+                duration_seconds=action.duration_seconds,
+            )
+            for action in entity_actions
+        ],
+        device_actions=[
+            DeviceActionResponse(
+                id=action.id,
+                device_id=action.device_id,
+                action_type=action.action_type,
+                success=action.success,
+                error_message=action.error_message,
+                duration_seconds=action.duration_seconds,
+            )
+            for action in device_actions
+        ],
+    )
 
 
 # IMPORTANT: More specific routes must come BEFORE the catch-all route
@@ -352,9 +497,9 @@ async def get_healing_history(
 
             # Filter by success/failed if specified
             if filter == "success":
-                stmt = stmt.where(HealingAction.success == True)  # noqa: E712
+                stmt = stmt.where(HealingAction.success.is_(True))  # type: ignore[attr-defined]
             elif filter == "failed":
-                stmt = stmt.where(HealingAction.success == False)  # noqa: E712
+                stmt = stmt.where(HealingAction.success.is_(False))  # type: ignore[attr-defined]
 
             stmt = stmt.order_by(HealingAction.timestamp.desc()).limit(limit)  # type: ignore[attr-defined]
 
@@ -461,7 +606,7 @@ async def get_suppressed_entities(
             from sqlalchemy import select
 
             # Query entities with healing suppressed
-            stmt = select(Entity).where(Entity.healing_suppressed == True)  # noqa: E712
+            stmt = select(Entity).where(Entity.healing_suppressed.is_(True))
 
             if len(instance_ids) == 1:
                 stmt = stmt.where(Entity.instance_id == instance_ids[0])
@@ -497,3 +642,475 @@ async def get_suppressed_entities(
     except Exception as e:
         logger.error(f"[{instance_id}] Error getting suppressed entities: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get suppressed entities") from None
+
+
+@router.get("/healing/cascade/{cascade_id}", response_model=HealingCascadeResponse)
+async def get_cascade_details(
+    cascade_id: int = Path(..., description="Cascade execution ID"),
+    instance_id: str = Query(..., description="Instance ID"),
+) -> HealingCascadeResponse:
+    """Get detailed information about a healing cascade execution.
+
+    Retrieves complete cascade information including:
+    - Which levels were attempted and their results
+    - Entity-level healing actions
+    - Device-level healing actions
+    - Overall success and duration
+
+    Args:
+        cascade_id: Cascade execution ID
+        instance_id: Instance identifier
+
+    Returns:
+        Detailed cascade execution information
+
+    Raises:
+        HTTPException: Cascade not found (404), instance not found (404), or service error (500)
+    """
+    try:
+        service = get_service()
+
+        # Validate instance exists
+        _validate_instance_id(service, instance_id)
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            # Fetch cascade execution
+            stmt = select(HealingCascadeExecution).where(
+                HealingCascadeExecution.id == cascade_id,
+                HealingCascadeExecution.instance_id == instance_id,
+            )
+            result = await session.execute(stmt)
+            cascade = result.scalar_one_or_none()
+
+            if not cascade:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Cascade execution {cascade_id} not found for instance {instance_id}",
+                )
+
+            # Fetch entity and device actions using helper function
+            entity_actions, device_actions = await _fetch_cascade_actions(
+                session, instance_id, cascade.automation_id, cascade.execution_id
+            )
+
+            # Build response using helper function
+            return _build_cascade_response(cascade, entity_actions, device_actions)
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error retrieving cascade {cascade_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve cascade details") from None
+
+
+@router.get("/healing/statistics", response_model=HealingStatisticsResponse)
+async def get_healing_statistics(
+    instance_id: str = Query(..., description="Instance ID"),
+    start_date: datetime | None = Query(None, description="Start date for statistics (UTC)"),
+    end_date: datetime | None = Query(None, description="End date for statistics (UTC)"),
+) -> HealingStatisticsResponse:
+    """Get healing statistics aggregated by level.
+
+    Returns success rates and average durations for each healing level
+    (entity, device, integration).
+
+    Args:
+        instance_id: Instance identifier
+        start_date: Optional start date (defaults to 7 days ago)
+        end_date: Optional end date (defaults to now)
+
+    Returns:
+        Healing statistics broken down by level
+
+    Raises:
+        HTTPException: Invalid date range (400), instance not found (404), or service error (500)
+    """
+    try:
+        service = get_service()
+
+        # Validate instance exists
+        _validate_instance_id(service, instance_id)
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        # Default time range: last 7 days
+        if not end_date:
+            end_date = datetime.now(UTC)
+        if not start_date:
+            start_date = end_date - timedelta(days=7)
+
+        # Validate date range
+        if start_date >= end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="start_date must be before end_date",
+            )
+
+        async with service.database.async_session() as session:
+            from sqlalchemy import Integer, case, cast, select
+
+            # Calculate statistics per level using database aggregation
+            stats_by_level: list[HealingStatisticsByLevel] = []
+
+            for level in ["entity", "device", "integration"]:
+                level_attempted_field = getattr(HealingCascadeExecution, f"{level}_level_attempted")
+                level_success_field = getattr(HealingCascadeExecution, f"{level}_level_success")
+
+                # Aggregate query for this level
+                stats_stmt = select(
+                    func.count(HealingCascadeExecution.id).label("total_attempts"),
+                    func.sum(cast(level_success_field, Integer)).label("successful_attempts"),
+                    func.avg(
+                        case(
+                            (
+                                level_attempted_field.is_(True),
+                                HealingCascadeExecution.total_duration_seconds,
+                            ),
+                            else_=None,
+                        )
+                    ).label("average_duration"),
+                ).where(
+                    HealingCascadeExecution.instance_id == instance_id,
+                    HealingCascadeExecution.created_at >= start_date,
+                    HealingCascadeExecution.created_at <= end_date,
+                    level_attempted_field.is_(True),
+                )
+
+                stats_result = await session.execute(stats_stmt)
+                stats = stats_result.first()
+
+                if not stats:
+                    # No data found - all zeros
+                    stats_by_level.append(
+                        HealingStatisticsByLevel(
+                            level=level,  # type: ignore[arg-type]
+                            total_attempts=0,
+                            successful_attempts=0,
+                            failed_attempts=0,
+                            success_rate=0.0,
+                            average_duration_seconds=None,
+                        )
+                    )
+                    continue
+
+                total_attempts = (
+                    int(stats.total_attempts) if stats.total_attempts is not None else 0
+                )
+                successful_attempts = (
+                    int(stats.successful_attempts) if stats.successful_attempts is not None else 0
+                )
+                failed_attempts = total_attempts - successful_attempts
+                average_duration = (
+                    float(stats.average_duration) if stats.average_duration is not None else None
+                )
+
+                # Calculate success rate using helper function
+                success_rate = _calculate_success_rate(successful_attempts, total_attempts)
+
+                stats_by_level.append(
+                    HealingStatisticsByLevel(
+                        level=level,  # type: ignore[arg-type]
+                        total_attempts=total_attempts,
+                        successful_attempts=successful_attempts,
+                        failed_attempts=failed_attempts,
+                        success_rate=success_rate,
+                        average_duration_seconds=average_duration,
+                    )
+                )
+
+            # Overall cascade statistics using database aggregation
+            overall_stmt = select(
+                func.count(HealingCascadeExecution.id).label("total_cascades"),
+                func.sum(cast(HealingCascadeExecution.final_success, Integer)).label(
+                    "successful_cascades"
+                ),
+            ).where(
+                HealingCascadeExecution.instance_id == instance_id,
+                HealingCascadeExecution.created_at >= start_date,
+                HealingCascadeExecution.created_at <= end_date,
+            )
+            overall_result = await session.execute(overall_stmt)
+            overall_stats = overall_result.first()
+
+            total_cascades = (
+                int(overall_stats.total_cascades)
+                if overall_stats and overall_stats.total_cascades is not None
+                else 0
+            )
+            successful_cascades_count = (
+                int(overall_stats.successful_cascades)
+                if overall_stats and overall_stats.successful_cascades is not None
+                else 0
+            )
+
+            return HealingStatisticsResponse(
+                instance_id=instance_id,
+                time_range={"start_date": start_date, "end_date": end_date},
+                statistics_by_level=stats_by_level,
+                total_cascades=total_cascades,
+                successful_cascades=successful_cascades_count,
+            )
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error retrieving healing statistics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve healing statistics"
+        ) from None
+
+
+@router.get("/automations/{automation_id}/health", response_model=AutomationHealthResponse)
+async def get_automation_health(
+    automation_id: str = Path(..., description="Automation ID"),
+    instance_id: str = Query(..., description="Instance ID"),
+) -> AutomationHealthResponse:
+    """Get health and validation status for an automation.
+
+    Returns consecutive success/failure counts, validation status,
+    and reliability score.
+
+    Args:
+        automation_id: Automation ID
+        instance_id: Instance identifier
+
+    Returns:
+        Automation health status and statistics
+
+    Raises:
+        HTTPException: Automation not found (404), instance not found (404), or service error (500)
+    """
+    try:
+        service = get_service()
+
+        # Validate instance exists
+        _validate_instance_id(service, instance_id)
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            # Fetch automation health status
+            stmt = select(AutomationHealthStatus).where(
+                AutomationHealthStatus.instance_id == instance_id,
+                AutomationHealthStatus.automation_id == automation_id,
+            )
+            result = await session.execute(stmt)
+            health_status = result.scalar_one_or_none()
+
+            if not health_status:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Automation {automation_id} not found for instance {instance_id}",
+                )
+
+            # Calculate reliability score using helper function
+            total_executions = health_status.total_executions
+            total_successes = health_status.total_successes
+
+            reliability_score = _calculate_success_rate(total_successes, total_executions)
+
+            # Get last execution timestamps (from AutomationExecution table)
+            from ha_boss.core.database import AutomationExecution
+
+            # Last execution
+            last_exec_stmt = (
+                select(AutomationExecution.executed_at)
+                .where(
+                    AutomationExecution.instance_id == instance_id,
+                    AutomationExecution.automation_id == automation_id,
+                )
+                .order_by(AutomationExecution.executed_at.desc())
+                .limit(1)
+            )
+            last_exec_result = await session.execute(last_exec_stmt)
+            last_execution_at = last_exec_result.scalar_one_or_none()
+
+            # Last successful execution
+            last_success_stmt = (
+                select(AutomationExecution.executed_at)
+                .where(
+                    AutomationExecution.instance_id == instance_id,
+                    AutomationExecution.automation_id == automation_id,
+                    AutomationExecution.success.is_(True),
+                )
+                .order_by(AutomationExecution.executed_at.desc())
+                .limit(1)
+            )
+            last_success_result = await session.execute(last_success_stmt)
+            last_success_at = last_success_result.scalar_one_or_none()
+
+            # Last failed execution
+            last_failure_stmt = (
+                select(AutomationExecution.executed_at)
+                .where(
+                    AutomationExecution.instance_id == instance_id,
+                    AutomationExecution.automation_id == automation_id,
+                    AutomationExecution.success.is_(False),
+                )
+                .order_by(AutomationExecution.executed_at.desc())
+                .limit(1)
+            )
+            last_failure_result = await session.execute(last_failure_stmt)
+            last_failure_at = last_failure_result.scalar_one_or_none()
+
+            return AutomationHealthResponse(
+                instance_id=instance_id,
+                automation_id=automation_id,
+                consecutive_successes=health_status.consecutive_successes,
+                consecutive_failures=health_status.consecutive_failures,
+                is_validated_healthy=health_status.is_validated_healthy,
+                total_executions=total_executions,
+                total_successes=total_successes,
+                total_failures=health_status.total_failures,
+                reliability_score=reliability_score,
+                last_execution_at=last_execution_at,
+                last_success_at=last_success_at,
+                last_failure_at=last_failure_at,
+            )
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(
+            f"[{instance_id}] Error retrieving automation health for {automation_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve automation health"
+        ) from None
+
+
+@router.post("/healing/cascade/{cascade_id}/retry", response_model=HealingCascadeResponse)
+async def retry_failed_cascade(
+    cascade_id: int = Path(..., description="Cascade execution ID to retry"),
+    instance_id: str = Query(..., description="Instance ID"),
+) -> HealingCascadeResponse:
+    """Manually retry a failed healing cascade.
+
+    Loads the original cascade context and triggers a new cascade execution
+    with the same automation and failed entities.
+
+    Args:
+        cascade_id: Original cascade execution ID
+        instance_id: Instance identifier
+
+    Returns:
+        New cascade execution information
+
+    Raises:
+        HTTPException: Cascade not found (404), already succeeded (400),
+                      instance not found (404), or service error (500)
+    """
+    try:
+        service = get_service()
+
+        # Validate instance exists
+        _validate_instance_id(service, instance_id)
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized") from None
+
+        # Fetch original cascade
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            stmt = select(HealingCascadeExecution).where(
+                HealingCascadeExecution.id == cascade_id,
+                HealingCascadeExecution.instance_id == instance_id,
+            )
+            result = await session.execute(stmt)
+            original_cascade = result.scalar_one_or_none()
+
+            if not original_cascade:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Cascade execution {cascade_id} not found for instance {instance_id}",
+                )
+
+            # Check if cascade already succeeded
+            if original_cascade.final_success is True:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cascade {cascade_id} already succeeded, cannot retry",
+                )
+
+        # Get cascade orchestrator for this instance
+        from ha_boss.healing.cascade_orchestrator import HealingContext
+
+        cascade_orchestrator = service.cascade_orchestrators.get(instance_id)
+        if not cascade_orchestrator:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Cascade orchestrator not available for instance {instance_id}",
+            )
+
+        # Build healing context from original cascade
+        # Get timeout from config instead of hardcoding
+        timeout_seconds = service.config.healing.cascade_timeout_seconds
+
+        context = HealingContext(
+            instance_id=instance_id,
+            automation_id=original_cascade.automation_id,
+            execution_id=original_cascade.execution_id,
+            trigger_type=original_cascade.trigger_type,
+            failed_entities=original_cascade.failed_entities or [],
+            timeout_seconds=timeout_seconds,
+        )
+
+        # Execute new cascade
+        logger.info(
+            f"[{instance_id}] Retrying cascade {cascade_id} for automation {original_cascade.automation_id}"
+        )
+        new_cascade_id = await cascade_orchestrator.execute_cascade(context)
+
+        # Fetch the new cascade execution record using the returned ID
+        async with service.database.async_session() as session:
+            from sqlalchemy import select
+
+            new_cascade_stmt = select(HealingCascadeExecution).where(
+                HealingCascadeExecution.id == new_cascade_id,
+                HealingCascadeExecution.instance_id == instance_id,
+            )
+            new_cascade_result = await session.execute(new_cascade_stmt)
+            new_cascade = new_cascade_result.scalar_one_or_none()
+
+            if not new_cascade:
+                raise HTTPException(
+                    status_code=500,
+                    detail="New cascade execution record not found after retry",
+                )
+
+            # Fetch entity and device actions using helper function
+            entity_actions, device_actions = await _fetch_cascade_actions(
+                session, instance_id, new_cascade.automation_id, new_cascade.execution_id
+            )
+
+            # Build response using helper function
+            return _build_cascade_response(new_cascade, entity_actions, device_actions)
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error retrying cascade {cascade_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retry cascade") from None
