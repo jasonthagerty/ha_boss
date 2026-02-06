@@ -55,6 +55,19 @@ def _validate_instance_id(service: Any, instance_id: str) -> None:
         )
 
 
+def _calculate_success_rate(successes: int, total: int) -> float:
+    """Calculate success rate percentage.
+
+    Args:
+        successes: Number of successful attempts
+        total: Total number of attempts
+
+    Returns:
+        Success rate as percentage (0.0-100.0)
+    """
+    return (successes / total * 100) if total > 0 else 0.0
+
+
 async def _fetch_cascade_actions(
     session: Any,
     instance_id: str,
@@ -93,6 +106,65 @@ async def _fetch_cascade_actions(
     device_actions = device_actions_result.scalars().all()
 
     return entity_actions, device_actions
+
+
+def _build_cascade_response(
+    cascade: HealingCascadeExecution,
+    entity_actions: list[EntityHealingAction],
+    device_actions: list[DeviceHealingAction],
+) -> HealingCascadeResponse:
+    """Build a HealingCascadeResponse from cascade and actions.
+
+    Args:
+        cascade: Cascade execution record
+        entity_actions: List of entity-level healing actions
+        device_actions: List of device-level healing actions
+
+    Returns:
+        Complete cascade response with actions
+    """
+    return HealingCascadeResponse(
+        id=cascade.id,
+        instance_id=cascade.instance_id,
+        automation_id=cascade.automation_id,
+        execution_id=cascade.execution_id,
+        trigger_type=cascade.trigger_type,
+        routing_strategy=cascade.routing_strategy,
+        entity_level_attempted=cascade.entity_level_attempted,
+        entity_level_success=cascade.entity_level_success,
+        device_level_attempted=cascade.device_level_attempted,
+        device_level_success=cascade.device_level_success,
+        integration_level_attempted=cascade.integration_level_attempted,
+        integration_level_success=cascade.integration_level_success,
+        final_success=cascade.final_success,
+        total_duration_seconds=cascade.total_duration_seconds,
+        created_at=cascade.created_at,
+        completed_at=cascade.completed_at,
+        entity_actions=[
+            EntityActionResponse(
+                id=action.id,
+                entity_id=action.entity_id,
+                action_type=action.action_type,
+                service_domain=action.service_domain,
+                service_name=action.service_name,
+                success=action.success,
+                error_message=action.error_message,
+                duration_seconds=action.duration_seconds,
+            )
+            for action in entity_actions
+        ],
+        device_actions=[
+            DeviceActionResponse(
+                id=action.id,
+                device_id=action.device_id,
+                action_type=action.action_type,
+                success=action.success,
+                error_message=action.error_message,
+                duration_seconds=action.duration_seconds,
+            )
+            for action in device_actions
+        ],
+    )
 
 
 # IMPORTANT: More specific routes must come BEFORE the catch-all route
@@ -626,49 +698,8 @@ async def get_cascade_details(
                 session, instance_id, cascade.automation_id, cascade.execution_id
             )
 
-            # Build response
-            return HealingCascadeResponse(
-                id=cascade.id,
-                instance_id=cascade.instance_id,
-                automation_id=cascade.automation_id,
-                execution_id=cascade.execution_id,
-                trigger_type=cascade.trigger_type,
-                routing_strategy=cascade.routing_strategy,
-                entity_level_attempted=cascade.entity_level_attempted,
-                entity_level_success=cascade.entity_level_success,
-                device_level_attempted=cascade.device_level_attempted,
-                device_level_success=cascade.device_level_success,
-                integration_level_attempted=cascade.integration_level_attempted,
-                integration_level_success=cascade.integration_level_success,
-                final_success=cascade.final_success,
-                total_duration_seconds=cascade.total_duration_seconds,
-                created_at=cascade.created_at,
-                completed_at=cascade.completed_at,
-                entity_actions=[
-                    EntityActionResponse(
-                        id=action.id,
-                        entity_id=action.entity_id,
-                        action_type=action.action_type,
-                        service_domain=action.service_domain,
-                        service_name=action.service_name,
-                        success=action.success,
-                        error_message=action.error_message,
-                        duration_seconds=action.duration_seconds,
-                    )
-                    for action in entity_actions
-                ],
-                device_actions=[
-                    DeviceActionResponse(
-                        id=action.id,
-                        device_id=action.device_id,
-                        action_type=action.action_type,
-                        success=action.success,
-                        error_message=action.error_message,
-                        duration_seconds=action.duration_seconds,
-                    )
-                    for action in device_actions
-                ],
-            )
+            # Build response using helper function
+            return _build_cascade_response(cascade, entity_actions, device_actions)
 
     except HTTPException:
         raise
@@ -782,10 +813,8 @@ async def get_healing_statistics(
                     float(stats.average_duration) if stats.average_duration is not None else None
                 )
 
-                # Calculate success rate
-                success_rate = (
-                    (successful_attempts / total_attempts * 100) if total_attempts > 0 else 0.0
-                )
+                # Calculate success rate using helper function
+                success_rate = _calculate_success_rate(successful_attempts, total_attempts)
 
                 stats_by_level.append(
                     HealingStatisticsByLevel(
@@ -889,13 +918,11 @@ async def get_automation_health(
                     detail=f"Automation {automation_id} not found for instance {instance_id}",
                 )
 
-            # Calculate reliability score
+            # Calculate reliability score using helper function
             total_executions = health_status.total_executions
             total_successes = health_status.total_successes
 
-            reliability_score = (
-                (total_successes / total_executions * 100) if total_executions > 0 else 0.0
-            )
+            reliability_score = _calculate_success_rate(total_successes, total_executions)
 
             # Get last execution timestamps (from AutomationExecution table)
             from ha_boss.core.database import AutomationExecution
@@ -1076,49 +1103,8 @@ async def retry_failed_cascade(
                 session, instance_id, new_cascade.automation_id, new_cascade.execution_id
             )
 
-            # Build response
-            return HealingCascadeResponse(
-                id=new_cascade.id,
-                instance_id=new_cascade.instance_id,
-                automation_id=new_cascade.automation_id,
-                execution_id=new_cascade.execution_id,
-                trigger_type=new_cascade.trigger_type,
-                routing_strategy=new_cascade.routing_strategy,
-                entity_level_attempted=new_cascade.entity_level_attempted,
-                entity_level_success=new_cascade.entity_level_success,
-                device_level_attempted=new_cascade.device_level_attempted,
-                device_level_success=new_cascade.device_level_success,
-                integration_level_attempted=new_cascade.integration_level_attempted,
-                integration_level_success=new_cascade.integration_level_success,
-                final_success=new_cascade.final_success,
-                total_duration_seconds=new_cascade.total_duration_seconds,
-                created_at=new_cascade.created_at,
-                completed_at=new_cascade.completed_at,
-                entity_actions=[
-                    EntityActionResponse(
-                        id=action.id,
-                        entity_id=action.entity_id,
-                        action_type=action.action_type,
-                        service_domain=action.service_domain,
-                        service_name=action.service_name,
-                        success=action.success,
-                        error_message=action.error_message,
-                        duration_seconds=action.duration_seconds,
-                    )
-                    for action in entity_actions
-                ],
-                device_actions=[
-                    DeviceActionResponse(
-                        id=action.id,
-                        device_id=action.device_id,
-                        action_type=action.action_type,
-                        success=action.success,
-                        error_message=action.error_message,
-                        duration_seconds=action.duration_seconds,
-                    )
-                    for action in device_actions
-                ],
-            )
+            # Build response using helper function
+            return _build_cascade_response(new_cascade, entity_actions, device_actions)
 
     except HTTPException:
         raise
