@@ -8,6 +8,11 @@ These tests cover the 4 new healing endpoints:
 
 Note: The mock database setup returns all child actions (entity/device) regardless
 of cascade_id filter, since we're testing the API layer, not the database query logic.
+
+WARNING: These tests use string-based query detection ("automation_health_status" in stmt_str)
+to route mock database queries. While convenient for testing, this pattern should NEVER be
+used in production code as it's vulnerable to SQL injection. Production code must use
+parameterized queries and SQLAlchemy's type-safe query construction.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -258,6 +263,22 @@ def mock_service(
         return_value=mock_automation_executions[0].executed_at
     )
 
+    # Create aggregation result mocks for statistics endpoint
+    def create_agg_result(total=0, successful=0, avg_duration=None):
+        """Create a mock aggregation result."""
+        agg_result = MagicMock()
+        row = MagicMock()
+        row.total_attempts = total
+        row.successful_attempts = successful
+        row.average_duration = avg_duration
+        row.total_cascades = total
+        row.successful_cascades = successful
+        agg_result.first = MagicMock(return_value=row)
+        return agg_result
+
+    # Track which level queries we've seen to return correct results
+    level_query_counter = {"entity": 0, "device": 0, "integration": 0, "overall": 0}
+
     # Route execute calls to appropriate mocks
     def mock_execute(stmt):
         stmt_str = str(stmt).lower()
@@ -273,6 +294,27 @@ def mock_service(
             return AsyncMock(return_value=health_result)()
         elif "automation_execution" in stmt_str:
             return AsyncMock(return_value=exec_result)()
+        elif "count(" in stmt_str and (
+            "total_attempts" in stmt_str or "total_cascades" in stmt_str
+        ):
+            # Statistics aggregation queries
+            # Determine which level based on query content
+            if "entity_level_attempted" in stmt_str:
+                level_query_counter["entity"] += 1
+                # Entity level: 3 attempts, 1 success (cascade 1 succeeded)
+                return AsyncMock(return_value=create_agg_result(3, 1, 2.5))()
+            elif "device_level_attempted" in stmt_str:
+                level_query_counter["device"] += 1
+                # Device level: 2 attempts, 1 success (cascade 2 succeeded device healing)
+                return AsyncMock(return_value=create_agg_result(2, 1, 8.3))()
+            elif "integration_level_attempted" in stmt_str:
+                level_query_counter["integration"] += 1
+                # Integration level: 1 attempt, 0 successes (cascade 3 failed integration healing)
+                return AsyncMock(return_value=create_agg_result(1, 0, 15.7))()
+            else:
+                level_query_counter["overall"] += 1
+                # Overall statistics: 3 total cascades, 2 successful (cascades 1 and 2 succeeded)
+                return AsyncMock(return_value=create_agg_result(3, 2))()
         else:
             # Default: cascade queries
             return AsyncMock(return_value=cascade_result)()
@@ -380,13 +422,22 @@ def test_get_statistics_success(client, mock_cascade_executions):
 
 def test_get_statistics_no_data(client, mock_service):
     """Test empty statistics when no cascades exist."""
-    # Override mock to return empty list
+    # Override mock to return empty aggregation results
     mock_session = AsyncMock()
-    empty_result = MagicMock()
-    empty_scalars = MagicMock()
-    empty_scalars.all = MagicMock(return_value=[])
-    empty_result.scalars = MagicMock(return_value=empty_scalars)
-    mock_session.execute = AsyncMock(return_value=empty_result)
+
+    def create_empty_agg_result():
+        """Create a mock aggregation result with zeros."""
+        agg_result = MagicMock()
+        row = MagicMock()
+        row.total_attempts = 0
+        row.successful_attempts = 0
+        row.average_duration = None
+        row.total_cascades = 0
+        row.successful_cascades = 0
+        agg_result.first = MagicMock(return_value=row)
+        return agg_result
+
+    mock_session.execute = AsyncMock(return_value=create_empty_agg_result())
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=None)
     mock_service.database.async_session = MagicMock(return_value=mock_session)
