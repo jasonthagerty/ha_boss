@@ -1,10 +1,15 @@
 """Tests for healing API endpoints.
 
-These tests cover the 4 new healing endpoints:
+These tests cover the healing endpoints:
 - GET /api/healing/cascade/{cascade_id} - Get cascade details
 - GET /api/healing/statistics - Get healing statistics by level
 - GET /api/automations/{automation_id}/health - Get automation health status
 - POST /api/healing/cascade/{cascade_id}/retry - Retry failed cascade
+- POST /api/healing/suppress/{entity_id} - Suppress healing for entity
+- DELETE /api/healing/suppress/{entity_id} - Unsuppress healing for entity
+- POST /api/healing/{entity_id} - Manually trigger healing
+- GET /api/healing/history - Get healing action history
+- GET /api/healing/suppressed - Get list of suppressed entities
 
 Note: The mock database setup returns all child actions (entity/device) regardless
 of cascade_id filter, since we're testing the API layer, not the database query logic.
@@ -205,6 +210,55 @@ def mock_automation_executions():
             success=False,
         ),
     ]
+
+
+@pytest.fixture
+def mock_entity():
+    """Create mock entity for suppression testing."""
+    from ha_boss.core.database import Entity
+
+    return Entity(
+        instance_id="test_instance",
+        entity_id="light.bedroom",
+        is_monitored=True,
+        healing_suppressed=False,
+    )
+
+
+@pytest.fixture
+def mock_suppressed_entity():
+    """Create mock suppressed entity for testing."""
+    from ha_boss.core.database import Entity
+
+    now = datetime.now(UTC)
+    return Entity(
+        instance_id="test_instance",
+        entity_id="light.bedroom",
+        is_monitored=True,
+        healing_suppressed=True,
+        friendly_name="Bedroom Light",
+        integration_id="light",
+        updated_at=now,
+    )
+
+
+@pytest.fixture
+def mock_healing_action():
+    """Create mock healing action for history endpoint."""
+    from ha_boss.core.database import HealingAction
+
+    now = datetime.now(UTC)
+    return HealingAction(
+        id=1,
+        instance_id="test_instance",
+        entity_id="light.bedroom",
+        integration_id="light",
+        action="integration_reload",
+        success=True,
+        error=None,
+        timestamp=now - timedelta(hours=1),
+        attempt_number=1,
+    )
 
 
 @pytest.fixture
@@ -653,3 +707,597 @@ def test_automation_health_structure(client):
 
     for field in required_fields:
         assert field in data, f"Missing required field: {field}"
+
+
+# ==================== POST /api/healing/suppress/{entity_id} Tests ====================
+
+
+def test_suppress_healing_success(client, mock_service, mock_entity):
+    """Test successfully suppressing healing for an entity.
+
+    Happy path: Entity exists in database, suppression flag is set.
+    """
+
+    mock_session = AsyncMock()
+
+    # Mock entity lookup (entity exists)
+    entity_result = MagicMock()
+    entity_result.scalar_one_or_none = MagicMock(return_value=mock_entity)
+
+    mock_session.execute = AsyncMock(return_value=entity_result)
+    mock_session.add = MagicMock()
+    mock_session.commit = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.post("/api/healing/suppress/light.bedroom?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["entity_id"] == "light.bedroom"
+    assert data["suppressed"] is True
+    assert "Healing suppressed" in data["message"]
+
+
+def test_suppress_healing_create_new_entity(client, mock_service):
+    """Test suppressing healing for entity that doesn't exist yet.
+
+    Entity is created in database with suppression enabled.
+    """
+    mock_session = AsyncMock()
+
+    # Mock entity lookup (entity not found)
+    entity_result = MagicMock()
+    entity_result.scalar_one_or_none = MagicMock(return_value=None)
+
+    mock_session.execute = AsyncMock(return_value=entity_result)
+    mock_session.add = MagicMock()
+    mock_session.commit = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.post("/api/healing/suppress/sensor.new_entity?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["entity_id"] == "sensor.new_entity"
+    assert data["suppressed"] is True
+    # Verify that add() was called to create new entity
+    assert mock_session.add.called
+
+
+def test_suppress_healing_invalid_instance(client):
+    """Test 404 error when instance not found."""
+    response = client.post("/api/healing/suppress/light.bedroom?instance_id=invalid_instance")
+
+    assert response.status_code == 404
+    data = response.json()
+    assert "not found" in data["detail"].lower()
+
+
+def test_suppress_healing_instance_id_all_forbidden(client):
+    """Test 400 error when instance_id is 'all' (not allowed for suppression)."""
+    response = client.post("/api/healing/suppress/light.bedroom?instance_id=all")
+
+    assert response.status_code == 400
+    data = response.json()
+    assert "specific instance_id" in data["detail"].lower()
+
+
+def test_suppress_healing_database_error(client, mock_service):
+    """Test 503 error when database is not initialized."""
+    mock_service.database = None
+
+    response = client.post("/api/healing/suppress/light.bedroom?instance_id=test_instance")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert "not initialized" in data["detail"].lower()
+
+
+# ==================== DELETE /api/healing/suppress/{entity_id} Tests ====================
+
+
+def test_unsuppress_healing_success(client, mock_service, mock_suppressed_entity):
+    """Test successfully removing healing suppression for an entity.
+
+    Happy path: Suppressed entity exists, suppression flag is removed.
+    """
+    mock_session = AsyncMock()
+
+    # Mock entity lookup (entity exists and is suppressed)
+    entity_result = MagicMock()
+    entity_result.scalar_one_or_none = MagicMock(return_value=mock_suppressed_entity)
+
+    mock_session.execute = AsyncMock(return_value=entity_result)
+    mock_session.commit = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.delete("/api/healing/suppress/light.bedroom?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["entity_id"] == "light.bedroom"
+    assert data["suppressed"] is False
+    assert "enabled" in data["message"].lower()
+
+
+def test_unsuppress_healing_not_found(client, mock_service):
+    """Test unsuppressing entity that doesn't exist in database.
+
+    Returns 200 (not an error), indicating healing is already not suppressed.
+    """
+    mock_session = AsyncMock()
+
+    # Mock entity lookup (entity not found)
+    entity_result = MagicMock()
+    entity_result.scalar_one_or_none = MagicMock(return_value=None)
+
+    mock_session.execute = AsyncMock(return_value=entity_result)
+    mock_session.commit = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.delete("/api/healing/suppress/sensor.nonexistent?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["entity_id"] == "sensor.nonexistent"
+    assert data["suppressed"] is False
+
+
+def test_unsuppress_healing_invalid_instance(client):
+    """Test 404 error when instance not found."""
+    response = client.delete("/api/healing/suppress/light.bedroom?instance_id=invalid_instance")
+
+    assert response.status_code == 404
+    data = response.json()
+    assert "not found" in data["detail"].lower()
+
+
+def test_unsuppress_healing_instance_id_all_forbidden(client):
+    """Test 400 error when instance_id is 'all' (not allowed for unsuppression)."""
+    response = client.delete("/api/healing/suppress/light.bedroom?instance_id=all")
+
+    assert response.status_code == 400
+    data = response.json()
+    assert "specific instance_id" in data["detail"].lower()
+
+
+# ==================== POST /api/healing/{entity_id} Tests ====================
+
+
+def test_trigger_healing_success(client, mock_service):
+    """Test manually triggering healing for an entity.
+
+    Happy path: Entity found, healing manager returns success.
+    """
+    # Setup required service components
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients["test_instance"] = mock_ha_client
+
+    mock_healing_manager = AsyncMock()
+    mock_healing_manager.heal = AsyncMock(return_value=True)
+    mock_service.healing_managers = {"test_instance": mock_healing_manager}
+
+    mock_integration_discovery = MagicMock()
+    mock_integration_discovery.get_integration_for_entity = MagicMock(return_value="light")
+    mock_service.integration_discoveries = {"test_instance": mock_integration_discovery}
+
+    mock_state_tracker = AsyncMock()
+    mock_state_tracker.get_state = AsyncMock(return_value={"state": "on"})
+    mock_service.state_trackers = {"test_instance": mock_state_tracker}
+
+    response = client.post("/api/healing/light.bedroom?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["entity_id"] == "light.bedroom"
+    assert data["integration"] == "light"
+    assert data["success"] is True
+    assert data["action_type"] == "integration_reload"
+
+
+def test_trigger_healing_entity_not_found(client, mock_service):
+    """Test 404 error when entity not found in state tracker."""
+    # Setup required service components
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients["test_instance"] = mock_ha_client
+
+    mock_healing_manager = AsyncMock()
+    mock_service.healing_managers = {"test_instance": mock_healing_manager}
+
+    mock_integration_discovery = MagicMock()
+    mock_service.integration_discoveries = {"test_instance": mock_integration_discovery}
+
+    mock_state_tracker = AsyncMock()
+    mock_state_tracker.get_state = AsyncMock(return_value=None)  # Entity not found
+    mock_service.state_trackers = {"test_instance": mock_state_tracker}
+
+    response = client.post("/api/healing/sensor.nonexistent?instance_id=test_instance")
+
+    assert response.status_code == 404
+    data = response.json()
+    assert "not found" in data["detail"].lower()
+
+
+def test_trigger_healing_healing_fails(client, mock_service):
+    """Test 200 response when healing fails (returns failure in response).
+
+    Failure is not an HTTP error, but indicated in the response body.
+    """
+    # Setup required service components
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients["test_instance"] = mock_ha_client
+
+    mock_healing_manager = AsyncMock()
+    mock_healing_manager.heal = AsyncMock(return_value=False)  # Healing fails
+    mock_service.healing_managers = {"test_instance": mock_healing_manager}
+
+    mock_integration_discovery = MagicMock()
+    mock_integration_discovery.get_integration_for_entity = MagicMock(return_value="light")
+    mock_service.integration_discoveries = {"test_instance": mock_integration_discovery}
+
+    mock_state_tracker = AsyncMock()
+    mock_state_tracker.get_state = AsyncMock(return_value={"state": "unavailable"})
+    mock_service.state_trackers = {"test_instance": mock_state_tracker}
+
+    response = client.post("/api/healing/light.bedroom?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["entity_id"] == "light.bedroom"
+    assert data["success"] is False
+    assert "failed" in data["message"].lower()
+
+
+def test_trigger_healing_invalid_instance(client):
+    """Test 404 error when instance not found."""
+    response = client.post("/api/healing/light.bedroom?instance_id=invalid_instance")
+
+    assert response.status_code == 404
+    data = response.json()
+    assert "not found" in data["detail"].lower()
+
+
+def test_trigger_healing_no_healing_manager(client, mock_service):
+    """Test 503 error when healing manager not initialized."""
+    # Setup components but missing healing manager
+    mock_ha_client = AsyncMock()
+    mock_service.ha_clients["test_instance"] = mock_ha_client
+    mock_service.healing_managers = {}  # No managers
+
+    response = client.post("/api/healing/light.bedroom?instance_id=test_instance")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert "not initialized" in data["detail"].lower()
+
+
+# ==================== GET /api/healing/history Tests ====================
+
+
+def test_get_healing_history_success(client, mock_service, mock_healing_action):
+    """Test retrieving healing action history successfully.
+
+    Happy path: Returns recent healing actions with statistics.
+    """
+
+    mock_session = AsyncMock()
+
+    # Mock history query
+    history_result = MagicMock()
+    row = (mock_healing_action, "light")  # (action, integration_domain)
+    history_scalars = MagicMock()
+    history_scalars.all = MagicMock(return_value=[row])
+    history_result.all = MagicMock(return_value=[row])
+
+    # Mock statistics query
+    stats_result = MagicMock()
+    stats_row = MagicMock()
+    stats_row.total = 1
+    stats_row.success = 1
+    stats_result.first = MagicMock(return_value=stats_row)
+
+    # Mock health event lookup (for trigger reason)
+    health_result = MagicMock()
+    health_result.first = MagicMock(return_value=None)
+
+    def mock_execute(stmt):
+        stmt_str = str(stmt).lower()
+        if "health_event" in stmt_str:
+            return AsyncMock(return_value=health_result)()
+        elif "count(" in stmt_str:
+            return AsyncMock(return_value=stats_result)()
+        else:
+            return AsyncMock(return_value=history_result)()
+
+    mock_session.execute = mock_execute
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.get("/api/healing/history?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "actions" in data
+    assert data["total_count"] == 1
+    assert data["success_count"] == 1
+    assert data["failure_count"] == 0
+
+
+def test_get_healing_history_with_filter_success(client, mock_service, mock_healing_action):
+    """Test filtering history by success status."""
+    mock_session = AsyncMock()
+
+    stats_result = MagicMock()
+    stats_row = MagicMock()
+    stats_row.total = 5
+    stats_row.success = 3
+    stats_result.first = MagicMock(return_value=stats_row)
+
+    history_result = MagicMock()
+    history_result.all = MagicMock(return_value=[(mock_healing_action, "light")])
+
+    health_result = MagicMock()
+    health_result.first = MagicMock(return_value=None)
+
+    def mock_execute(stmt):
+        stmt_str = str(stmt).lower()
+        if "health_event" in stmt_str:
+            return AsyncMock(return_value=health_result)()
+        elif "count(" in stmt_str:
+            return AsyncMock(return_value=stats_result)()
+        else:
+            return AsyncMock(return_value=history_result)()
+
+    mock_session.execute = mock_execute
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.get("/api/healing/history?instance_id=test_instance&filter=success")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["success_count"] == 3
+
+
+def test_get_healing_history_with_pagination(client, mock_service, mock_healing_action):
+    """Test limiting history results via limit parameter."""
+    mock_session = AsyncMock()
+
+    stats_result = MagicMock()
+    stats_row = MagicMock()
+    stats_row.total = 100
+    stats_row.success = 95
+    stats_result.first = MagicMock(return_value=stats_row)
+
+    history_result = MagicMock()
+    history_result.all = MagicMock(return_value=[(mock_healing_action, "light")] * 10)
+
+    health_result = MagicMock()
+    health_result.first = MagicMock(return_value=None)
+
+    def mock_execute(stmt):
+        stmt_str = str(stmt).lower()
+        if "health_event" in stmt_str:
+            return AsyncMock(return_value=health_result)()
+        elif "count(" in stmt_str:
+            return AsyncMock(return_value=stats_result)()
+        else:
+            return AsyncMock(return_value=history_result)()
+
+    mock_session.execute = mock_execute
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.get("/api/healing/history?instance_id=test_instance&limit=10")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Mock returns 10 actions, total stats show 100
+    assert len(data["actions"]) == 10
+    assert data["total_count"] == 100
+
+
+def test_get_healing_history_empty(client, mock_service):
+    """Test retrieving history when no actions exist."""
+    mock_session = AsyncMock()
+
+    stats_result = MagicMock()
+    stats_row = MagicMock()
+    stats_row.total = 0
+    stats_row.success = 0
+    stats_result.first = MagicMock(return_value=stats_row)
+
+    history_result = MagicMock()
+    history_result.all = MagicMock(return_value=[])
+
+    def mock_execute(stmt):
+        stmt_str = str(stmt).lower()
+        if "count(" in stmt_str:
+            return AsyncMock(return_value=stats_result)()
+        else:
+            return AsyncMock(return_value=history_result)()
+
+    mock_session.execute = mock_execute
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.get("/api/healing/history?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["actions"]) == 0
+    assert data["total_count"] == 0
+
+
+def test_get_healing_history_database_error(client, mock_service):
+    """Test 503 error when database not initialized."""
+    mock_service.database = None
+
+    response = client.get("/api/healing/history?instance_id=test_instance")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert "not initialized" in data["detail"].lower()
+
+
+# ==================== GET /api/healing/suppressed Tests ====================
+
+
+def test_get_suppressed_entities_success(client, mock_service, mock_suppressed_entity):
+    """Test retrieving list of suppressed entities for a single instance."""
+    mock_session = AsyncMock()
+
+    # Mock query for suppressed entities
+    entities_result = MagicMock()
+    entities_scalars = MagicMock()
+    entities_scalars.all = MagicMock(return_value=[mock_suppressed_entity])
+    entities_result.scalars = MagicMock(return_value=entities_scalars)
+
+    mock_session.execute = AsyncMock(return_value=entities_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.get("/api/healing/suppressed?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "entities" in data
+    assert data["total_count"] == 1
+    assert len(data["entities"]) == 1
+    assert data["entities"][0]["entity_id"] == "light.bedroom"
+    assert data["entities"][0]["suppressed_since"] is not None
+
+
+def test_get_suppressed_entities_multiple(client, mock_service):
+    """Test retrieving multiple suppressed entities."""
+    from ha_boss.core.database import Entity
+
+    entity1 = Entity(
+        instance_id="test_instance",
+        entity_id="light.bedroom",
+        healing_suppressed=True,
+        friendly_name="Bedroom Light",
+    )
+    entity2 = Entity(
+        instance_id="test_instance",
+        entity_id="switch.garage",
+        healing_suppressed=True,
+        friendly_name="Garage Switch",
+    )
+
+    mock_session = AsyncMock()
+
+    entities_result = MagicMock()
+    entities_scalars = MagicMock()
+    entities_scalars.all = MagicMock(return_value=[entity1, entity2])
+    entities_result.scalars = MagicMock(return_value=entities_scalars)
+
+    mock_session.execute = AsyncMock(return_value=entities_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.get("/api/healing/suppressed?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["total_count"] == 2
+    assert len(data["entities"]) == 2
+    entity_ids = {e["entity_id"] for e in data["entities"]}
+    assert entity_ids == {"light.bedroom", "switch.garage"}
+
+
+def test_get_suppressed_entities_empty(client, mock_service):
+    """Test retrieving suppressed entities when none exist."""
+    mock_session = AsyncMock()
+
+    entities_result = MagicMock()
+    entities_scalars = MagicMock()
+    entities_scalars.all = MagicMock(return_value=[])
+    entities_result.scalars = MagicMock(return_value=entities_scalars)
+
+    mock_session.execute = AsyncMock(return_value=entities_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.get("/api/healing/suppressed?instance_id=test_instance")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["total_count"] == 0
+    assert len(data["entities"]) == 0
+
+
+def test_get_suppressed_entities_all_instances(client, mock_service):
+    """Test retrieving suppressed entities from all instances."""
+    from ha_boss.core.database import Entity
+
+    entity1 = Entity(
+        instance_id="test_instance",
+        entity_id="light.bedroom",
+        healing_suppressed=True,
+    )
+    entity2 = Entity(
+        instance_id="other_instance",
+        entity_id="switch.front_door",
+        healing_suppressed=True,
+    )
+
+    mock_session = AsyncMock()
+
+    entities_result = MagicMock()
+    entities_scalars = MagicMock()
+    entities_scalars.all = MagicMock(return_value=[entity1, entity2])
+    entities_result.scalars = MagicMock(return_value=entities_scalars)
+
+    mock_session.execute = AsyncMock(return_value=entities_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_service.database.async_session = MagicMock(return_value=mock_session)
+
+    response = client.get("/api/healing/suppressed?instance_id=all")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["total_count"] == 2
+    instance_ids = {e["instance_id"] for e in data["entities"]}
+    assert instance_ids == {"test_instance", "other_instance"}
+
+
+def test_get_suppressed_entities_database_error(client, mock_service):
+    """Test 503 error when database not initialized."""
+    mock_service.database = None
+
+    response = client.get("/api/healing/suppressed?instance_id=test_instance")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert "not initialized" in data["detail"].lower()
