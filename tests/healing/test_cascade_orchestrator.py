@@ -363,6 +363,126 @@ class TestSequentialCascade:
         assert result.entity_results["light.living_room"] is True
         assert result.entity_results["light.bedroom"] is False
 
+    @pytest.mark.asyncio
+    async def test_cascade_multi_entity_different_levels(
+        self, orchestrator, database, entity_healer, device_healer
+    ):
+        """Test multiple entities with mixed success across cascade levels.
+
+        Scenario:
+        - light.living_room and light.bedroom both fail at entity level (L1)
+        - Device healer succeeds at L2, marking both entities as healed
+        - Verifies cascade continues when all entities fail at L1
+        - Verifies L2 can heal multiple entities at once
+        """
+        context = HealingContext(
+            instance_id="test_instance",
+            automation_id="automation.test",
+            execution_id=1,
+            trigger_type="outcome_failure",
+            failed_entities=["light.living_room", "light.bedroom"],
+            timeout_seconds=30.0,
+        )
+
+        # Mock entity healer: both entities fail at L1
+        entity_healer.heal.return_value = EntityHealingResult(
+            entity_id="",
+            success=False,
+            actions_attempted=["retry_service_call"],
+            final_action=None,
+            error_message="Service call timeout",
+            total_duration_seconds=0.5,
+        )
+
+        # Mock device healer: succeeds at L2, heals both entities
+        device_healer.heal.return_value = DeviceHealingResult(
+            devices_attempted=["device_123"],
+            success=True,
+            devices_healed=["device_123"],
+            actions_attempted=["reconnect"],
+            final_action="reconnect",
+            error_message=None,
+            total_duration_seconds=1.0,
+        )
+
+        # Execute cascade
+        result = await orchestrator.execute_cascade(context, use_intelligent_routing=False)
+
+        # Verify cascade succeeded at device level (not entity level)
+        assert result.success is True
+        assert result.successful_level == HealingLevel.DEVICE
+
+        # Verify both entities marked as healed by device-level action
+        assert result.entity_results["light.living_room"] is True  # Healed via L2
+        assert result.entity_results["light.bedroom"] is True  # Healed via L2
+
+        # Verify cascade attempted both levels
+        assert HealingLevel.ENTITY in result.levels_attempted
+        assert HealingLevel.DEVICE in result.levels_attempted
+
+        # Verify database record
+        async with database.async_session() as session:
+            exec_record = (await session.execute(select(HealingCascadeExecution))).scalar_one()
+            assert exec_record.entity_level_attempted is True
+            assert exec_record.entity_level_success is False  # L1 failed
+            assert exec_record.device_level_attempted is True
+            assert exec_record.device_level_success is True  # L2 succeeded
+
+    @pytest.mark.asyncio
+    async def test_cascade_multi_entity_same_device(
+        self, orchestrator, database, entity_healer, device_healer
+    ):
+        """Test multiple entities from same device healed at device level.
+
+        Scenario:
+        - light.room1 and light.room2 both belong to device_123
+        - Both fail at entity level
+        - Device healer called once, heals both
+        """
+        context = HealingContext(
+            instance_id="test_instance",
+            automation_id="automation.test",
+            execution_id=1,
+            trigger_type="outcome_failure",
+            failed_entities=["light.room1", "light.room2"],
+            timeout_seconds=30.0,
+        )
+
+        # Mock entity healer: both fail
+        entity_healer.heal.return_value = EntityHealingResult(
+            entity_id="",  # Will be set per call
+            success=False,
+            actions_attempted=["retry_service_call"],
+            final_action=None,
+            error_message="Service unavailable",
+            total_duration_seconds=0.5,
+        )
+
+        # Mock device healer: succeeds, heals both entities
+        device_healer.heal.return_value = DeviceHealingResult(
+            devices_attempted=["device_123"],
+            success=True,
+            devices_healed=["device_123"],
+            actions_attempted=["reconnect"],
+            final_action="reconnect",
+            error_message=None,
+            total_duration_seconds=1.5,
+        )
+
+        # Execute cascade
+        result = await orchestrator.execute_cascade(context, use_intelligent_routing=False)
+
+        # Verify success
+        assert result.success is True
+        assert result.successful_level == HealingLevel.DEVICE
+
+        # Verify both entities marked healed
+        assert result.entity_results["light.room1"] is True
+        assert result.entity_results["light.room2"] is True
+
+        # Verify device healer called once
+        assert device_healer.heal.call_count >= 1
+
 
 class TestIntelligentRouting:
     """Test intelligent routing with pattern matching."""
@@ -874,3 +994,72 @@ class TestErrorHandling:
 
         assert result.success is False
         assert result.entity_results["light.living_room"] is False
+
+    @pytest.mark.asyncio
+    async def test_cascade_multi_entity_all_levels_fail(
+        self, orchestrator, database, entity_healer, device_healer, integration_healer
+    ):
+        """Test all entities fail at all cascade levels with escalation.
+
+        Scenario:
+        - 2 entities fail at L1, L2, and L3
+        - All healing attempts fail
+        - Cascade completion verification
+        """
+        context = HealingContext(
+            instance_id="test_instance",
+            automation_id="automation.test",
+            execution_id=1,
+            trigger_type="outcome_failure",
+            failed_entities=["light.test", "sensor.test"],
+            timeout_seconds=30.0,
+        )
+
+        # Mock all healers to fail
+        entity_healer.heal.return_value = EntityHealingResult(
+            entity_id="",
+            success=False,
+            actions_attempted=["retry_service_call"],
+            final_action=None,
+            error_message="All retries failed",
+            total_duration_seconds=0.5,
+        )
+
+        device_healer.heal.return_value = DeviceHealingResult(
+            devices_attempted=["device_unknown"],
+            success=False,
+            devices_healed=[],
+            actions_attempted=["reconnect"],
+            final_action=None,
+            error_message="Device unreachable",
+            total_duration_seconds=1.0,
+        )
+
+        integration_healer.heal.return_value = False  # Integration reload failed
+
+        # Execute cascade
+        result = await orchestrator.execute_cascade(context, use_intelligent_routing=False)
+
+        # Verify cascade failed
+        assert result.success is False
+        assert result.successful_level is None
+
+        # Verify all entities marked failed
+        assert result.entity_results["light.test"] is False
+        assert result.entity_results["sensor.test"] is False
+
+        # Verify all levels attempted
+        assert HealingLevel.ENTITY in result.levels_attempted
+        assert HealingLevel.DEVICE in result.levels_attempted
+        assert HealingLevel.INTEGRATION in result.levels_attempted
+
+        # Verify database shows complete failure
+        async with database.async_session() as session:
+            exec_record = (await session.execute(select(HealingCascadeExecution))).scalar_one()
+            assert exec_record.final_success is False
+            assert exec_record.entity_level_attempted is True
+            assert exec_record.entity_level_success is False
+            assert exec_record.device_level_attempted is True
+            assert exec_record.device_level_success is False
+            assert exec_record.integration_level_attempted is True
+            assert exec_record.integration_level_success is False
