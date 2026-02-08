@@ -1219,3 +1219,167 @@ class TestConcurrencyControl:
 
         # Expected: 2 batches * 0.2s = 0.4s (with some overhead)
         assert 0.3 < elapsed_time < 0.6, f"Expected ~0.4s with semaphore=5, got {elapsed_time:.2f}s"
+
+
+class TestIntelligentRoutingEdgeCases:
+    """Test intelligent routing edge cases and pattern-based optimizations."""
+
+    @pytest.mark.asyncio
+    async def test_intelligent_routing_integration_level(
+        self, orchestrator, database, integration_healer
+    ):
+        """Test intelligent routing directly to integration level."""
+        # Create a pattern that suggests integration-level healing
+        async with database.async_session() as session:
+            pattern = AutomationOutcomePattern(
+                instance_id="test_instance",
+                automation_id="automation.test",
+                entity_id="light.test",
+                observed_state="on",
+                successful_healing_level="integration",
+                successful_healing_strategy="reload_integration",
+                healing_success_count=5,  # Above default threshold of 2
+                first_observed=datetime.now(UTC),
+                last_observed=datetime.now(UTC),
+            )
+            session.add(pattern)
+            await session.commit()
+
+        # Setup mocks - integration healer succeeds
+        integration_healer.heal.return_value = True
+
+        context = HealingContext(
+            instance_id="test_instance",
+            automation_id="automation.test",
+            execution_id=None,
+            trigger_type="outcome_failure",
+            failed_entities=["light.test"],
+        )
+
+        result = await orchestrator.execute_cascade(context, use_intelligent_routing=True)
+
+        assert result.success is True
+        assert result.routing_strategy == "intelligent"
+        assert HealingLevel.INTEGRATION in result.levels_attempted
+        # Should NOT attempt entity or device levels
+        assert HealingLevel.ENTITY not in result.levels_attempted
+        assert HealingLevel.DEVICE not in result.levels_attempted
+
+    @pytest.mark.asyncio
+    async def test_pattern_below_threshold_falls_back_to_sequential(
+        self, orchestrator, database, entity_healer
+    ):
+        """Test that below-threshold patterns fall back to sequential cascade."""
+        # Create a pattern with count below threshold (default 2 in fixture)
+        async with database.async_session() as session:
+            pattern = AutomationOutcomePattern(
+                instance_id="test_instance",
+                automation_id="automation.test",
+                entity_id="light.test",
+                observed_state="on",
+                successful_healing_level="device",
+                successful_healing_strategy="reconnect",
+                healing_success_count=1,  # Below threshold of 2
+                first_observed=datetime.now(UTC),
+                last_observed=datetime.now(UTC),
+            )
+            session.add(pattern)
+            await session.commit()
+
+        # Entity healer succeeds (so we don't need to go further)
+        entity_healer.heal.return_value = EntityHealingResult(
+            entity_id="light.test",
+            success=True,
+            actions_attempted=["retry_service_call"],
+            final_action="retry_service_call",
+            error_message=None,
+            total_duration_seconds=1.0,
+        )
+
+        context = HealingContext(
+            instance_id="test_instance",
+            automation_id="automation.test",
+            execution_id=None,
+            trigger_type="outcome_failure",
+            failed_entities=["light.test"],
+        )
+
+        result = await orchestrator.execute_cascade(context, use_intelligent_routing=True)
+
+        assert result.success is True
+        assert result.routing_strategy == "sequential"  # Not intelligent
+        assert HealingLevel.ENTITY in result.levels_attempted
+
+    @pytest.mark.asyncio
+    async def test_cascade_partial_entity_success_stops_at_entity_level(
+        self, orchestrator, database, entity_healer, device_healer
+    ):
+        """Test cascade stops at entity level when ANY entity heals.
+
+        Edge Case: When multiple entities fail but one succeeds at L1,
+        cascade should stop at entity level and not proceed to L2,
+        even though some entities remain unhealed.
+
+        This verifies the "any success stops cascade" behavior.
+        """
+
+        # Entity healer: first entity succeeds, others fail
+        async def entity_heal_side_effect(entity_id, **kwargs):
+            if entity_id == "light.test1":
+                # First entity succeeds at L1
+                return EntityHealingResult(
+                    entity_id=entity_id,
+                    success=True,
+                    actions_attempted=["retry_service_call"],
+                    final_action="retry_service_call",
+                    error_message=None,
+                    total_duration_seconds=1.0,
+                )
+            else:
+                # Other entities fail at L1
+                return EntityHealingResult(
+                    entity_id=entity_id,
+                    success=False,
+                    actions_attempted=["retry_service_call"],
+                    final_action=None,
+                    error_message="All retries failed",
+                    total_duration_seconds=1.0,
+                )
+
+        entity_healer.heal.side_effect = entity_heal_side_effect
+
+        # Device healer should NOT be called because L1 partially succeeds
+        device_healer.heal.return_value = DeviceHealingResult(
+            devices_attempted=["device_123"],
+            success=True,
+            devices_healed=["device_123"],
+            actions_attempted=["reconnect"],
+            final_action="reconnect",
+            error_message=None,
+            total_duration_seconds=2.0,
+        )
+
+        context = HealingContext(
+            instance_id="test_instance",
+            automation_id="automation.test",
+            execution_id=None,
+            trigger_type="outcome_failure",
+            failed_entities=["light.test1", "light.test2", "light.test3"],
+        )
+
+        result = await orchestrator.execute_cascade(context, use_intelligent_routing=False)
+
+        # Cascade succeeds because one entity healed at L1
+        assert result.success is True
+        assert result.successful_level == HealingLevel.ENTITY
+        assert HealingLevel.ENTITY in result.levels_attempted
+        # Device level should NOT be attempted
+        assert HealingLevel.DEVICE not in result.levels_attempted
+
+        # Verify entity results - one success, two failures
+        assert result.entity_results["light.test1"] is True
+        assert result.entity_results["light.test2"] is False
+        assert result.entity_results["light.test3"] is False
+
+        # Verify device healer was NOT called
+        device_healer.heal.assert_not_called()

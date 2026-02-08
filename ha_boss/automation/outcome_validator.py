@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from ha_boss.healing.cascade_orchestrator import (
         CascadeOrchestrator,
         CascadeResult,
+        HealingContext,
     )
     from ha_boss.intelligence.llm_router import LLMRouter
 

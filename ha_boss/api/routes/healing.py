@@ -1114,3 +1114,36 @@ async def retry_failed_cascade(
     except Exception as e:
         logger.error(f"[{instance_id}] Error retrying cascade {cascade_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retry cascade") from None
+
+
+@router.get("/healing/routing-metrics")
+async def get_routing_metrics(
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> dict[str, Any]:
+    """Get pattern coverage and routing effectiveness metrics.
+
+    Returns metrics about how well the intelligent routing and pattern
+    learning systems are performing.
+    """
+    try:
+        service = get_service()
+
+        if instance_id not in service.cascade_orchestrators:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instance '{instance_id}' not found or not initialized",
+            )
+
+        metrics = await service.cascade_orchestrators[instance_id].get_routing_metrics(
+            instance_id=instance_id,
+        )
+
+        return metrics
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"[{instance_id}] Error getting routing metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get routing metrics") from None

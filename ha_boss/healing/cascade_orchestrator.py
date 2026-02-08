@@ -17,9 +17,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from typing import TypeVar
+from typing import Any, TypeVar
 
-from sqlalchemy import and_, desc, select
+from sqlalchemy import and_, desc, func, select
 
 from ha_boss.core.database import (
     AutomationOutcomePattern,
@@ -684,8 +684,8 @@ class CascadeOrchestrator:
     ) -> AutomationOutcomePattern | None:
         """Find matching healing pattern for automation.
 
-        Looks for patterns where healing has succeeded multiple times for this
-        automation, ordered by healing success count.
+        Looks for patterns where healing has succeeded multiple times for specific
+        entities in this automation, ordered by healing success count.
 
         Args:
             context: Healing context with automation info
@@ -701,6 +701,7 @@ class CascadeOrchestrator:
                         and_(
                             AutomationOutcomePattern.instance_id == context.instance_id,
                             AutomationOutcomePattern.automation_id == context.automation_id,
+                            AutomationOutcomePattern.entity_id.in_(context.failed_entities),
                             AutomationOutcomePattern.healing_success_count
                             >= self.pattern_match_threshold,
                             AutomationOutcomePattern.successful_healing_level.isnot(None),
@@ -733,6 +734,7 @@ class CascadeOrchestrator:
                     execution_id=context.execution_id,
                     trigger_type=context.trigger_type,
                     failed_entities=context.failed_entities,
+                    timeout_seconds=context.timeout_seconds,
                     routing_strategy=ROUTING_STRATEGY_SEQUENTIAL,  # Will be updated if intelligent routing used
                     entity_level_attempted=False,
                     device_level_attempted=False,
@@ -837,6 +839,57 @@ class CascadeOrchestrator:
 
         except Exception as e:
             logger.error(f"Failed to update cascade level: {e}", exc_info=True)
+
+    async def _batch_update_cascade_levels(
+        self,
+        cascade_exec_id: int,
+        updates: list[tuple[HealingLevel, bool, bool | None]],
+    ) -> None:
+        """Batch update multiple cascade level statuses in a single session.
+
+        More efficient than calling _update_cascade_level multiple times
+        when several updates need to happen together.
+
+        Args:
+            cascade_exec_id: Cascade execution record ID
+            updates: List of (level, attempted, success) tuples
+        """
+        if not updates:
+            return
+
+        try:
+            async with self.database.async_session() as session:
+                stmt = select(HealingCascadeExecution).where(
+                    HealingCascadeExecution.id == cascade_exec_id
+                )
+                result = await session.execute(stmt)
+                cascade_exec = result.scalar_one_or_none()
+
+                if not cascade_exec:
+                    logger.warning(f"Cascade execution {cascade_exec_id} not found")
+                    return
+
+                for level, attempted, success in updates:
+                    if level == HealingLevel.ENTITY:
+                        if attempted:
+                            cascade_exec.entity_level_attempted = True
+                        if success is not None:
+                            cascade_exec.entity_level_success = success
+                    elif level == HealingLevel.DEVICE:
+                        if attempted:
+                            cascade_exec.device_level_attempted = True
+                        if success is not None:
+                            cascade_exec.device_level_success = success
+                    elif level == HealingLevel.INTEGRATION:
+                        if attempted:
+                            cascade_exec.integration_level_attempted = True
+                        if success is not None:
+                            cascade_exec.integration_level_success = success
+
+                await session.commit()
+
+        except Exception as e:
+            logger.error(f"Failed to batch update cascade levels: {e}", exc_info=True)
 
     async def _finalize_cascade_record(
         self,
@@ -964,3 +1017,177 @@ class CascadeOrchestrator:
 
         except Exception as e:
             logger.error(f"Failed to update pattern success: {e}", exc_info=True)
+
+    async def get_routing_metrics(
+        self,
+        instance_id: str,
+    ) -> dict[str, Any]:
+        """Get pattern coverage and intelligent routing effectiveness metrics.
+
+        Provides metrics for understanding how well pattern learning is working:
+        - Pattern coverage: How many automations have learned patterns
+        - Routing effectiveness: Success rates of intelligent vs sequential routing
+        - Level distribution: Which healing levels are most commonly used
+
+        Args:
+            instance_id: Home Assistant instance identifier
+
+        Returns:
+            Dict with pattern and routing metrics
+        """
+        try:
+            async with self.database.async_session() as session:
+                # Pattern coverage metrics
+                total_patterns_result = await session.execute(
+                    select(func.count(AutomationOutcomePattern.id)).where(
+                        AutomationOutcomePattern.instance_id == instance_id,
+                    )
+                )
+                total_patterns = total_patterns_result.scalar() or 0
+
+                actionable_patterns_result = await session.execute(
+                    select(func.count(AutomationOutcomePattern.id)).where(
+                        and_(
+                            AutomationOutcomePattern.instance_id == instance_id,
+                            AutomationOutcomePattern.healing_success_count
+                            >= self.pattern_match_threshold,
+                            AutomationOutcomePattern.successful_healing_level.isnot(None),
+                        )
+                    )
+                )
+                actionable_patterns = actionable_patterns_result.scalar() or 0
+
+                unique_automations_result = await session.execute(
+                    select(func.count(func.distinct(AutomationOutcomePattern.automation_id))).where(
+                        AutomationOutcomePattern.instance_id == instance_id,
+                    )
+                )
+                unique_automations = unique_automations_result.scalar() or 0
+
+                # Routing effectiveness from cascade executions
+                total_cascades_result = await session.execute(
+                    select(func.count(HealingCascadeExecution.id)).where(
+                        HealingCascadeExecution.instance_id == instance_id,
+                    )
+                )
+                total_cascades = total_cascades_result.scalar() or 0
+
+                intelligent_total_result = await session.execute(
+                    select(func.count(HealingCascadeExecution.id)).where(
+                        and_(
+                            HealingCascadeExecution.instance_id == instance_id,
+                            HealingCascadeExecution.routing_strategy
+                            == ROUTING_STRATEGY_INTELLIGENT,
+                        )
+                    )
+                )
+                intelligent_total = intelligent_total_result.scalar() or 0
+
+                intelligent_success_result = await session.execute(
+                    select(func.count(HealingCascadeExecution.id)).where(
+                        and_(
+                            HealingCascadeExecution.instance_id == instance_id,
+                            HealingCascadeExecution.routing_strategy
+                            == ROUTING_STRATEGY_INTELLIGENT,
+                            HealingCascadeExecution.final_success.is_(True),
+                        )
+                    )
+                )
+                intelligent_success = intelligent_success_result.scalar() or 0
+
+                sequential_total_result = await session.execute(
+                    select(func.count(HealingCascadeExecution.id)).where(
+                        and_(
+                            HealingCascadeExecution.instance_id == instance_id,
+                            HealingCascadeExecution.routing_strategy == ROUTING_STRATEGY_SEQUENTIAL,
+                        )
+                    )
+                )
+                sequential_total = sequential_total_result.scalar() or 0
+
+                sequential_success_result = await session.execute(
+                    select(func.count(HealingCascadeExecution.id)).where(
+                        and_(
+                            HealingCascadeExecution.instance_id == instance_id,
+                            HealingCascadeExecution.routing_strategy == ROUTING_STRATEGY_SEQUENTIAL,
+                            HealingCascadeExecution.final_success.is_(True),
+                        )
+                    )
+                )
+                sequential_success = sequential_success_result.scalar() or 0
+
+                # Average durations
+                intelligent_avg_result = await session.execute(
+                    select(func.avg(HealingCascadeExecution.total_duration_seconds)).where(
+                        and_(
+                            HealingCascadeExecution.instance_id == instance_id,
+                            HealingCascadeExecution.routing_strategy
+                            == ROUTING_STRATEGY_INTELLIGENT,
+                            HealingCascadeExecution.total_duration_seconds.isnot(None),
+                        )
+                    )
+                )
+                intelligent_avg_duration = intelligent_avg_result.scalar()
+
+                sequential_avg_result = await session.execute(
+                    select(func.avg(HealingCascadeExecution.total_duration_seconds)).where(
+                        and_(
+                            HealingCascadeExecution.instance_id == instance_id,
+                            HealingCascadeExecution.routing_strategy == ROUTING_STRATEGY_SEQUENTIAL,
+                            HealingCascadeExecution.total_duration_seconds.isnot(None),
+                        )
+                    )
+                )
+                sequential_avg_duration = sequential_avg_result.scalar()
+
+                return {
+                    "pattern_coverage": {
+                        "total_patterns": total_patterns,
+                        "actionable_patterns": actionable_patterns,
+                        "unique_automations_with_patterns": unique_automations,
+                        "pattern_match_threshold": self.pattern_match_threshold,
+                    },
+                    "routing_effectiveness": {
+                        "total_cascades": total_cascades,
+                        "intelligent_routing": {
+                            "total": intelligent_total,
+                            "successes": intelligent_success,
+                            "success_rate": (
+                                round(intelligent_success / intelligent_total, 4)
+                                if intelligent_total > 0
+                                else 0.0
+                            ),
+                            "avg_duration_seconds": (
+                                round(intelligent_avg_duration, 3)
+                                if intelligent_avg_duration
+                                else None
+                            ),
+                        },
+                        "sequential_routing": {
+                            "total": sequential_total,
+                            "successes": sequential_success,
+                            "success_rate": (
+                                round(sequential_success / sequential_total, 4)
+                                if sequential_total > 0
+                                else 0.0
+                            ),
+                            "avg_duration_seconds": (
+                                round(sequential_avg_duration, 3)
+                                if sequential_avg_duration
+                                else None
+                            ),
+                        },
+                        "intelligent_routing_rate": (
+                            round(intelligent_total / total_cascades, 4)
+                            if total_cascades > 0
+                            else 0.0
+                        ),
+                    },
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to get routing metrics: {e}", exc_info=True)
+            return {
+                "pattern_coverage": {"error": str(e)},
+                "routing_effectiveness": {"error": str(e)},
+            }

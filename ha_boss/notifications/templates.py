@@ -2,11 +2,11 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class NotificationType(str, Enum):
+class NotificationType(StrEnum):
     """Types of notifications that can be sent."""
 
     HEALING_FAILURE = "healing_failure"
@@ -18,7 +18,7 @@ class NotificationType(str, Enum):
     ANOMALY_DETECTED = "anomaly_detected"
 
 
-class NotificationSeverity(str, Enum):
+class NotificationSeverity(StrEnum):
     """Severity levels for notifications."""
 
     INFO = "info"
