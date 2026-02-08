@@ -99,6 +99,12 @@ healing:
   # - WiFi devices: 3-5 seconds
   # - Fast integrations (MQTT): 2-3 seconds
 
+  # Example scenarios for different deployment types:
+  # - Z-Wave network: timeout=10.0, threshold=0.5 (50% immediate, rest after mesh heal)
+  # - WiFi devices: timeout=5.0, threshold=0.8 (expect 80% within 5 seconds)
+  # - Mixed network: timeout=7.0, threshold=0.6 (balanced approach)
+  # - Fast devices: timeout=3.0, threshold=0.9 (MQTT, local integrations)
+
 notifications:
   # Send notifications when auto-healing fails
   on_healing_failure: true

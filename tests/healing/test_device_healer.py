@@ -1005,7 +1005,7 @@ class TestPartialSuccessThreshold:
     async def test_zero_entities_edge_case(self, database, ha_client):
         """Test with empty entity list.
 
-        Empty list should handle gracefully - returns True (0/0 = undefined, treated as success).
+        Empty list should handle gracefully - returns False (no entities to verify = failure).
         """
         healer = DeviceHealer(
             database=database,
@@ -1014,7 +1014,7 @@ class TestPartialSuccessThreshold:
         )
 
         result = await healer._verify_entity_states([])
-        # With 0 entities, 0/0 = 0.0 which is < 0.5, so False
+        # Empty entity list returns False (no entities to verify = failure)
         assert result is False
 
     @pytest.mark.asyncio

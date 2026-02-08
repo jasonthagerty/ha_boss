@@ -649,7 +649,10 @@ class DeviceHealer:
                     # Consider unavailable or unknown states as unavailable
                     if isinstance(state_data, dict):
                         state_value = state_data.get("state")
-                        if state_value in ("unavailable", "unknown"):
+                        if isinstance(state_value, str) and state_value in (
+                            "unavailable",
+                            "unknown",
+                        ):
                             logger.debug(f"Entity {entity_id} still {state_value} after healing")
                             unavailable_entities.append(entity_id)
                         else:

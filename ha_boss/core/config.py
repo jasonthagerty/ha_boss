@@ -296,18 +296,6 @@ class HealingConfig(BaseSettings):
         le=300.0,
         description="Timeout in seconds for device reboot operations",
     )
-    device_state_verification_timeout: float = Field(
-        default=5.0,
-        ge=1.0,
-        le=60.0,
-        description="Timeout in seconds for state verification after device healing",
-    )
-    device_state_verification_partial_success_threshold: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Threshold (0.0-1.0) for partial success in state verification",
-    )
 
     # Cascade orchestration configuration
     cascade_timeout_seconds: float = Field(
@@ -320,7 +308,7 @@ class HealingConfig(BaseSettings):
     # Device state verification
     device_state_verification_timeout: float = Field(
         default=5.0,
-        ge=0.5,
+        ge=1.0,
         le=60.0,
         description="Timeout in seconds to wait for entity states to settle after device healing",
     )
