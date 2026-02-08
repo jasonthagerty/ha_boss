@@ -304,6 +304,12 @@ class HealingConfig(BaseSettings):
         le=600.0,
         description="Timeout in seconds for cascade healing operations",
     )
+    max_concurrent_entity_healing: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum concurrent entity healing operations per cascade",
+    )
 
     # Device state verification
     device_state_verification_timeout: float = Field(

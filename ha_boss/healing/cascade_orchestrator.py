@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
 
 from sqlalchemy import and_, desc, select
 
@@ -115,6 +116,7 @@ class CascadeOrchestrator:
         escalator: NotificationEscalator,
         instance_id: str = "default",
         pattern_match_threshold: int = 2,
+        max_concurrent_healings: int = 3,
     ) -> None:
         """Initialize cascade orchestrator.
 
@@ -126,6 +128,7 @@ class CascadeOrchestrator:
             escalator: Notification escalator for complete failures
             instance_id: Instance identifier for multi-instance setups
             pattern_match_threshold: Minimum successful healing count for pattern matching
+            max_concurrent_healings: Maximum concurrent entity healing operations
         """
         self.database = database
         if pattern_match_threshold < 1:
@@ -137,6 +140,10 @@ class CascadeOrchestrator:
         self.escalator = escalator
         self.instance_id = instance_id
         self.pattern_match_threshold = pattern_match_threshold
+
+        # Initialize concurrency control
+        self.max_concurrent_healings = max_concurrent_healings
+        self._entity_healing_semaphore = asyncio.Semaphore(max_concurrent_healings)
 
     async def execute_cascade(
         self,
@@ -322,7 +329,7 @@ class CascadeOrchestrator:
         """Execute each level of the cascade."""
         start_time = datetime.now(UTC)
 
-        # Level 1: Entity-level healing
+        # Level 1: Entity-level healing (concurrent)
         logger.info(f"Attempting Level 1 (entity) healing for {context.automation_id}")
         levels_attempted.append(HealingLevel.ENTITY)
         await self._update_cascade_level(cascade_exec_id, HealingLevel.ENTITY, attempted=True)
@@ -330,17 +337,32 @@ class CascadeOrchestrator:
         entity_success = False
         final_action = None
 
-        for entity_id in context.failed_entities:
-            result = await self.entity_healer.heal(
-                entity_id=entity_id,
-                triggered_by=context.trigger_type,
-                automation_id=context.automation_id,
-                execution_id=context.execution_id,
-            )
-            entity_results[entity_id] = result.success
-            if result.success:
-                entity_success = True
-                final_action = result.final_action
+        # Heal entities concurrently with semaphore control
+        async def heal_entity_with_semaphore(entity_id: str) -> tuple[str, Any]:
+            """Heal a single entity using semaphore for concurrency control."""
+            async with self._entity_healing_semaphore:
+                result = await self.entity_healer.heal(
+                    entity_id=entity_id,
+                    triggered_by=context.trigger_type,
+                    automation_id=context.automation_id,
+                    execution_id=context.execution_id,
+                )
+                return entity_id, result
+
+        tasks = [heal_entity_with_semaphore(entity_id) for entity_id in context.failed_entities]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, result in enumerate(results):
+            entity_id = context.failed_entities[i]
+            if isinstance(result, Exception):
+                logger.error(f"Entity healing exception for {entity_id}: {result}")
+                entity_results[entity_id] = False
+            else:
+                _, heal_result = result
+                entity_results[entity_id] = heal_result.success
+                if heal_result.success:
+                    entity_success = True
+                    final_action = heal_result.final_action
 
         if entity_success:
             await self._update_cascade_level(cascade_exec_id, HealingLevel.ENTITY, success=True)
@@ -490,17 +512,32 @@ class CascadeOrchestrator:
             entity_success = False
             final_action = None
 
-            for entity_id in context.failed_entities:
-                result = await self.entity_healer.heal(
-                    entity_id=entity_id,
-                    triggered_by=context.trigger_type,
-                    automation_id=context.automation_id,
-                    execution_id=context.execution_id,
-                )
-                entity_results[entity_id] = result.success
-                if result.success:
-                    entity_success = True
-                    final_action = result.final_action
+            # Heal entities concurrently with semaphore control
+            async def heal_entity_with_semaphore(entity_id: str) -> tuple[str, Any]:
+                """Heal a single entity using semaphore for concurrency control."""
+                async with self._entity_healing_semaphore:
+                    result = await self.entity_healer.heal(
+                        entity_id=entity_id,
+                        triggered_by=context.trigger_type,
+                        automation_id=context.automation_id,
+                        execution_id=context.execution_id,
+                    )
+                    return entity_id, result
+
+            tasks = [heal_entity_with_semaphore(entity_id) for entity_id in context.failed_entities]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for i, result in enumerate(results):
+                entity_id = context.failed_entities[i]
+                if isinstance(result, Exception):
+                    logger.error(f"Entity healing exception for {entity_id}: {result}")
+                    entity_results[entity_id] = False
+                else:
+                    _, heal_result = result
+                    entity_results[entity_id] = heal_result.success
+                    if heal_result.success:
+                        entity_success = True
+                        final_action = heal_result.final_action
 
             if entity_success:
                 await self._update_cascade_level(cascade_exec_id, HealingLevel.ENTITY, success=True)
@@ -690,20 +727,35 @@ class CascadeOrchestrator:
         """
         integration_success = False
 
-        for entity_id in failed_entities:
-            try:
-                health_issue = HealthIssue(
-                    entity_id=entity_id,
-                    issue_type=ISSUE_TYPE_UNAVAILABLE,
-                    detected_at=datetime.now(UTC),
-                )
-                success = await self.integration_healer.heal(health_issue)
+        # Heal integrations concurrently with semaphore control
+        async def heal_integration_with_semaphore(entity_id: str) -> tuple[str, bool]:
+            """Heal a single integration using semaphore for concurrency control."""
+            async with self._entity_healing_semaphore:
+                try:
+                    health_issue = HealthIssue(
+                        entity_id=entity_id,
+                        issue_type=ISSUE_TYPE_UNAVAILABLE,
+                        detected_at=datetime.now(UTC),
+                    )
+                    success = await self.integration_healer.heal(health_issue)
+                    return entity_id, success
+                except Exception as e:
+                    logger.error(f"Integration healing exception for {entity_id}: {e}")
+                    return entity_id, False
+
+        tasks = [heal_integration_with_semaphore(entity_id) for entity_id in failed_entities]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, result in enumerate(results):
+            entity_id = failed_entities[i]
+            if isinstance(result, Exception):
+                logger.error(f"Integration healing exception for {entity_id}: {result}")
+                entity_results[entity_id] = False
+            else:
+                _, success = result
                 entity_results[entity_id] = success
                 if success:
                     integration_success = True
-            except Exception as e:
-                logger.error(f"Integration healing failed for {entity_id}: {e}")
-                entity_results[entity_id] = False
 
         return integration_success
 
