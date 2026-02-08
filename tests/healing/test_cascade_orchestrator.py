@@ -1082,3 +1082,144 @@ class TestErrorHandling:
             assert exec_record.device_level_success is False
             assert exec_record.integration_level_attempted is True
             assert exec_record.integration_level_success is False
+
+
+class TestConcurrencyControl:
+    """Tests for concurrent healing with semaphore rate limiting."""
+
+    @pytest.mark.asyncio
+    async def test_semaphore_limits_concurrent_healing(
+        self, database, device_healer, integration_healer, escalator
+    ):
+        """Verify max_concurrent_healings semaphore is enforced.
+
+        With max_concurrent=2 and 6 entities taking 0.2s each:
+        - Sequential: 6 * 0.2s = 1.2s
+        - Fully parallel: 1 * 0.2s = 0.2s
+        - Semaphore-limited (2): 3 batches * 0.2s = 0.6s
+
+        We verify the actual time is close to 0.6s, proving semaphore works.
+        """
+        # Create entity healer with slow async healing (0.2s per entity)
+        entity_healer = MagicMock(spec=EntityHealer)
+
+        async def slow_heal(entity_id, **kwargs):
+            await asyncio.sleep(0.2)  # Simulate slow healing
+            return EntityHealingResult(
+                entity_id=entity_id,
+                success=True,
+                actions_attempted=["retry_service_call"],
+                final_action="retry_service_call",
+                error_message=None,
+                total_duration_seconds=0.2,
+            )
+
+        entity_healer.heal = AsyncMock(side_effect=slow_heal)
+
+        # Create orchestrator with max_concurrent=2
+        orchestrator = CascadeOrchestrator(
+            database=database,
+            entity_healer=entity_healer,
+            device_healer=device_healer,
+            integration_healer=integration_healer,
+            escalator=escalator,
+            instance_id="test_instance",
+            pattern_match_threshold=2,
+            max_concurrent_healings=2,  # Only 2 concurrent healings
+        )
+
+        # Create context with 6 entities
+        context = HealingContext(
+            instance_id="test_instance",
+            automation_id="automation.test",
+            execution_id=1,
+            trigger_type="outcome_failure",
+            failed_entities=[
+                "light.bedroom",
+                "light.kitchen",
+                "light.living_room",
+                "light.bathroom",
+                "light.hallway",
+                "light.garage",
+            ],
+        )
+
+        # Execute cascade and measure time
+        start_time = asyncio.get_event_loop().time()
+        result = await orchestrator.execute_cascade(context, use_intelligent_routing=False)
+        elapsed_time = asyncio.get_event_loop().time() - start_time
+
+        # Verify success
+        assert result.success is True
+        assert result.successful_level == HealingLevel.ENTITY
+
+        # Verify all entities healed
+        assert all(result.entity_results.values())
+        assert len(result.entity_results) == 6
+
+        # Verify timing proves semaphore worked
+        # Expected: 3 batches * 0.2s = 0.6s
+        # Allow some overhead but verify it's not sequential (1.2s) or fully parallel (0.2s)
+        assert (
+            0.5 < elapsed_time < 0.9
+        ), f"Expected ~0.6s with semaphore=2, got {elapsed_time:.2f}s"
+
+        # Verify entity healer was called 6 times
+        assert entity_healer.heal.call_count == 6
+
+    @pytest.mark.asyncio
+    async def test_semaphore_with_higher_concurrency(
+        self, database, device_healer, integration_healer, escalator
+    ):
+        """Verify semaphore works with higher concurrency limit.
+
+        With max_concurrent=5 and 6 entities taking 0.2s each:
+        - Batch 1: 5 entities in parallel (0.2s)
+        - Batch 2: 1 entity (0.2s)
+        - Total: ~0.4s
+        """
+        entity_healer = MagicMock(spec=EntityHealer)
+
+        async def slow_heal(entity_id, **kwargs):
+            await asyncio.sleep(0.2)
+            return EntityHealingResult(
+                entity_id=entity_id,
+                success=True,
+                actions_attempted=["retry_service_call"],
+                final_action="retry_service_call",
+                error_message=None,
+                total_duration_seconds=0.2,
+            )
+
+        entity_healer.heal = AsyncMock(side_effect=slow_heal)
+
+        orchestrator = CascadeOrchestrator(
+            database=database,
+            entity_healer=entity_healer,
+            device_healer=device_healer,
+            integration_healer=integration_healer,
+            escalator=escalator,
+            instance_id="test_instance",
+            pattern_match_threshold=2,
+            max_concurrent_healings=5,  # Higher concurrency
+        )
+
+        context = HealingContext(
+            instance_id="test_instance",
+            automation_id="automation.test",
+            execution_id=1,
+            trigger_type="outcome_failure",
+            failed_entities=[f"light.{i}" for i in range(6)],
+        )
+
+        start_time = asyncio.get_event_loop().time()
+        result = await orchestrator.execute_cascade(context, use_intelligent_routing=False)
+        elapsed_time = asyncio.get_event_loop().time() - start_time
+
+        assert result.success is True
+        assert len(result.entity_results) == 6
+
+        # Expected: 2 batches * 0.2s = 0.4s (with some overhead)
+        assert (
+            0.3 < elapsed_time < 0.6
+        ), f"Expected ~0.4s with semaphore=5, got {elapsed_time:.2f}s"
