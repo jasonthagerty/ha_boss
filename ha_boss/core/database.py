@@ -866,6 +866,7 @@ class HealingCascadeExecution(Base):
     # Results
     final_success: Mapped[bool | None] = mapped_column(Boolean)
     total_duration_seconds: Mapped[float | None] = mapped_column(Float)
+    timeout_seconds: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
     )

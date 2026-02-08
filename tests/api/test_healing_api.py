@@ -391,10 +391,14 @@ def client(mock_service):
         with patch("ha_boss.api.app.get_service", return_value=mock_service):
             with patch("ha_boss.api.dependencies.get_service", return_value=mock_service):
                 with patch("ha_boss.api.routes.healing.get_service", return_value=mock_service):
-                    with patch("ha_boss.api.app.load_config") as mock_load_config:
-                        mock_load_config.return_value = mock_service.config
-                        app = create_app()
-                        yield TestClient(app)
+                    with patch(
+                        "ha_boss.api.routes.automations.get_service",
+                        return_value=mock_service,
+                    ):
+                        with patch("ha_boss.api.app.load_config") as mock_load_config:
+                            mock_load_config.return_value = mock_service.config
+                            app = create_app()
+                            yield TestClient(app)
 
 
 # ==================== GET /api/healing/cascade/{cascade_id} Tests ====================
@@ -601,7 +605,7 @@ def test_get_automation_health_no_executions(client, mock_service):
 
     assert data["total_executions"] == 0
     assert data["reliability_score"] == 0.0
-    assert data["last_execution_at"] is None
+    assert data["last_validation_at"] is None
 
 
 # ==================== POST /api/healing/cascade/{cascade_id}/retry Tests ====================

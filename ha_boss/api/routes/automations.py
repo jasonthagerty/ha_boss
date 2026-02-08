@@ -1,6 +1,7 @@
 """Automation management endpoints."""
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -814,3 +815,73 @@ async def report_automation_failure(
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Failed to process failure report") from None
+
+
+@router.get("/automations/{automation_id}/health")
+async def get_automation_health(
+    automation_id: str,
+    instance_id: str = Query("default", description="Instance identifier"),
+) -> dict[str, Any]:
+    """Get health status and reliability score for an automation.
+
+    Returns consecutive success/failure counts, validation gating status,
+    and reliability score based on execution history.
+
+    Args:
+        automation_id: Automation identifier (e.g., "automation.morning_lights")
+        instance_id: Instance identifier (default: "default")
+
+    Returns:
+        Health status including validation gating and reliability score
+    """
+    try:
+        service = get_service()
+
+        if not service.database:
+            raise HTTPException(status_code=503, detail="Database not initialized")
+
+        from sqlalchemy import select
+
+        from ha_boss.core.database import AutomationHealthStatus
+
+        async with service.database.async_session() as session:
+            stmt = select(AutomationHealthStatus).where(
+                AutomationHealthStatus.instance_id == instance_id,
+                AutomationHealthStatus.automation_id == automation_id,
+            )
+            result = await session.execute(stmt)
+            status = result.scalar_one_or_none()
+
+        reliability_score = 0.0
+        if status and status.total_executions > 0:
+            reliability_score = round((status.total_successes / status.total_executions) * 100, 2)
+
+        return {
+            "automation_id": automation_id,
+            "instance_id": instance_id,
+            "is_validated_healthy": status.is_validated_healthy if status else False,
+            "consecutive_successes": status.consecutive_successes if status else 0,
+            "consecutive_failures": status.consecutive_failures if status else 0,
+            "reliability_score": reliability_score,
+            "total_executions": status.total_executions if status else 0,
+            "total_successes": status.total_successes if status else 0,
+            "total_failures": status.total_failures if status else 0,
+            "last_validation_at": (
+                status.last_validation_at.isoformat()
+                if status and status.last_validation_at
+                else None
+            ),
+            "updated_at": status.updated_at.isoformat() if status and status.updated_at else None,
+        }
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"[{instance_id}] Service not initialized: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except Exception as e:
+        logger.error(
+            f"[{instance_id}] Error getting health for {automation_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to get automation health") from None

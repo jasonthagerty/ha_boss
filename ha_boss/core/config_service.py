@@ -14,7 +14,7 @@ import json
 import logging
 import os
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel
@@ -28,7 +28,7 @@ from ha_boss.core.exceptions import ConfigServiceError
 logger = logging.getLogger(__name__)
 
 
-class ConfigSource(str, Enum):
+class ConfigSource(StrEnum):
     """Source of a configuration value."""
 
     DEFAULT = "default"

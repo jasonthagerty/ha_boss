@@ -1,7 +1,7 @@
 """Pydantic models for API requests and responses."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -470,7 +470,7 @@ class ConfigInstanceTestResponse(BaseModel):
 # Automation Desired States Models
 
 
-class InferenceMethod(str, Enum):
+class InferenceMethod(StrEnum):
     """Methods for inferring automation desired states."""
 
     AI_ANALYSIS = "ai_analysis"

@@ -1,7 +1,7 @@
 """Notification manager for routing alerts to various channels."""
 
 import logging
-from enum import Enum
+from enum import StrEnum
 
 from ha_boss.core.config import Config
 from ha_boss.core.ha_client import HomeAssistantClient
@@ -14,7 +14,7 @@ from ha_boss.notifications.templates import (
 logger = logging.getLogger(__name__)
 
 
-class NotificationChannel(str, Enum):
+class NotificationChannel(StrEnum):
     """Notification delivery channels."""
 
     HOME_ASSISTANT = "home_assistant"  # HA persistent notifications

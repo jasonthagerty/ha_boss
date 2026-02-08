@@ -248,6 +248,38 @@ async def call_ha_api_with_retry(
 - Schema versioning with automatic migrations
 - Tables: entities, health_events, healing_actions, integrations, pattern_events, automation_executions, automation_service_calls
 
+### Healing Architecture
+
+**Multi-Level Cascade**: HA Boss heals entities through three escalating levels:
+1. **Entity-level** (L1): Retry service calls with alternative parameters
+2. **Device-level** (L2): Reconnect, reboot, or rediscover the device
+3. **Integration-level** (L3): Reload the entire integration
+
+**Routing Strategies**:
+- **Intelligent routing**: Uses learned patterns to jump directly to the proven healing level
+- **Sequential cascade**: Falls through L1 → L2 → L3 until healing succeeds
+
+**Pattern Learning Behavior**
+
+The cascade orchestrator learns healing patterns from successful attempts to improve future healing efficiency. However, it uses a simplified single-entity approach:
+
+**How it works:**
+- Records the first failed entity as representative of the automation
+- Stores the successful healing level (entity/device/integration)
+- Uses this pattern for all entities in future failures of the same automation
+
+**When this works well:**
+- Homogeneous entity groups (all lights, all sensors from same integration)
+- Single-entity automations (most common case)
+- Entities that share failure modes (all WiFi devices offline together)
+
+**When this is suboptimal:**
+- Mixed entity types (light + sensor + switch from different integrations)
+- Entities with different failure modes (one offline, one stale, one unknown)
+- Complex automations with heterogeneous dependencies
+
+**Future enhancement:** See Issue #210 for per-entity pattern matching proposal.
+
 ### Component Interactions
 
 ```
