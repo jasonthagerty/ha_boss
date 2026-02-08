@@ -1160,9 +1160,7 @@ class TestConcurrencyControl:
         # Verify timing proves semaphore worked
         # Expected: 3 batches * 0.2s = 0.6s
         # Allow some overhead but verify it's not sequential (1.2s) or fully parallel (0.2s)
-        assert (
-            0.5 < elapsed_time < 0.9
-        ), f"Expected ~0.6s with semaphore=2, got {elapsed_time:.2f}s"
+        assert 0.5 < elapsed_time < 0.9, f"Expected ~0.6s with semaphore=2, got {elapsed_time:.2f}s"
 
         # Verify entity healer was called 6 times
         assert entity_healer.heal.call_count == 6
@@ -1220,6 +1218,4 @@ class TestConcurrencyControl:
         assert len(result.entity_results) == 6
 
         # Expected: 2 batches * 0.2s = 0.4s (with some overhead)
-        assert (
-            0.3 < elapsed_time < 0.6
-        ), f"Expected ~0.4s with semaphore=5, got {elapsed_time:.2f}s"
+        assert 0.3 < elapsed_time < 0.6, f"Expected ~0.4s with semaphore=5, got {elapsed_time:.2f}s"
