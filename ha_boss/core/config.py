@@ -325,6 +325,20 @@ class HealingConfig(BaseSettings):
         description="Minimum ratio of entities that must recover for partial success (0.5 = 50%)",
     )
 
+    # Healing plans configuration
+    healing_plans_enabled: bool = Field(
+        default=True,
+        description="Enable YAML-based healing plans",
+    )
+    healing_plans_directory: str | None = Field(
+        default=None,
+        description="Directory for user-defined healing plan YAML files",
+    )
+    healing_plans_use_builtin: bool = Field(
+        default=True,
+        description="Load built-in healing plans",
+    )
+
 
 class NotificationsConfig(BaseSettings):
     """Notification configuration."""
