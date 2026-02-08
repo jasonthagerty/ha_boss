@@ -356,6 +356,7 @@ class HABossService:
             escalator=self.escalation_managers[instance_id],
             instance_id=instance_id,
             pattern_match_threshold=2,  # Default threshold
+            max_concurrent_healings=self.config.healing.max_concurrent_entity_healing,
         )
         logger.info(f"[{instance_id}] ✓ Cascade orchestrator initialized")
 
