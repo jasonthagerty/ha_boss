@@ -1005,6 +1005,9 @@ class TestErrorHandling:
         - 2 entities fail at L1, L2, and L3
         - All healing attempts fail
         - Cascade completion verification
+
+        Key Insight: Tests worst-case scenario where nothing works, ensuring
+        proper failure tracking, database consistency, and escalation handling.
         """
         context = HealingContext(
             instance_id="test_instance",
