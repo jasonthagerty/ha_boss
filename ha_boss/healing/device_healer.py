@@ -48,6 +48,8 @@ class DeviceHealer:
         ha_client: HomeAssistantClient,
         instance_id: str = "default",
         reboot_timeout_seconds: float = 30.0,
+        state_verification_timeout: float = 5.0,
+        state_verification_partial_threshold: float = 0.5,
     ) -> None:
         """Initialize device healer.
 
@@ -56,11 +58,15 @@ class DeviceHealer:
             ha_client: Home Assistant API client for device operations
             instance_id: Instance identifier for multi-instance setups
             reboot_timeout_seconds: Timeout for device reboot operations
+            state_verification_timeout: Timeout in seconds for state verification
+            state_verification_partial_threshold: Threshold (0.0-1.0) for partial success
         """
         self.database = database
         self.ha_client = ha_client
         self.instance_id = instance_id
         self.reboot_timeout_seconds = reboot_timeout_seconds
+        self.state_verification_timeout = state_verification_timeout
+        self.state_verification_partial_threshold = state_verification_partial_threshold
 
     async def heal(
         self,
@@ -620,31 +626,61 @@ class DeviceHealer:
     async def _verify_entity_states(self, entity_ids: list[str]) -> bool:
         """Verify that entities are now available after healing.
 
+        Implements partial success logic based on configurable threshold.
+        A healing is considered successful if the percentage of available entities
+        meets or exceeds the configured threshold.
+
         Args:
             entity_ids: List of entity IDs to check
 
         Returns:
-            True if ALL entities are now available, False otherwise
+            True if percentage of available entities meets threshold, False otherwise
         """
         try:
             # Wait briefly for entity states to settle after healing
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(self.state_verification_timeout)
+
+            available_count = 0
+            unavailable_entities: list[str] = []
 
             for entity_id in entity_ids:
                 try:
                     state_data = await self.ha_client.get_state(entity_id)
-                    # Consider unavailable or unknown states as failure
+                    # Consider unavailable or unknown states as unavailable
                     if isinstance(state_data, dict):
                         state_value = state_data.get("state")
-                        if state_value in ("unavailable", "unknown"):
+                        if isinstance(state_value, str) and state_value in (
+                            "unavailable",
+                            "unknown",
+                        ):
                             logger.debug(f"Entity {entity_id} still {state_value} after healing")
-                            return False
+                            unavailable_entities.append(entity_id)
+                        else:
+                            available_count += 1
+                    else:
+                        available_count += 1
                 except Exception as e:
                     logger.debug(f"Failed to get state for {entity_id}: {e}")
-                    return False
+                    unavailable_entities.append(entity_id)
 
-            # All entities are available
-            return True
+            # Calculate success ratio
+            total = len(entity_ids)
+            success_ratio = available_count / total if total > 0 else 0.0
+
+            # Check if we meet the threshold
+            if success_ratio >= self.state_verification_partial_threshold:
+                if unavailable_entities:
+                    logger.warning(
+                        f"Partial success: {available_count}/{total} entities recovered. "
+                        f"Still unavailable: {unavailable_entities}"
+                    )
+                return True
+            else:
+                logger.debug(
+                    f"Verification failed: only {available_count}/{total} entities recovered "
+                    f"(threshold: {self.state_verification_partial_threshold * 100:.0f}%)"
+                )
+                return False
 
         except Exception as e:
             logger.debug(f"Entity state verification failed: {e}")

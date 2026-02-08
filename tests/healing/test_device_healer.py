@@ -770,3 +770,280 @@ class TestGracefulFallback:
         assert "reconnect" not in result.actions_attempted
         assert "reboot" not in result.actions_attempted
         assert "rediscover" in result.actions_attempted
+
+
+class TestStateVerificationTimeout:
+    """Test configurable state verification timeout."""
+
+    @pytest.mark.asyncio
+    async def test_custom_verification_timeout(self, database, ha_client):
+        """Test that custom verification timeout is used."""
+        custom_timeout = 3.0
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_timeout=custom_timeout,
+        )
+        assert healer.state_verification_timeout == custom_timeout
+
+    @pytest.mark.asyncio
+    async def test_default_verification_timeout(self, database, ha_client):
+        """Test default verification timeout value."""
+        healer = DeviceHealer(database=database, ha_client=ha_client)
+        assert healer.state_verification_timeout == 5.0
+
+    @pytest.mark.asyncio
+    async def test_verification_timeout_sleep(self, database, ha_client):
+        """Test that verification waits the specified timeout duration."""
+        custom_timeout = 0.1  # Short timeout for testing
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_timeout=custom_timeout,
+        )
+
+        # Mock get_state to return available state
+        ha_client.get_state.return_value = {"state": "on"}
+
+        with patch("asyncio.sleep") as mock_sleep:
+            result = await healer._verify_entity_states(["light.test"])
+            # Verify sleep was called with the custom timeout
+            mock_sleep.assert_called_once_with(custom_timeout)
+            assert result is True
+
+
+class TestPartialSuccessThreshold:
+    """Test partial success threshold logic."""
+
+    @pytest.mark.asyncio
+    async def test_default_threshold(self, database, ha_client):
+        """Test default threshold is 50%."""
+        healer = DeviceHealer(database=database, ha_client=ha_client)
+        assert healer.state_verification_partial_threshold == 0.5
+
+    @pytest.mark.asyncio
+    async def test_custom_threshold(self, database, ha_client):
+        """Test custom threshold can be set."""
+        custom_threshold = 0.75
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=custom_threshold,
+        )
+        assert healer.state_verification_partial_threshold == custom_threshold
+
+    @pytest.mark.asyncio
+    async def test_partial_success_at_50_percent_threshold(self, database, ha_client):
+        """Test partial success with exactly 50% entities available.
+
+        4 entities: 2 available, 2 unavailable (50% threshold)
+        Should return True and log warning about partial success.
+        """
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=0.5,
+        )
+
+        # Mock states: first two available, next two unavailable
+        ha_client.get_state.side_effect = [
+            {"state": "on"},
+            {"state": "off"},
+            {"state": "unavailable"},
+            {"state": "unknown"},
+        ]
+
+        with patch("ha_boss.healing.device_healer.logger") as mock_logger:
+            result = await healer._verify_entity_states(
+                ["light.1", "light.2", "light.3", "light.4"]
+            )
+
+            assert result is True
+            # Should log warning about partial success
+            assert mock_logger.warning.called
+            warning_message = mock_logger.warning.call_args[0][0]
+            assert "Partial success" in warning_message
+            assert "2/4" in warning_message
+
+    @pytest.mark.asyncio
+    async def test_partial_success_below_threshold(self, database, ha_client):
+        """Test failure when entities below threshold.
+
+        4 entities: 1 available, 3 unavailable (25% < 50% threshold)
+        Should return False and log debug message.
+        """
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=0.5,
+        )
+
+        ha_client.get_state.side_effect = [
+            {"state": "on"},
+            {"state": "unavailable"},
+            {"state": "unavailable"},
+            {"state": "unknown"},
+        ]
+
+        with patch("ha_boss.healing.device_healer.logger") as mock_logger:
+            result = await healer._verify_entity_states(
+                ["light.1", "light.2", "light.3", "light.4"]
+            )
+
+            assert result is False
+            # Should log debug message about verification failure
+            assert mock_logger.debug.called
+            debug_message = mock_logger.debug.call_args[0][0]
+            assert "Verification failed" in debug_message
+            assert "1/4" in debug_message
+
+    @pytest.mark.asyncio
+    async def test_100_percent_success(self, database, ha_client):
+        """Test 100% success with all entities available.
+
+        All 4 entities available - should return True and NOT log warning.
+        """
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=0.5,
+        )
+
+        # All entities return available state
+        ha_client.get_state.side_effect = [
+            {"state": "on"},
+            {"state": "on"},
+            {"state": "on"},
+            {"state": "on"},
+        ]
+
+        with patch("ha_boss.healing.device_healer.logger") as mock_logger:
+            result = await healer._verify_entity_states(
+                ["light.1", "light.2", "light.3", "light.4"]
+            )
+
+            assert result is True
+            # Should NOT log warning (only logs warning for partial success)
+            mock_logger.warning.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_zero_percent_success(self, database, ha_client):
+        """Test failure with 0% entities available.
+
+        All 4 entities unavailable - should return False.
+        """
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=0.5,
+        )
+
+        ha_client.get_state.side_effect = [
+            {"state": "unavailable"},
+            {"state": "unavailable"},
+            {"state": "unknown"},
+            {"state": "unknown"},
+        ]
+
+        with patch("ha_boss.healing.device_healer.logger") as mock_logger:
+            result = await healer._verify_entity_states(
+                ["light.1", "light.2", "light.3", "light.4"]
+            )
+
+            assert result is False
+            # Should log debug message
+            assert mock_logger.debug.called
+
+    @pytest.mark.asyncio
+    async def test_custom_threshold_75_percent(self, database, ha_client):
+        """Test custom 75% threshold.
+
+        With 75% threshold, 75% entities available should succeed,
+        74% should fail, 76% should succeed.
+        """
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=0.75,
+        )
+
+        # Test at exactly 75% (3 out of 4 available)
+        ha_client.get_state.side_effect = [
+            {"state": "on"},
+            {"state": "on"},
+            {"state": "on"},
+            {"state": "unavailable"},
+        ]
+
+        result = await healer._verify_entity_states(["light.1", "light.2", "light.3", "light.4"])
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_custom_threshold_below_minimum(self, database, ha_client):
+        """Test custom threshold at 74% (below 75% minimum).
+
+        With 75% threshold, 2 out of 4 entities (50%) should fail.
+        """
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=0.75,
+        )
+
+        # Test at 50% (2 out of 4 available) - below 75% threshold
+        ha_client.get_state.side_effect = [
+            {"state": "on"},
+            {"state": "on"},
+            {"state": "unavailable"},
+            {"state": "unavailable"},
+        ]
+
+        result = await healer._verify_entity_states(["light.1", "light.2", "light.3", "light.4"])
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_zero_entities_edge_case(self, database, ha_client):
+        """Test with empty entity list.
+
+        Empty list should handle gracefully - returns False (no entities to verify = failure).
+        """
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=0.5,
+        )
+
+        result = await healer._verify_entity_states([])
+        # Empty entity list returns False (no entities to verify = failure)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_partial_success_with_exception(self, database, ha_client):
+        """Test partial success when some entities throw exceptions.
+
+        If some entity state fetches fail, they count as unavailable.
+        With 2 available + 2 exceptions = 2/4 = 50% success.
+        """
+        healer = DeviceHealer(
+            database=database,
+            ha_client=ha_client,
+            state_verification_partial_threshold=0.5,
+        )
+
+        # First two succeed, next two throw exceptions
+        ha_client.get_state.side_effect = [
+            {"state": "on"},
+            {"state": "on"},
+            Exception("API error"),
+            Exception("API error"),
+        ]
+
+        with patch("ha_boss.healing.device_healer.logger") as mock_logger:
+            result = await healer._verify_entity_states(
+                ["light.1", "light.2", "light.3", "light.4"]
+            )
+
+            # 2 available / 4 total = 50% = meets threshold
+            assert result is True
+            # Should log warning about partial success
+            assert mock_logger.warning.called

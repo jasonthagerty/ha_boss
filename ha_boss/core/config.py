@@ -305,6 +305,20 @@ class HealingConfig(BaseSettings):
         description="Timeout in seconds for cascade healing operations",
     )
 
+    # Device state verification
+    device_state_verification_timeout: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=60.0,
+        description="Timeout in seconds to wait for entity states to settle after device healing",
+    )
+    device_state_verification_partial_success_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum ratio of entities that must recover for partial success (0.5 = 50%)",
+    )
+
 
 class NotificationsConfig(BaseSettings):
     """Notification configuration."""

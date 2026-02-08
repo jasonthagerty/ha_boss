@@ -341,6 +341,8 @@ class HABossService:
             ha_client=self.ha_clients[instance_id],
             instance_id=instance_id,
             reboot_timeout_seconds=self.config.healing.device_healing_reboot_timeout,
+            state_verification_timeout=self.config.healing.device_state_verification_timeout,
+            state_verification_partial_threshold=self.config.healing.device_state_verification_partial_success_threshold,
         )
         logger.info(f"[{instance_id}] ✓ Device healer initialized")
 
