@@ -90,6 +90,15 @@ healing:
   # Device-level healing configuration
   device_healing_reboot_timeout: 30.0  # Timeout in seconds for device reboot operations
 
+  # Entity state verification after healing
+  device_state_verification_timeout: 5.0  # seconds to wait for entities to settle
+  device_state_verification_partial_success_threshold: 0.5  # 50% recovery threshold
+
+  # Common integration timing:
+  # - Z-Wave/Zigbee: 7-10 seconds (mesh healing)
+  # - WiFi devices: 3-5 seconds
+  # - Fast integrations (MQTT): 2-3 seconds
+
 notifications:
   # Send notifications when auto-healing fails
   on_healing_failure: true
