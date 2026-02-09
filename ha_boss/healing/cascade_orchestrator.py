@@ -6,9 +6,10 @@ architecture. It coordinates healing attempts across three levels:
 - Level 2: Device-level healing (reconnect, reboot, rediscover)
 - Level 3: Integration-level healing (reload integration)
 
-The orchestrator uses two routing strategies:
-1. Intelligent routing: Pattern-based jump to proven healing level
-2. Sequential cascade: Level 1 → Level 2 → Level 3 progression
+The orchestrator uses three routing strategies (in priority order):
+1. Plan-based routing: Execute a matching YAML-defined healing plan
+2. Intelligent routing: Pattern-based jump to proven healing level
+3. Sequential cascade: Level 1 → Level 2 → Level 3 progression
 """
 
 import asyncio
@@ -17,9 +18,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from sqlalchemy import and_, desc, func, select
+
+if TYPE_CHECKING:
+    from ha_boss.healing.plan_executor import PlanExecutor
+    from ha_boss.healing.plan_matcher import PlanMatcher
 
 from ha_boss.core.database import (
     AutomationOutcomePattern,
@@ -38,6 +43,7 @@ T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
 # Constants for routing strategies
+ROUTING_STRATEGY_PLAN = "plan"
 ROUTING_STRATEGY_SEQUENTIAL = "sequential"
 ROUTING_STRATEGY_INTELLIGENT = "intelligent"
 
@@ -70,7 +76,7 @@ class CascadeResult:
     """Result of a healing cascade execution."""
 
     success: bool
-    routing_strategy: str  # intelligent, sequential
+    routing_strategy: str  # plan, intelligent, sequential
     levels_attempted: list[HealingLevel]
     successful_level: HealingLevel | None
     successful_strategy: str | None  # e.g., "retry_service_call", "reconnect", "reload_integration"
@@ -121,6 +127,8 @@ class CascadeOrchestrator:
         instance_id: str = "default",
         pattern_match_threshold: int = 2,
         max_concurrent_healings: int = 3,
+        plan_matcher: "PlanMatcher | None" = None,
+        plan_executor: "PlanExecutor | None" = None,
     ) -> None:
         """Initialize cascade orchestrator.
 
@@ -133,6 +141,8 @@ class CascadeOrchestrator:
             instance_id: Instance identifier for multi-instance setups
             pattern_match_threshold: Minimum successful healing count for pattern matching
             max_concurrent_healings: Maximum concurrent entity healing operations
+            plan_matcher: Optional plan matcher for YAML plan-based routing
+            plan_executor: Optional plan executor for YAML plan-based routing
         """
         self.database = database
         if pattern_match_threshold < 1:
@@ -148,6 +158,10 @@ class CascadeOrchestrator:
         # Initialize concurrency control
         self.max_concurrent_healings = max_concurrent_healings
         self._healing_semaphore = asyncio.Semaphore(max_concurrent_healings)
+
+        # Optional plan-based routing components
+        self.plan_matcher = plan_matcher
+        self.plan_executor = plan_executor
 
     async def execute_cascade(
         self,
@@ -283,6 +297,57 @@ class CascadeOrchestrator:
 
         return processed_results
 
+    async def _try_plan_based_routing(
+        self,
+        context: HealingContext,
+        cascade_exec_id: int,
+    ) -> CascadeResult | None:
+        """Try plan-based routing using YAML healing plans.
+
+        Attempts to match the healing context against configured healing plans.
+        If a matching plan is found, executes its steps.
+
+        Args:
+            context: Healing context
+            cascade_exec_id: Cascade execution record ID
+
+        Returns:
+            CascadeResult if a plan matched and executed, None if no plan matched
+        """
+        if not self.plan_matcher or not self.plan_executor:
+            return None
+
+        try:
+            plan = self.plan_matcher.find_matching_plan(context)
+            if not plan:
+                return None
+
+            logger.info(f"Found matching healing plan '{plan.name}' for {context.automation_id}")
+
+            plan_result = await self.plan_executor.execute_plan(
+                plan=plan,
+                context=context,
+                cascade_execution_id=cascade_exec_id,
+            )
+
+            if plan_result.success:
+                return CascadeResult(
+                    success=True,
+                    routing_strategy=ROUTING_STRATEGY_PLAN,
+                    levels_attempted=[],
+                    successful_level=None,
+                    successful_strategy=f"plan:{plan.name}",
+                    entity_results=dict.fromkeys(context.failed_entities, True),
+                    total_duration_seconds=plan_result.total_duration_seconds,
+                )
+
+            logger.info(f"Plan '{plan.name}' did not resolve issue, falling through to cascade")
+            return None
+
+        except Exception as e:
+            logger.warning(f"Plan-based routing failed, falling through to cascade: {e}")
+            return None
+
     async def _execute_healing_with_routing(
         self,
         context: HealingContext,
@@ -302,6 +367,11 @@ class CascadeOrchestrator:
         Returns:
             CascadeResult with outcome
         """
+        # Try plan-based routing first (highest priority)
+        plan_result = await self._try_plan_based_routing(context, cascade_exec_id)
+        if plan_result:
+            return plan_result
+
         # Try intelligent routing first if enabled
         if use_intelligent_routing:
             pattern = await self._get_matching_pattern(context)
@@ -500,7 +570,11 @@ class CascadeOrchestrator:
                         "levels_attempted": [level.value for level in levels_attempted],
                     },
                 )
-                await self.escalator.notify_healing_failure(health_issue)
+                await self.escalator.notify_healing_failure(
+                    health_issue,
+                    error=Exception("All healing levels failed"),
+                    attempts=len(levels_attempted),
+                )
             except Exception as e:
                 logger.error(f"Failed to send escalation notification for {entity_id}: {e}")
 
