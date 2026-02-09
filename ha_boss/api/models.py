@@ -719,3 +719,82 @@ class AutomationHealthResponse(BaseModel):
     last_execution_at: datetime | None = Field(None, description="Last execution time")
     last_success_at: datetime | None = Field(None, description="Last successful execution")
     last_failure_at: datetime | None = Field(None, description="Last failed execution")
+
+
+# --- Healing Plan API Models ---
+
+
+class HealingPlanStepResponse(BaseModel):
+    """A single step in a healing plan."""
+
+    name: str = Field(..., description="Step name")
+    level: str = Field(..., description="Healing level (entity, device, integration)")
+    action: str = Field(..., description="Healing action")
+    params: dict[str, Any] = Field(default_factory=dict, description="Action parameters")
+    timeout_seconds: float = Field(..., description="Step timeout")
+
+
+class HealingPlanMatchCriteria(BaseModel):
+    """Match criteria for a healing plan."""
+
+    entity_patterns: list[str] = Field(default_factory=list, description="Entity ID glob patterns")
+    integration_domains: list[str] = Field(default_factory=list, description="Integration domains")
+    failure_types: list[str] = Field(default_factory=list, description="Failure types to match")
+
+
+class HealingPlanResponse(BaseModel):
+    """Healing plan details."""
+
+    name: str = Field(..., description="Plan name")
+    description: str = Field("", description="Plan description")
+    version: int = Field(1, description="Plan version")
+    enabled: bool = Field(True, description="Whether plan is enabled")
+    priority: int = Field(0, description="Plan priority (higher = evaluated first)")
+    source: str = Field("user", description="Plan source (builtin or user)")
+    match_criteria: HealingPlanMatchCriteria = Field(..., description="Match criteria")
+    steps: list[HealingPlanStepResponse] = Field(..., description="Healing steps")
+    tags: list[str] = Field(default_factory=list, description="Plan tags")
+
+
+class HealingPlanListResponse(BaseModel):
+    """List of healing plans."""
+
+    plans: list[HealingPlanResponse] = Field(..., description="List of plans")
+    total: int = Field(..., description="Total number of plans")
+
+
+class HealingPlanExecutionResponse(BaseModel):
+    """Healing plan execution record."""
+
+    id: int = Field(..., description="Execution ID")
+    plan_name: str = Field(..., description="Plan name")
+    success: bool = Field(..., description="Whether execution succeeded")
+    steps_attempted: int = Field(0, description="Steps attempted")
+    steps_succeeded: int = Field(0, description="Steps that succeeded")
+    total_duration_seconds: float = Field(0.0, description="Total duration")
+    created_at: datetime = Field(..., description="Execution timestamp")
+    error_message: str | None = Field(None, description="Error message if failed")
+
+
+class HealingPlanValidationResponse(BaseModel):
+    """Result of YAML plan validation."""
+
+    valid: bool = Field(..., description="Whether the plan YAML is valid")
+    errors: list[str] = Field(default_factory=list, description="Validation errors")
+    plan: HealingPlanResponse | None = Field(None, description="Parsed plan if valid")
+
+
+class HealingPlanMatchTestRequest(BaseModel):
+    """Request to test which plan matches a failure scenario."""
+
+    entity_ids: list[str] = Field(..., description="Entity IDs to test")
+    failure_type: str = Field("unavailable", description="Failure type")
+    instance_id: str = Field("default", description="Instance ID")
+
+
+class HealingPlanMatchTestResponse(BaseModel):
+    """Result of plan match testing."""
+
+    matched: bool = Field(..., description="Whether any plan matched")
+    plan_name: str | None = Field(None, description="Matched plan name")
+    plan_priority: int | None = Field(None, description="Matched plan priority")
