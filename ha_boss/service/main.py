@@ -680,6 +680,13 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 config as config_routes,
             )
 
+            # Try to import plans router (may not be available on main branch)
+            plans_routes = None
+            try:
+                from ha_boss.api.routes import plans as plans_routes
+            except ImportError:
+                logger.info("Healing plan API routes not available")
+
             # Add authentication dependency if enabled
             dependencies = []
             if self.config.api.auth_enabled:
@@ -720,6 +727,16 @@ Access the web dashboard at `/dashboard` for a visual interface.
             app.include_router(
                 healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies
             )
+
+            # Register healing plans router if available
+            if plans_routes is not None:
+                app.include_router(
+                    plans_routes.router,
+                    prefix="/api",
+                    tags=["Healing Plans"],
+                    dependencies=dependencies,
+                )
+
             app.include_router(
                 config_routes.router,
                 prefix="/api",
