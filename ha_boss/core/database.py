@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 8
+CURRENT_DB_VERSION = 9
 
 
 class Base(DeclarativeBase):
@@ -929,6 +929,104 @@ class AutomationHealthStatus(Base):
 
     def __repr__(self) -> str:
         return f"<AutomationHealthStatus({self.instance_id}:{self.automation_id}, successes={self.consecutive_successes}, failures={self.consecutive_failures})>"
+
+
+# Healing Plan Models (Schema v9)
+
+
+class HealingPlan(Base):
+    """Stored healing plan definitions.
+
+    Plans define match criteria and ordered healing steps that can be
+    loaded from YAML files or managed via the API. Plans are evaluated
+    before the existing cascade routing to provide configurable healing
+    strategies.
+    """
+
+    __tablename__ = "healing_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    description: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="user")  # builtin, user
+
+    # Match criteria (stored as JSON)
+    match_criteria: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    # Healing steps (stored as JSON list)
+    steps: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+
+    # On-failure config (stored as JSON)
+    on_failure: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    # Tags for filtering
+    tags: Mapped[list[str] | None] = mapped_column(JSON)
+
+    # Execution stats (updated by plan executor)
+    total_executions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_successes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        status = "enabled" if self.enabled else "disabled"
+        return f"<HealingPlan({self.name}, priority={self.priority}, {status})>"
+
+
+class HealingPlanExecution(Base):
+    """Track individual healing plan executions.
+
+    Records which plan was used, which entities were targeted, which steps
+    were attempted, and the overall outcome.
+    """
+
+    __tablename__ = "healing_plan_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    plan_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    automation_id: Mapped[str | None] = mapped_column(String(255))
+    cascade_execution_id: Mapped[int | None] = mapped_column(
+        Integer
+    )  # FK to HealingCascadeExecution
+
+    # Entities targeted
+    target_entities: Mapped[list[str] | None] = mapped_column(JSON)
+
+    # Step execution details (JSON list of step results)
+    steps_attempted: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+    steps_succeeded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    steps_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Results
+    overall_success: Mapped[bool | None] = mapped_column(Boolean)
+    total_duration_seconds: Mapped[float | None] = mapped_column(Float)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    __table_args__ = (Index("idx_healing_plan_executions_plan_instance", "plan_id", "instance_id"),)
+
+    def __repr__(self) -> str:
+        status = (
+            "success"
+            if self.overall_success
+            else "failed" if self.overall_success is False else "in_progress"
+        )
+        return f"<HealingPlanExecution(plan={self.plan_name}, {status})>"
 
 
 # Configuration Management Models (Schema v5)

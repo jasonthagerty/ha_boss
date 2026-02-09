@@ -155,6 +155,7 @@ def _load_migrations() -> None:
     from ha_boss.core.migrations.v6_add_healing_suppression import migrate_v5_to_v6
     from ha_boss.core.migrations.v7_add_outcome_validation import migrate_v6_to_v7
     from ha_boss.core.migrations.v8_multi_level_healing import migrate_v7_to_v8
+    from ha_boss.core.migrations.v9_add_healing_plans import migrate_v8_to_v9
 
     # Register all migrations with the registry
     MIGRATION_REGISTRY.register(
@@ -186,6 +187,11 @@ def _load_migrations() -> None:
         target_version=8,
         migrate_func=migrate_v7_to_v8,
         description="Add multi-level healing support",
+    )
+    MIGRATION_REGISTRY.register(
+        target_version=9,
+        migrate_func=migrate_v8_to_v9,
+        description="Add healing plan framework",
     )
 
 

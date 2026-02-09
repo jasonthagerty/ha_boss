@@ -67,6 +67,30 @@ class CircuitBreakerOpenError(HealingError):
     pass
 
 
+class HealingPlanError(HealingError):
+    """Base exception for healing plan errors."""
+
+    pass
+
+
+class HealingPlanNotFoundError(HealingPlanError):
+    """Healing plan not found."""
+
+    pass
+
+
+class HealingPlanValidationError(HealingPlanError):
+    """Healing plan validation failed."""
+
+    pass
+
+
+class HealingPlanExecutionError(HealingPlanError):
+    """Healing plan execution failed."""
+
+    pass
+
+
 class DatabaseError(HABossError):
     """Database operation error."""
 
