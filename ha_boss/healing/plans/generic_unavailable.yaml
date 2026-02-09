@@ -1,0 +1,33 @@
+name: generic_unavailable
+version: 1
+description: "Generic fallback healing plan for any unmatched unavailable entity"
+enabled: true
+priority: 1
+
+match:
+  failure_types:
+    - "unavailable"
+
+steps:
+  - name: "retry_service_call"
+    level: "entity"
+    action: "retry_service_call"
+    params:
+      max_attempts: 2
+      base_delay_seconds: 2.0
+    timeout_seconds: 15
+
+  - name: "reload_integration"
+    level: "integration"
+    action: "reload_integration"
+    params:
+      wait_after_seconds: 5.0
+    timeout_seconds: 30
+
+on_failure:
+  escalate: true
+  cooldown_seconds: 600
+
+tags:
+  - "generic"
+  - "fallback"

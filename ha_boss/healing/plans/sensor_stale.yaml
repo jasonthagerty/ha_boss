@@ -1,0 +1,37 @@
+name: sensor_stale
+version: 1
+description: "Healing plan for sensors reporting stale or unavailable data"
+enabled: true
+priority: 30
+
+match:
+  entity_patterns:
+    - "sensor.*"
+    - "binary_sensor.*"
+  failure_types:
+    - "unavailable"
+    - "unknown"
+
+steps:
+  - name: "retry_service_call"
+    level: "entity"
+    action: "retry_service_call"
+    params:
+      max_attempts: 2
+      base_delay_seconds: 3.0
+    timeout_seconds: 15
+
+  - name: "reload_integration"
+    level: "integration"
+    action: "reload_integration"
+    params:
+      wait_after_seconds: 5.0
+    timeout_seconds: 30
+
+on_failure:
+  escalate: true
+  cooldown_seconds: 300
+
+tags:
+  - "sensor"
+  - "stale_data"
