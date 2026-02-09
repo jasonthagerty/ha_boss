@@ -325,7 +325,7 @@ class HealingConfig(BaseSettings):
         description="Minimum ratio of entities that must recover for partial success (0.5 = 50%)",
     )
 
-    # Healing plans configuration
+    # Healing plans (YAML-based healing strategies)
     healing_plans_enabled: bool = Field(
         default=True,
         description="Enable YAML-based healing plans",

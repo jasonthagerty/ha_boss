@@ -94,6 +94,11 @@ healing:
   device_state_verification_timeout: 5.0  # seconds to wait for entities to settle
   device_state_verification_partial_success_threshold: 0.5  # 50% recovery threshold
 
+  # Healing Plans (YAML-based healing strategies)
+  healing_plans_enabled: true        # Enable YAML-based healing plans
+  healing_plans_use_builtin: true    # Load built-in plans (zigbee, zwave, wifi, etc.)
+  # healing_plans_directory: null    # Optional: path to directory with custom YAML plans
+
   # Common integration timing:
   # - Z-Wave/Zigbee: 7-10 seconds (mesh healing)
   # - WiFi devices: 3-5 seconds
