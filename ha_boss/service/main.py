@@ -360,7 +360,47 @@ class HABossService:
         )
         logger.info(f"[{instance_id}] ✓ Cascade orchestrator initialized")
 
-        # 9e. Initialize automation tracker for usage-based optimization
+        # 9e. Initialize healing plan components (if enabled)
+        if self.config.healing.healing_plans_enabled:
+            try:
+                from ha_boss.healing.plan_executor import PlanExecutor
+                from ha_boss.healing.plan_loader import PlanLoader
+                from ha_boss.healing.plan_matcher import PlanMatcher
+
+                logger.info(f"[{instance_id}] Initializing healing plan components...")
+
+                plan_loader = PlanLoader(
+                    database=self.database,
+                    builtin_enabled=self.config.healing.healing_plans_use_builtin,
+                    user_plans_directory=self.config.healing.healing_plans_directory,
+                )
+                plans = plan_loader.load_all_plans()
+                logger.info(f"[{instance_id}] Loaded {len(plans)} healing plan(s)")
+
+                plan_matcher = PlanMatcher(plans=plans)
+                plan_executor = PlanExecutor(
+                    database=self.database,
+                    entity_healer=self.entity_healers[instance_id],
+                    device_healer=self.device_healers[instance_id],
+                )
+
+                # Inject into cascade orchestrator
+                self.cascade_orchestrators[instance_id].plan_matcher = plan_matcher
+                self.cascade_orchestrators[instance_id].plan_executor = plan_executor
+
+                logger.info(f"[{instance_id}] ✓ Healing plan components initialized")
+            except ImportError:
+                logger.info(
+                    f"[{instance_id}] Healing plan modules not available, "
+                    "plan-based routing disabled"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[{instance_id}] Failed to initialize healing plans: {e}. "
+                    "Plan-based routing disabled, cascade continues normally."
+                )
+
+        # 9f. Initialize automation tracker for usage-based optimization
         logger.info(f"[{instance_id}] Initializing automation tracker...")
         ha_client_for_tracker = (
             self.ha_clients[instance_id] if self.config.outcome_validation.enabled else None
