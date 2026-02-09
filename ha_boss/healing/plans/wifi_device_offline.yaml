@@ -1,0 +1,46 @@
+name: wifi_device_offline
+version: 1
+description: "Healing plan for WiFi-connected devices (Tuya, TP-Link, Shelly, ESPHome)"
+enabled: true
+priority: 40
+
+match:
+  integration_domains:
+    - "tuya"
+    - "tplink"
+    - "shelly"
+    - "esphome"
+    - "tasmota"
+  failure_types:
+    - "unavailable"
+
+steps:
+  - name: "retry_service_call"
+    level: "entity"
+    action: "retry_service_call"
+    params:
+      max_attempts: 3
+      base_delay_seconds: 2.0
+    timeout_seconds: 20
+
+  - name: "reconnect_device"
+    level: "device"
+    action: "reconnect"
+    params:
+      wait_after_seconds: 5.0
+    timeout_seconds: 30
+
+  - name: "reload_integration"
+    level: "integration"
+    action: "reload_integration"
+    params:
+      wait_after_seconds: 10.0
+    timeout_seconds: 45
+
+on_failure:
+  escalate: true
+  cooldown_seconds: 600
+
+tags:
+  - "wifi"
+  - "connectivity"
