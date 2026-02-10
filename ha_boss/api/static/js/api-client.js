@@ -338,6 +338,77 @@ export class APIClient {
     return this.request('DELETE', `/healing/suppress/${encodeURIComponent(entityId)}?${params}`);
   }
 
+  // ==================== Healing Plan Endpoints ====================
+
+  /**
+   * List all healing plans
+   * GET /api/healing/plans
+   * @param {boolean|null} enabled - Filter by enabled status
+   * @param {string|null} tag - Filter by tag
+   */
+  async getHealingPlans(enabled = null, tag = null) {
+    const params = new URLSearchParams();
+    if (enabled !== null) params.set('enabled', enabled);
+    if (tag) params.set('tag', tag);
+    return this.request('GET', `/healing/plans?${params}`);
+  }
+
+  /**
+   * Get a specific healing plan
+   * GET /api/healing/plans/{plan_name}
+   * @param {string} planName - Plan name
+   */
+  async getHealingPlan(planName) {
+    return this.request('GET', `/healing/plans/${encodeURIComponent(planName)}`);
+  }
+
+  /**
+   * Toggle a healing plan enabled/disabled
+   * POST /api/healing/plans/{plan_name}/toggle
+   * @param {string} planName - Plan name
+   */
+  async toggleHealingPlan(planName) {
+    return this.request('POST', `/healing/plans/${encodeURIComponent(planName)}/toggle`);
+  }
+
+  /**
+   * Validate a YAML healing plan
+   * POST /api/healing/plans/validate
+   * @param {string} yamlContent - YAML content to validate
+   */
+  async validateHealingPlan(yamlContent) {
+    return this.request('POST', '/healing/plans/validate', {
+      body: JSON.stringify(yamlContent)
+    });
+  }
+
+  /**
+   * Test which plan matches a failure scenario
+   * POST /api/healing/plans/match-test
+   * @param {Array<string>} entityIds - Entity IDs to test
+   * @param {string} failureType - Failure type (unavailable, unknown)
+   * @param {string} instanceId - Instance ID
+   */
+  async testPlanMatch(entityIds, failureType, instanceId) {
+    return this.request('POST', '/healing/plans/match-test', {
+      body: JSON.stringify({
+        entity_ids: entityIds,
+        failure_type: failureType,
+        instance_id: instanceId || 'default'
+      })
+    });
+  }
+
+  /**
+   * Get execution history for a healing plan
+   * GET /api/healing/plans/{plan_name}/executions
+   * @param {string} planName - Plan name
+   * @param {number} limit - Maximum results (1-100, default: 20)
+   */
+  async getHealingPlanExecutions(planName, limit = 20) {
+    return this.request('GET', `/healing/plans/${encodeURIComponent(planName)}/executions?limit=${limit}`);
+  }
+
   // ==================== Configuration Endpoints ====================
 
   /**
