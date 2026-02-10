@@ -608,6 +608,9 @@ class Dashboard {
         case 'healing':
           await this.loadHealingTab();
           break;
+        case 'healingPlans':
+          await this.loadHealingPlansTab();
+          break;
         case 'settings':
           await this.loadSettingsTab();
           break;
@@ -1246,6 +1249,344 @@ class Dashboard {
     }
   }
 
+  // ==================== Healing Plans Tab ====================
+
+  /**
+   * Load healing plans tab
+   */
+  async loadHealingPlansTab() {
+    await this.loadHealingPlansList();
+  }
+
+  /**
+   * Load and render the healing plans list
+   */
+  async loadHealingPlansList() {
+    const listDiv = document.getElementById('healingPlansList');
+    listDiv.innerHTML = Components.spinner();
+
+    try {
+      // Read current filter
+      const filterSelect = document.getElementById('planFilterSelect');
+      const filter = filterSelect ? filterSelect.value : 'all';
+      let enabled = null;
+      if (filter === 'enabled') enabled = true;
+      if (filter === 'disabled') enabled = false;
+
+      const data = await this.api.getHealingPlans(enabled);
+      const plans = data.plans;
+
+      if (plans.length === 0) {
+        listDiv.innerHTML = '<p class="text-gray-500 text-center py-8">No healing plans found</p>';
+        return;
+      }
+
+      const headers = [
+        { text: 'Name', key: 'name' },
+        { text: 'Status', key: 'status' },
+        { text: 'Priority', key: 'priority' },
+        { text: 'Source', key: 'source' },
+        { text: 'Tags', key: 'tags' },
+        { text: 'Action', key: 'action' }
+      ];
+
+      const rows = plans.map(plan => ({
+        name: `<a href="#" onclick="window.dashboard.showPlanDetail('${Components.escapeHtml(plan.name)}'); return false;"
+                class="text-blue-600 hover:text-blue-800 font-medium">${Components.escapeHtml(plan.name)}</a>`,
+        status: plan.enabled
+          ? Components.statusBadge('healthy', 'Enabled')
+          : Components.statusBadge('error', 'Disabled'),
+        priority: String(plan.priority),
+        source: plan.source || '--',
+        tags: plan.tags && plan.tags.length > 0
+          ? plan.tags.map(t => `<span class="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs">${Components.escapeHtml(t)}</span>`).join(' ')
+          : '--',
+        action: `<button onclick="window.dashboard.togglePlan('${Components.escapeHtml(plan.name)}')"
+                  class="px-3 py-1 text-xs font-medium rounded ${plan.enabled
+                    ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                    : 'bg-green-100 text-green-700 hover:bg-green-200'}">
+                  ${plan.enabled ? 'Disable' : 'Enable'}
+                </button>`
+      }));
+
+      listDiv.innerHTML = Components.table(headers, rows, { hoverable: true, rawHtml: ['name', 'status', 'tags', 'action'] });
+
+    } catch (error) {
+      console.error('Error loading healing plans:', error);
+      listDiv.innerHTML = Components.errorAlert(`Failed to load healing plans: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle plan filter dropdown change
+   * @param {string} filter - New filter value
+   */
+  async onPlanFilterChange(filter) {
+    await this.loadHealingPlansList();
+  }
+
+  /**
+   * Show plan detail card
+   * @param {string} planName - Plan name
+   */
+  async showPlanDetail(planName) {
+    const card = document.getElementById('planDetailCard');
+    const title = document.getElementById('planDetailTitle');
+    const content = document.getElementById('planDetailContent');
+
+    title.textContent = planName;
+    content.innerHTML = Components.spinner();
+    card.classList.remove('hidden');
+
+    try {
+      const plan = await this.api.getHealingPlan(planName);
+
+      // Build match criteria section
+      let matchHtml = '<h3 class="text-sm font-semibold text-gray-700 mb-2">Match Criteria</h3>';
+      matchHtml += '<dl class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm mb-4">';
+      matchHtml += `<div><dt class="text-gray-500">Entity Patterns</dt><dd class="font-medium">${
+        plan.match_criteria.entity_patterns.length > 0
+          ? plan.match_criteria.entity_patterns.map(p => Components.escapeHtml(p)).join(', ')
+          : '<span class="text-gray-400">any</span>'
+      }</dd></div>`;
+      matchHtml += `<div><dt class="text-gray-500">Integration Domains</dt><dd class="font-medium">${
+        plan.match_criteria.integration_domains.length > 0
+          ? plan.match_criteria.integration_domains.map(d => Components.escapeHtml(d)).join(', ')
+          : '<span class="text-gray-400">any</span>'
+      }</dd></div>`;
+      matchHtml += `<div><dt class="text-gray-500">Failure Types</dt><dd class="font-medium">${
+        plan.match_criteria.failure_types.length > 0
+          ? plan.match_criteria.failure_types.map(f => Components.escapeHtml(f)).join(', ')
+          : '<span class="text-gray-400">any</span>'
+      }</dd></div>`;
+      matchHtml += '</dl>';
+
+      // Build info section
+      let infoHtml = '<div class="flex items-center space-x-4 text-sm mb-4">';
+      infoHtml += `<span>Status: ${plan.enabled ? Components.statusBadge('healthy', 'Enabled') : Components.statusBadge('error', 'Disabled')}</span>`;
+      infoHtml += `<span>Priority: <strong>${plan.priority}</strong></span>`;
+      infoHtml += `<span>Version: ${plan.version}</span>`;
+      if (plan.tags && plan.tags.length > 0) {
+        infoHtml += `<span>Tags: ${plan.tags.map(t => `<span class="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs">${Components.escapeHtml(t)}</span>`).join(' ')}</span>`;
+      }
+      infoHtml += '</div>';
+      if (plan.description) {
+        infoHtml += `<p class="text-sm text-gray-600 mb-4">${Components.escapeHtml(plan.description)}</p>`;
+      }
+
+      // Build steps table
+      let stepsHtml = '<h3 class="text-sm font-semibold text-gray-700 mb-2">Steps</h3>';
+      if (plan.steps && plan.steps.length > 0) {
+        const stepHeaders = [
+          { text: '#', key: 'num' },
+          { text: 'Name', key: 'name' },
+          { text: 'Level', key: 'level' },
+          { text: 'Action', key: 'action' },
+          { text: 'Timeout', key: 'timeout' }
+        ];
+        const stepRows = plan.steps.map((s, i) => ({
+          num: String(i + 1),
+          name: s.name,
+          level: s.level,
+          action: s.action,
+          timeout: `${s.timeout_seconds}s`
+        }));
+        stepsHtml += Components.table(stepHeaders, stepRows, { hoverable: false, striped: true });
+      } else {
+        stepsHtml += '<p class="text-gray-500 text-sm">No steps defined</p>';
+      }
+
+      // Toggle button
+      const toggleHtml = `
+        <div class="mt-4">
+          <button onclick="window.dashboard.togglePlan('${Components.escapeHtml(plan.name)}')"
+                  class="px-4 py-2 text-sm font-medium rounded ${plan.enabled
+                    ? 'bg-orange-600 text-white hover:bg-orange-700'
+                    : 'bg-green-600 text-white hover:bg-green-700'}">
+            ${plan.enabled ? 'Disable Plan' : 'Enable Plan'}
+          </button>
+        </div>
+      `;
+
+      // Execution history placeholder
+      const execHtml = `
+        <div class="mt-6">
+          <h3 class="text-sm font-semibold text-gray-700 mb-2">Execution History</h3>
+          <div id="planExecutionHistory">${Components.spinner('sm')}</div>
+        </div>
+      `;
+
+      content.innerHTML = infoHtml + matchHtml + stepsHtml + toggleHtml + execHtml;
+
+      // Load executions asynchronously
+      this.loadPlanExecutions(planName);
+
+    } catch (error) {
+      console.error('Error loading plan detail:', error);
+      content.innerHTML = Components.errorAlert(`Failed to load plan: ${error.message}`);
+    }
+  }
+
+  /**
+   * Close plan detail card
+   */
+  closePlanDetail() {
+    document.getElementById('planDetailCard').classList.add('hidden');
+  }
+
+  /**
+   * Toggle a plan enabled/disabled
+   * @param {string} planName - Plan name
+   */
+  async togglePlan(planName) {
+    try {
+      const result = await this.api.toggleHealingPlan(planName);
+      this.showToast(result.message, 'success');
+      await this.loadHealingPlansList();
+
+      // Refresh detail card if it's showing this plan
+      const title = document.getElementById('planDetailTitle');
+      if (title && title.textContent === planName) {
+        await this.showPlanDetail(planName);
+      }
+    } catch (error) {
+      console.error('Error toggling plan:', error);
+      this.showToast(`Failed to toggle plan: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Load execution history for a plan (inside detail card)
+   * @param {string} planName - Plan name
+   */
+  async loadPlanExecutions(planName) {
+    const container = document.getElementById('planExecutionHistory');
+    if (!container) return;
+
+    try {
+      const executions = await this.api.getHealingPlanExecutions(planName, 20);
+
+      if (executions.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm">No executions recorded</p>';
+        return;
+      }
+
+      const headers = [
+        { text: 'Time', key: 'time' },
+        { text: 'Success', key: 'success' },
+        { text: 'Steps', key: 'steps' },
+        { text: 'Duration', key: 'duration' },
+        { text: 'Error', key: 'error' }
+      ];
+
+      const rows = executions.map(e => ({
+        time: Components.formatTime(e.created_at, true),
+        success: e.success
+          ? '<span class="text-green-600 font-medium">Yes</span>'
+          : '<span class="text-red-600 font-medium">No</span>',
+        steps: `${e.steps_succeeded}/${e.steps_attempted}`,
+        duration: `${e.total_duration_seconds.toFixed(1)}s`,
+        error: e.error_message
+          ? `<span class="text-red-600 text-xs" title="${Components.escapeHtml(e.error_message)}">${Components.escapeHtml(Components.truncate(e.error_message, 40))}</span>`
+          : '--'
+      }));
+
+      container.innerHTML = Components.table(headers, rows, { hoverable: true, rawHtml: ['success', 'error'] });
+
+    } catch (error) {
+      console.error('Error loading plan executions:', error);
+      container.innerHTML = '<p class="text-gray-500 text-sm">Unable to load execution history</p>';
+    }
+  }
+
+  /**
+   * Test which plan matches given entities
+   */
+  async testPlanMatch() {
+    const entitiesInput = document.getElementById('matchTestEntities');
+    const failureSelect = document.getElementById('matchTestFailureType');
+    const resultDiv = document.getElementById('matchTestResult');
+
+    const entityStr = entitiesInput.value.trim();
+    if (!entityStr) {
+      this.showToast('Enter at least one entity ID', 'error');
+      return;
+    }
+
+    const entityIds = entityStr.split(',').map(e => e.trim()).filter(e => e);
+    const failureType = failureSelect.value;
+
+    resultDiv.innerHTML = Components.spinner('sm');
+    resultDiv.classList.remove('hidden');
+
+    try {
+      const result = await this.api.testPlanMatch(entityIds, failureType, this.currentInstance === 'all' ? 'default' : this.currentInstance);
+
+      if (result.matched) {
+        resultDiv.innerHTML = Components.successAlert(
+          `Matched plan: <strong>${Components.escapeHtml(result.plan_name)}</strong> (priority: ${result.plan_priority})`
+        );
+      } else {
+        resultDiv.innerHTML = `
+          <div class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
+            No matching plan found for the given entities and failure type.
+          </div>
+        `;
+      }
+    } catch (error) {
+      console.error('Error testing plan match:', error);
+      resultDiv.innerHTML = Components.errorAlert(`Match test failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Validate YAML plan content
+   */
+  async validatePlanYaml() {
+    const textarea = document.getElementById('yamlValidatorInput');
+    const resultDiv = document.getElementById('yamlValidatorResult');
+
+    const yamlContent = textarea.value.trim();
+    if (!yamlContent) {
+      this.showToast('Paste YAML content to validate', 'error');
+      return;
+    }
+
+    resultDiv.innerHTML = Components.spinner('sm');
+    resultDiv.classList.remove('hidden');
+
+    try {
+      const result = await this.api.validateHealingPlan(yamlContent);
+
+      if (result.valid) {
+        let html = Components.successAlert('Valid healing plan!');
+        if (result.plan) {
+          html += `
+            <div class="mt-2 p-3 bg-gray-50 rounded text-sm">
+              <div><strong>Name:</strong> ${Components.escapeHtml(result.plan.name)}</div>
+              <div><strong>Steps:</strong> ${result.plan.steps ? result.plan.steps.length : 0}</div>
+              <div><strong>Priority:</strong> ${result.plan.priority}</div>
+            </div>
+          `;
+        }
+        resultDiv.innerHTML = html;
+      } else {
+        let html = Components.errorAlert('Validation failed');
+        if (result.errors && result.errors.length > 0) {
+          html += `
+            <ul class="mt-2 text-sm text-red-600 list-disc list-inside">
+              ${result.errors.map(e => `<li>${Components.escapeHtml(e)}</li>`).join('')}
+            </ul>
+          `;
+        }
+        resultDiv.innerHTML = html;
+      }
+    } catch (error) {
+      console.error('Error validating YAML:', error);
+      resultDiv.innerHTML = Components.errorAlert(`Validation failed: ${error.message}`);
+    }
+  }
+
   // ==================== Settings Tab ====================
 
   /**
@@ -1790,6 +2131,9 @@ class Dashboard {
     } else if (this.currentTab === 'monitoring') {
       // Low priority: Entities (60s)
       this.pollingIntervals.entities = setInterval(() => this.loadMonitoringTab(), 60000);
+    } else if (this.currentTab === 'healingPlans') {
+      // Low priority: Plans (60s)
+      this.pollingIntervals.plans = setInterval(() => this.loadHealingPlansList(), 60000);
     }
   }
 
@@ -1800,6 +2144,7 @@ class Dashboard {
     if (this.pollingIntervals.failures) clearInterval(this.pollingIntervals.failures);
     if (this.pollingIntervals.healing) clearInterval(this.pollingIntervals.healing);
     if (this.pollingIntervals.entities) clearInterval(this.pollingIntervals.entities);
+    if (this.pollingIntervals.plans) clearInterval(this.pollingIntervals.plans);
   }
 
   /**
