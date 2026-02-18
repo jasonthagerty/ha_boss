@@ -8,6 +8,11 @@ import ChartManager from './charts.js';
 import Components from './components.js';
 
 class Dashboard {
+  // Poll intervals and limits
+  static PLANS_POLL_INTERVAL_MS = 300000;  // 5 minutes (plans are static)
+  static ENTITIES_POLL_INTERVAL_MS = 60000;
+  static PLAN_EXECUTIONS_LIMIT = 20;
+
   constructor() {
     this.api = new APIClient();
     this.charts = ChartManager;
@@ -1326,6 +1331,80 @@ class Dashboard {
   }
 
   /**
+   * Render match criteria section for plan detail
+   * @param {Object} plan - Plan object from API
+   * @returns {string} HTML string
+   */
+  _renderPlanMatchCriteria(plan) {
+    let html = '<h3 class="text-sm font-semibold text-gray-700 mb-2">Match Criteria</h3>';
+    html += '<dl class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm mb-4">';
+    html += `<div><dt class="text-gray-500">Entity Patterns</dt><dd class="font-medium">${
+      plan.match_criteria.entity_patterns.length > 0
+        ? plan.match_criteria.entity_patterns.map(p => Components.escapeHtml(p)).join(', ')
+        : '<span class="text-gray-400">any</span>'
+    }</dd></div>`;
+    html += `<div><dt class="text-gray-500">Integration Domains</dt><dd class="font-medium">${
+      plan.match_criteria.integration_domains.length > 0
+        ? plan.match_criteria.integration_domains.map(d => Components.escapeHtml(d)).join(', ')
+        : '<span class="text-gray-400">any</span>'
+    }</dd></div>`;
+    html += `<div><dt class="text-gray-500">Failure Types</dt><dd class="font-medium">${
+      plan.match_criteria.failure_types.length > 0
+        ? plan.match_criteria.failure_types.map(f => Components.escapeHtml(f)).join(', ')
+        : '<span class="text-gray-400">any</span>'
+    }</dd></div>`;
+    html += '</dl>';
+    return html;
+  }
+
+  /**
+   * Render steps table for plan detail
+   * @param {Object} plan - Plan object from API
+   * @returns {string} HTML string
+   */
+  _renderPlanSteps(plan) {
+    let html = '<h3 class="text-sm font-semibold text-gray-700 mb-2">Steps</h3>';
+    if (plan.steps && plan.steps.length > 0) {
+      const stepHeaders = [
+        { text: '#', key: 'num' },
+        { text: 'Name', key: 'name' },
+        { text: 'Level', key: 'level' },
+        { text: 'Action', key: 'action' },
+        { text: 'Timeout', key: 'timeout' }
+      ];
+      const stepRows = plan.steps.map((s, i) => ({
+        num: String(i + 1),
+        name: s.name,
+        level: s.level,
+        action: s.action,
+        timeout: `${s.timeout_seconds}s`
+      }));
+      html += Components.table(stepHeaders, stepRows, { hoverable: false, striped: true });
+    } else {
+      html += '<p class="text-gray-500 text-sm">No steps defined</p>';
+    }
+    return html;
+  }
+
+  /**
+   * Render toggle button for plan detail
+   * @param {Object} plan - Plan object from API
+   * @returns {string} HTML string
+   */
+  _renderPlanToggleButton(plan) {
+    return `
+      <div class="mt-4">
+        <button onclick="window.dashboard.togglePlan('${Components.escapeHtml(plan.name)}', this)"
+                class="px-4 py-2 text-sm font-medium rounded ${plan.enabled
+                  ? 'bg-orange-600 text-white hover:bg-orange-700'
+                  : 'bg-green-600 text-white hover:bg-green-700'}">
+          ${plan.enabled ? 'Disable Plan' : 'Enable Plan'}
+        </button>
+      </div>
+    `;
+  }
+
+  /**
    * Show plan detail card
    * @param {string} planName - Plan name
    */
@@ -1342,24 +1421,7 @@ class Dashboard {
       const plan = await this.api.getHealingPlan(planName);
 
       // Build match criteria section
-      let matchHtml = '<h3 class="text-sm font-semibold text-gray-700 mb-2">Match Criteria</h3>';
-      matchHtml += '<dl class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm mb-4">';
-      matchHtml += `<div><dt class="text-gray-500">Entity Patterns</dt><dd class="font-medium">${
-        plan.match_criteria.entity_patterns.length > 0
-          ? plan.match_criteria.entity_patterns.map(p => Components.escapeHtml(p)).join(', ')
-          : '<span class="text-gray-400">any</span>'
-      }</dd></div>`;
-      matchHtml += `<div><dt class="text-gray-500">Integration Domains</dt><dd class="font-medium">${
-        plan.match_criteria.integration_domains.length > 0
-          ? plan.match_criteria.integration_domains.map(d => Components.escapeHtml(d)).join(', ')
-          : '<span class="text-gray-400">any</span>'
-      }</dd></div>`;
-      matchHtml += `<div><dt class="text-gray-500">Failure Types</dt><dd class="font-medium">${
-        plan.match_criteria.failure_types.length > 0
-          ? plan.match_criteria.failure_types.map(f => Components.escapeHtml(f)).join(', ')
-          : '<span class="text-gray-400">any</span>'
-      }</dd></div>`;
-      matchHtml += '</dl>';
+      const matchHtml = this._renderPlanMatchCriteria(plan);
 
       // Build info section
       let infoHtml = '<div class="flex items-center space-x-4 text-sm mb-4">';
@@ -1375,38 +1437,10 @@ class Dashboard {
       }
 
       // Build steps table
-      let stepsHtml = '<h3 class="text-sm font-semibold text-gray-700 mb-2">Steps</h3>';
-      if (plan.steps && plan.steps.length > 0) {
-        const stepHeaders = [
-          { text: '#', key: 'num' },
-          { text: 'Name', key: 'name' },
-          { text: 'Level', key: 'level' },
-          { text: 'Action', key: 'action' },
-          { text: 'Timeout', key: 'timeout' }
-        ];
-        const stepRows = plan.steps.map((s, i) => ({
-          num: String(i + 1),
-          name: s.name,
-          level: s.level,
-          action: s.action,
-          timeout: `${s.timeout_seconds}s`
-        }));
-        stepsHtml += Components.table(stepHeaders, stepRows, { hoverable: false, striped: true });
-      } else {
-        stepsHtml += '<p class="text-gray-500 text-sm">No steps defined</p>';
-      }
+      const stepsHtml = this._renderPlanSteps(plan);
 
       // Toggle button
-      const toggleHtml = `
-        <div class="mt-4">
-          <button onclick="window.dashboard.togglePlan('${Components.escapeHtml(plan.name)}', this)"
-                  class="px-4 py-2 text-sm font-medium rounded ${plan.enabled
-                    ? 'bg-orange-600 text-white hover:bg-orange-700'
-                    : 'bg-green-600 text-white hover:bg-green-700'}">
-            ${plan.enabled ? 'Disable Plan' : 'Enable Plan'}
-          </button>
-        </div>
-      `;
+      const toggleHtml = this._renderPlanToggleButton(plan);
 
       // Execution history placeholder
       const execHtml = `
@@ -1423,8 +1457,15 @@ class Dashboard {
 
     } catch (error) {
       console.error('Error loading plan detail:', error);
-      card.classList.add('hidden');
-      this.showToast(`Failed to load plan: ${error.message}`, 'error');
+      content.innerHTML = `
+        <div class="text-center py-8">
+          <p class="text-red-600 mb-3">Failed to load plan details: ${Components.escapeHtml(error.message)}</p>
+          <button onclick="window.dashboard.showPlanDetail('${Components.escapeHtml(planName)}')"
+                  class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+            Retry
+          </button>
+        </div>
+      `;
     }
   }
 
@@ -1474,7 +1515,7 @@ class Dashboard {
     if (!container) return;
 
     try {
-      const executions = await this.api.getHealingPlanExecutions(planName, 20);
+      const executions = await this.api.getHealingPlanExecutions(planName, Dashboard.PLAN_EXECUTIONS_LIMIT);
 
       if (executions.length === 0) {
         container.innerHTML = '<p class="text-gray-500 text-sm">No executions recorded</p>';
@@ -2145,10 +2186,10 @@ class Dashboard {
       this.pollingIntervals.healing = setInterval(() => this.loadHealingHistory(), 30000);
     } else if (this.currentTab === 'monitoring') {
       // Low priority: Entities (60s)
-      this.pollingIntervals.entities = setInterval(() => this.loadMonitoringTab(), 60000);
+      this.pollingIntervals.entities = setInterval(() => this.loadMonitoringTab(), Dashboard.ENTITIES_POLL_INTERVAL_MS);
     } else if (this.currentTab === 'healingPlans') {
       // Low priority: Plans (60s)
-      this.pollingIntervals.plans = setInterval(() => this.loadHealingPlansList(), 60000);
+      this.pollingIntervals.plans = setInterval(() => this.loadHealingPlansList(), Dashboard.PLANS_POLL_INTERVAL_MS);
     }
   }
 

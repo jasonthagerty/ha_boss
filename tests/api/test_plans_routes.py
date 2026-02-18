@@ -259,3 +259,86 @@ def test_get_plan_executions_db_not_available():
     with patch("ha_boss.api.routes.plans.get_service", return_value=mock_service):
         response = client.get("/api/healing/plans/test_plan/executions")
         assert response.status_code == 503
+
+
+def test_validate_plan_valid_yaml():
+    """Test POST /api/healing/plans/validate with valid YAML body format."""
+    app = _create_test_app()
+    client = TestClient(app)
+
+    yaml_content = "name: test_plan\nversion: 1\nenabled: true\npriority: 5"
+
+    response = client.post("/api/healing/plans/validate", json={"yaml_content": yaml_content})
+    assert response.status_code in [200, 503]
+    if response.status_code == 200:
+        data = response.json()
+        assert "valid" in data
+        assert "errors" in data
+
+
+def test_validate_plan_missing_body():
+    """Test POST /api/healing/plans/validate with missing yaml_content returns 422."""
+    app = _create_test_app()
+    client = TestClient(app)
+
+    response = client.post("/api/healing/plans/validate", json={})
+    assert response.status_code == 422
+
+
+def test_match_test_with_match():
+    """Test POST /api/healing/plans/match-test when a plan matches."""
+    app = _create_test_app()
+    client = TestClient(app)
+
+    mock_service = MagicMock()
+    mock_orchestrator = MagicMock()
+    mock_matcher = MagicMock()
+    matched_plan = MagicMock()
+    matched_plan.name = "zigbee_device_offline"
+    matched_plan.priority = 10
+    mock_matcher.find_matching_plan = MagicMock(return_value=matched_plan)
+    mock_orchestrator.plan_matcher = mock_matcher
+    mock_service.cascade_orchestrators = {"default": mock_orchestrator}
+
+    mock_context_class = MagicMock()
+    mock_context = MagicMock()
+    mock_context_class.return_value = mock_context
+
+    with (
+        patch("ha_boss.api.routes.plans.get_service", return_value=mock_service),
+        patch("ha_boss.healing.cascade_orchestrator.HealingContext", mock_context_class),
+    ):
+        response = client.post(
+            "/api/healing/plans/match-test",
+            json={
+                "entity_ids": ["light.zigbee_bedroom"],
+                "failure_type": "unavailable",
+                "instance_id": "default",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["matched"] is True
+        assert data["plan_name"] == "zigbee_device_offline"
+        assert data["plan_priority"] == 10
+
+
+def test_list_plans_filter_by_enabled_false():
+    """Test GET /api/healing/plans?enabled=false filter."""
+    app = _create_test_app()
+    client = TestClient(app)
+
+    mock_service = MagicMock()
+    disabled_plan = _mock_plan(name="disabled_plan", enabled=False)
+    mock_matcher = MagicMock()
+    mock_matcher.plans = [disabled_plan]
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.plan_matcher = mock_matcher
+    mock_service.cascade_orchestrators = {"default": mock_orchestrator}
+
+    with patch("ha_boss.api.routes.plans.get_service", return_value=mock_service):
+        response = client.get("/api/healing/plans?enabled=false")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["plans"][0]["name"] == "disabled_plan"
