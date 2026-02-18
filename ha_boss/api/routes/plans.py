@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import (
@@ -134,7 +134,7 @@ async def toggle_plan(plan_name: str) -> dict[str, Any]:
 
 
 @router.post("/healing/plans/validate", response_model=HealingPlanValidationResponse)
-async def validate_plan(yaml_content: str) -> HealingPlanValidationResponse:
+async def validate_plan(yaml_content: str = Body(...)) -> HealingPlanValidationResponse:
     """Validate a YAML healing plan without saving it."""
     try:
         import yaml
