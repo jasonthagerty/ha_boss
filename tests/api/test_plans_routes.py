@@ -208,8 +208,7 @@ def test_validate_plan_invalid_yaml():
     yaml_content = "invalid: yaml: content:"
 
     # Since the plan_models module doesn't exist on main, this will return validation errors
-    response = client.post("/api/healing/plans/validate", json=yaml_content)
-    # FastAPI expects JSON body by default, so we get 200 with validation result
+    response = client.post("/api/healing/plans/validate", json={"yaml_content": yaml_content})
     # The actual implementation will vary based on whether plan modules exist
     assert response.status_code in [200, 422, 503]
 

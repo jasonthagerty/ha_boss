@@ -1301,7 +1301,7 @@ class Dashboard {
         tags: plan.tags && plan.tags.length > 0
           ? plan.tags.map(t => `<span class="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs">${Components.escapeHtml(t)}</span>`).join(' ')
           : '--',
-        action: `<button onclick="window.dashboard.togglePlan('${Components.escapeHtml(plan.name)}')"
+        action: `<button onclick="window.dashboard.togglePlan('${Components.escapeHtml(plan.name)}', this)"
                   class="px-3 py-1 text-xs font-medium rounded ${plan.enabled
                     ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
                     : 'bg-green-100 text-green-700 hover:bg-green-200'}">
@@ -1399,7 +1399,7 @@ class Dashboard {
       // Toggle button
       const toggleHtml = `
         <div class="mt-4">
-          <button onclick="window.dashboard.togglePlan('${Components.escapeHtml(plan.name)}')"
+          <button onclick="window.dashboard.togglePlan('${Components.escapeHtml(plan.name)}', this)"
                   class="px-4 py-2 text-sm font-medium rounded ${plan.enabled
                     ? 'bg-orange-600 text-white hover:bg-orange-700'
                     : 'bg-green-600 text-white hover:bg-green-700'}">
@@ -1423,7 +1423,8 @@ class Dashboard {
 
     } catch (error) {
       console.error('Error loading plan detail:', error);
-      content.innerHTML = Components.errorAlert(`Failed to load plan: ${error.message}`);
+      card.classList.add('hidden');
+      this.showToast(`Failed to load plan: ${error.message}`, 'error');
     }
   }
 
@@ -1437,8 +1438,13 @@ class Dashboard {
   /**
    * Toggle a plan enabled/disabled
    * @param {string} planName - Plan name
+   * @param {HTMLElement|null} btn - Button element to disable during request
    */
-  async togglePlan(planName) {
+  async togglePlan(planName, btn = null) {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Working…';
+    }
     try {
       const result = await this.api.toggleHealingPlan(planName);
       this.showToast(result.message, 'success');
@@ -1451,6 +1457,10 @@ class Dashboard {
       }
     } catch (error) {
       console.error('Error toggling plan:', error);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = btn.textContent.includes('Working') ? 'Toggle' : btn.textContent;
+      }
       this.showToast(`Failed to toggle plan: ${error.message}`, 'error');
     }
   }
