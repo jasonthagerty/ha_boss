@@ -1495,7 +1495,7 @@ class Dashboard {
 
     } catch (error) {
       console.error('Error loading plan executions:', error);
-      container.innerHTML = '<p class="text-gray-500 text-sm">Unable to load execution history</p>';
+      container.innerHTML = Components.errorAlert(`Failed to load execution history: ${error.message}`);
     }
   }
 
@@ -1514,6 +1514,11 @@ class Dashboard {
     }
 
     const entityIds = entityStr.split(',').map(e => e.trim()).filter(e => e);
+    const invalidIds = entityIds.filter(id => !/^[a-z_]+\.[a-z0-9_]+$/i.test(id));
+    if (invalidIds.length > 0) {
+      this.showToast(`Invalid entity ID format: ${invalidIds.join(', ')} (expected domain.entity_name)`, 'error');
+      return;
+    }
     const failureType = failureSelect.value;
 
     resultDiv.innerHTML = Components.spinner('sm');

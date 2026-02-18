@@ -784,6 +784,12 @@ class HealingPlanValidationResponse(BaseModel):
     plan: HealingPlanResponse | None = Field(None, description="Parsed plan if valid")
 
 
+class HealingPlanValidateRequest(BaseModel):
+    """Request to validate a YAML healing plan."""
+
+    yaml_content: str = Field(..., description="YAML plan content to validate")
+
+
 class HealingPlanMatchTestRequest(BaseModel):
     """Request to test which plan matches a failure scenario."""
 

@@ -378,7 +378,7 @@ export class APIClient {
    */
   async validateHealingPlan(yamlContent) {
     return this.request('POST', '/healing/plans/validate', {
-      body: JSON.stringify(yamlContent)
+      body: JSON.stringify({ yaml_content: yamlContent })
     });
   }
 
