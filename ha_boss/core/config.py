@@ -338,6 +338,10 @@ class HealingConfig(BaseSettings):
         default=True,
         description="Load built-in healing plans",
     )
+    community_plans_repo: str = Field(
+        default="jasonthagerty/ha-boss-community-plans",
+        description="GitHub repo for community plan sharing (org/repo format)",
+    )
 
 
 class NotificationsConfig(BaseSettings):

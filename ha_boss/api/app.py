@@ -179,6 +179,7 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
         healing,
         monitoring,
         patterns,
+        plans,
         status,
         websocket,
     )
@@ -207,6 +208,9 @@ For more information, visit the [HA Boss documentation](https://github.com/jason
         automations.router, prefix="/api", tags=["Automations"], dependencies=dependencies
     )
     app.include_router(healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies)
+    app.include_router(
+        plans.router, prefix="/api", tags=["Healing Plans"], dependencies=dependencies
+    )
     app.include_router(
         discovery.router, prefix="/api", tags=["Discovery"], dependencies=dependencies
     )

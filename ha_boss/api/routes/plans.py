@@ -1,12 +1,17 @@
 """Healing plan management API endpoints."""
 
 import logging
+import urllib.parse
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import (
+    AnonymizePlanResponse,
+    CommunityUrlResponse,
+    GeneratePlanRequest,
+    GeneratePlanResponse,
     HealingPlanExecutionResponse,
     HealingPlanListResponse,
     HealingPlanMatchCriteria,
@@ -162,6 +167,197 @@ async def validate_plan(request: HealingPlanValidateRequest) -> HealingPlanValid
         )
 
 
+@router.post("/healing/plans", response_model=HealingPlanResponse)
+async def create_plan(request: HealingPlanValidateRequest) -> HealingPlanResponse:
+    """Save a YAML healing plan to the database (source='api')."""
+    from datetime import UTC, datetime
+
+    import yaml
+
+    from ha_boss.core.database import HealingPlan
+    from ha_boss.healing.plan_models import HealingPlanDefinition
+
+    service = get_service()
+    if not service.database:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        data = yaml.safe_load(request.yaml_content)
+        plan = HealingPlanDefinition(**data)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid plan YAML: {e}") from e
+
+    try:
+        async with service.database.async_session() as session:
+            from sqlalchemy import select as sa_select
+
+            result = await session.execute(
+                sa_select(HealingPlan).where(HealingPlan.name == plan.name)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                existing.version = plan.version
+                existing.description = plan.description
+                existing.priority = plan.priority
+                existing.match_criteria = plan.match.model_dump()
+                existing.steps = [s.model_dump() for s in plan.steps]
+                existing.on_failure = plan.on_failure.model_dump()
+                existing.tags = plan.tags
+                existing.updated_at = datetime.now(UTC)
+            else:
+                db_plan = HealingPlan(
+                    name=plan.name,
+                    version=plan.version,
+                    description=plan.description,
+                    enabled=plan.enabled,
+                    priority=plan.priority,
+                    source="api",
+                    match_criteria=plan.match.model_dump(),
+                    steps=[s.model_dump() for s in plan.steps],
+                    on_failure=plan.on_failure.model_dump(),
+                    tags=plan.tags,
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+                session.add(db_plan)
+
+            await session.commit()
+
+    except Exception as e:
+        logger.error(f"Failed to save plan: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save plan: {e}") from e
+
+    return _plan_to_response(plan, source="api")
+
+
+@router.post("/healing/plans/generate", response_model=GeneratePlanResponse)
+async def generate_plan(request: GeneratePlanRequest) -> GeneratePlanResponse:
+    """Generate a healing plan using AI for the given failure context."""
+    from ha_boss.healing.plan_anonymizer import PlanAnonymizer
+    from ha_boss.healing.plan_generator import PlanGenerator
+    from ha_boss.intelligence.claude_client import ClaudeClient
+    from ha_boss.intelligence.llm_router import LLMRouter
+    from ha_boss.intelligence.ollama_client import OllamaClient
+
+    service = get_service()
+
+    # Check LLM is configured
+    if not hasattr(service.config, "intelligence"):
+        return GeneratePlanResponse(
+            generated=False,
+            yaml_content=None,
+            plan=None,
+            error="No LLM configured — set up Ollama or Claude API in config",
+        )
+
+    # Build LLM clients
+    ollama_client = None
+    claude_client = None
+
+    if service.config.intelligence.ollama_enabled:
+        ollama_client = OllamaClient(
+            url=service.config.intelligence.ollama_url,
+            model=service.config.intelligence.ollama_model,
+            timeout=service.config.intelligence.ollama_timeout_seconds,
+        )
+
+    if service.config.intelligence.claude_enabled and service.config.intelligence.claude_api_key:
+        claude_client = ClaudeClient(
+            api_key=service.config.intelligence.claude_api_key,
+            model=service.config.intelligence.claude_model,
+        )
+
+    if not ollama_client and not claude_client:
+        return GeneratePlanResponse(
+            generated=False,
+            yaml_content=None,
+            plan=None,
+            error="No LLM configured — set up Ollama or Claude API in config",
+        )
+
+    llm_router = LLMRouter(
+        ollama_client=ollama_client,
+        claude_client=claude_client,
+        local_only=not service.config.intelligence.claude_enabled,
+    )
+
+    generator = PlanGenerator(llm_router=llm_router)
+    anonymizer = PlanAnonymizer()
+
+    plan = await generator.generate_plan(
+        failed_entities=request.entity_ids,
+        failure_type=request.failure_type,
+        integration_domain=request.integration_domain,
+    )
+
+    if plan is None:
+        return GeneratePlanResponse(
+            generated=False,
+            yaml_content=None,
+            plan=None,
+            error="AI plan generation failed — LLM unavailable or returned invalid YAML",
+        )
+
+    yaml_content = anonymizer.plan_to_yaml(plan)
+    return GeneratePlanResponse(
+        generated=True,
+        yaml_content=yaml_content,
+        plan=_plan_to_response(plan, source="ai_generated"),
+        error=None,
+    )
+
+
+@router.post("/healing/plans/anonymize", response_model=AnonymizePlanResponse)
+async def anonymize_plan(request: HealingPlanValidateRequest) -> AnonymizePlanResponse:
+    """Anonymize a healing plan for community sharing."""
+    import yaml
+
+    from ha_boss.healing.plan_anonymizer import PlanAnonymizer
+    from ha_boss.healing.plan_models import HealingPlanDefinition
+
+    try:
+        data = yaml.safe_load(request.yaml_content)
+        plan = HealingPlanDefinition(**data)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid plan YAML: {e}") from e
+
+    anonymizer = PlanAnonymizer()
+    anon_plan = anonymizer.anonymize(plan)
+    yaml_content = anonymizer.plan_to_yaml(anon_plan)
+
+    return AnonymizePlanResponse(
+        yaml_content=yaml_content,
+        plan=_plan_to_response(anon_plan, source="anonymized"),
+    )
+
+
+@router.post("/healing/plans/community-url", response_model=CommunityUrlResponse)
+async def get_community_url(request: HealingPlanValidateRequest) -> CommunityUrlResponse:
+    """Get a GitHub URL to share the healing plan with the community."""
+    import yaml
+
+    from ha_boss.healing.plan_models import HealingPlanDefinition
+
+    service = get_service()
+
+    try:
+        data = yaml.safe_load(request.yaml_content)
+        plan = HealingPlanDefinition(**data)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid plan YAML: {e}") from e
+
+    repo = service.config.healing.community_plans_repo
+    title = f"Healing Plan: {plan.name}"
+    body = f"```yaml\n{request.yaml_content}\n```"
+
+    encoded_title = urllib.parse.quote(title)
+    encoded_body = urllib.parse.quote(body)
+    url = f"https://github.com/{repo}/issues/new?title={encoded_title}&body={encoded_body}"
+
+    return CommunityUrlResponse(url=url, repo=repo)
+
+
 @router.post("/healing/plans/match-test", response_model=HealingPlanMatchTestResponse)
 async def match_test(request: HealingPlanMatchTestRequest) -> HealingPlanMatchTestResponse:
     """Test which plan would match a given failure scenario."""
@@ -224,8 +420,8 @@ async def get_plan_executions(
                 HealingPlanExecutionResponse(
                     id=exc.id,
                     plan_name=exc.plan_name,
-                    success=exc.success or False,
-                    steps_attempted=exc.steps_attempted or 0,
+                    success=exc.overall_success or False,
+                    steps_attempted=len(exc.steps_attempted or []),
                     steps_succeeded=exc.steps_succeeded or 0,
                     total_duration_seconds=exc.total_duration_seconds or 0.0,
                     created_at=exc.created_at,

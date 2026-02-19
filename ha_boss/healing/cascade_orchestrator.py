@@ -372,6 +372,10 @@ class CascadeOrchestrator:
         if plan_result:
             return plan_result
 
+        # If plan framework is active but no plan matched, flag for AI generation
+        if self.plan_matcher and self.database:
+            await self._flag_plan_generation_suggested(cascade_exec_id)
+
         # Try intelligent routing first if enabled
         if use_intelligent_routing:
             pattern = await self._get_matching_pattern(context)
@@ -1069,6 +1073,32 @@ class CascadeOrchestrator:
 
         except Exception as e:
             logger.error(f"Failed to record healing pattern: {e}", exc_info=True)
+
+    async def _flag_plan_generation_suggested(self, cascade_exec_id: int) -> None:
+        """Mark cascade execution as a candidate for AI plan generation.
+
+        Called when the plan framework is active but no plan matched the failure.
+
+        Args:
+            cascade_exec_id: Cascade execution record ID
+        """
+        try:
+            async with self.database.async_session() as session:
+                stmt = select(HealingCascadeExecution).where(
+                    HealingCascadeExecution.id == cascade_exec_id
+                )
+                result = await session.execute(stmt)
+                cascade_exec = result.scalar_one_or_none()
+
+                if cascade_exec:
+                    cascade_exec.plan_generation_suggested = True
+                    await session.commit()
+                    logger.debug(
+                        f"Flagged cascade {cascade_exec_id} for AI plan generation suggestion"
+                    )
+
+        except Exception as e:
+            logger.warning(f"Failed to flag cascade {cascade_exec_id} for plan generation: {e}")
 
     async def _update_pattern_success(self, pattern_id: int) -> None:
         """Increment healing success count for pattern.
