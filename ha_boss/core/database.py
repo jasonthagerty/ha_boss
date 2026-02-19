@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 9
+CURRENT_DB_VERSION = 10
 
 
 class Base(DeclarativeBase):
