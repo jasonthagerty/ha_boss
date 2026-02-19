@@ -1261,6 +1261,7 @@ class Dashboard {
    */
   async loadHealingPlansTab() {
     await this.loadHealingPlansList();
+    this.loadCascadeHistory();  // Non-blocking, runs in background
   }
 
   /**
@@ -1640,6 +1641,179 @@ class Dashboard {
     } catch (error) {
       console.error('Error validating YAML:', error);
       resultDiv.innerHTML = Components.errorAlert(`Validation failed: ${error.message}`);
+    }
+  }
+
+  // ==================== AI Plan Generator ====================
+
+  /**
+   * Generate a healing plan using AI
+   */
+  async generatePlan() {
+    const entitiesInput = document.getElementById('planGenEntities');
+    const failureSelect = document.getElementById('planGenFailureType');
+    const domainInput = document.getElementById('planGenDomain');
+    const resultDiv = document.getElementById('planGenResult');
+    const yamlTextarea = document.getElementById('planGenYaml');
+    const button = document.getElementById('planGenButton');
+    const statusDiv = document.getElementById('planGenStatus');
+
+    const entityStr = entitiesInput.value.trim();
+    if (!entityStr) {
+      this.showToast('Enter at least one entity ID', 'error');
+      return;
+    }
+
+    const entityIds = entityStr.split(',').map(e => e.trim()).filter(e => e);
+    const failureType = failureSelect.value;
+    const domain = domainInput.value.trim() || null;
+
+    button.disabled = true;
+    button.textContent = 'Generating...';
+    statusDiv.innerHTML = '';
+
+    try {
+      const instanceId = this.currentInstance === 'all' ? 'default' : this.currentInstance;
+      const result = await this.api.generateHealingPlan(entityIds, failureType, domain, instanceId);
+
+      if (result.generated && result.yaml_content) {
+        yamlTextarea.value = result.yaml_content;
+        resultDiv.classList.remove('hidden');
+        statusDiv.innerHTML = Components.successAlert('Plan generated! Review the YAML, then save or share.');
+      } else {
+        statusDiv.innerHTML = Components.errorAlert(result.error || 'Plan generation failed');
+        resultDiv.classList.add('hidden');
+      }
+    } catch (error) {
+      console.error('Error generating plan:', error);
+      statusDiv.innerHTML = Components.errorAlert(`Generation failed: ${error.message}`);
+      resultDiv.classList.add('hidden');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Generate Plan \u25B6';
+    }
+  }
+
+  /**
+   * Save the generated YAML plan to the database
+   */
+  async saveGeneratedPlan() {
+    const yamlTextarea = document.getElementById('planGenYaml');
+    const statusDiv = document.getElementById('planGenStatus');
+
+    const yamlContent = yamlTextarea.value.trim();
+    if (!yamlContent) {
+      this.showToast('No plan to save', 'error');
+      return;
+    }
+
+    statusDiv.innerHTML = Components.spinner('sm');
+
+    try {
+      const result = await this.api.saveHealingPlan(yamlContent);
+      statusDiv.innerHTML = Components.successAlert(`Plan "${Components.escapeHtml(result.name)}" saved successfully!`);
+      // Refresh the plan list
+      await this.loadHealingPlansList();
+      this.showToast('Plan saved!', 'success');
+    } catch (error) {
+      console.error('Error saving plan:', error);
+      statusDiv.innerHTML = Components.errorAlert(`Save failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Anonymize the current plan YAML and open GitHub sharing URL
+   */
+  async anonymizeAndShare() {
+    const yamlTextarea = document.getElementById('planGenYaml');
+    const statusDiv = document.getElementById('planGenStatus');
+
+    const yamlContent = yamlTextarea.value.trim();
+    if (!yamlContent) {
+      this.showToast('No plan to share', 'error');
+      return;
+    }
+
+    statusDiv.innerHTML = Components.spinner('sm');
+
+    try {
+      // Step 1: Anonymize
+      const anonResult = await this.api.anonymizePlan(yamlContent);
+
+      // Update the textarea with anonymized version
+      yamlTextarea.value = anonResult.yaml_content;
+
+      // Step 2: Get community URL
+      const urlResult = await this.api.getCommunityUrl(anonResult.yaml_content);
+
+      // Open in new tab
+      window.open(urlResult.url, '_blank', 'noopener,noreferrer');
+      statusDiv.innerHTML = Components.successAlert(
+        `Anonymized! GitHub issue opened in new tab. Repo: ${Components.escapeHtml(urlResult.repo)}`
+      );
+    } catch (error) {
+      console.error('Error sharing plan:', error);
+      statusDiv.innerHTML = Components.errorAlert(`Share failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Load cascade history into the cascade history section of the Healing Plans tab
+   */
+  async loadCascadeHistory() {
+    const container = document.getElementById('cascadeHistoryContainer');
+    if (!container) return;
+
+    try {
+      const cascades = await this.api.getCascades(
+        this.currentInstance === 'all' ? null : this.currentInstance,
+        20,
+        true  // plan_suggested_only = true (cascades without matching plan)
+      );
+
+      if (!cascades || cascades.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-4 text-sm">No cascades found without a matching plan.</p>';
+        return;
+      }
+
+      const headers = ['Time', 'Automation', 'Entities', 'Outcome', ''];
+      const rows = cascades.map(c => ({
+        'Time': Components.escapeHtml(new Date(c.created_at).toLocaleString()),
+        'Automation': Components.escapeHtml(Components.truncate(c.automation_id || 'unknown', 30)),
+        'Entities': c.failed_entities && c.failed_entities.length > 0
+          ? Components.escapeHtml(c.failed_entities.slice(0, 2).join(', ') + (c.failed_entities.length > 2 ? ` +${c.failed_entities.length - 2}` : ''))
+          : '\u2014',
+        'Outcome': c.final_success === true
+          ? '<span class="text-green-600 text-xs font-medium">Healed</span>'
+          : c.final_success === false
+            ? '<span class="text-red-600 text-xs font-medium">Failed</span>'
+            : '<span class="text-gray-500 text-xs">In progress</span>',
+        '': `<button onclick="window.dashboard.prefillFromCascade(${JSON.stringify(c.failed_entities || []).replace(/"/g, '&quot;')})"
+                    class="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded hover:bg-purple-200">
+               Generate \u2728
+             </button>`
+      }));
+
+      container.innerHTML = Components.table(headers, rows, { hoverable: true, rawHtml: ['Outcome', ''] });
+
+    } catch (error) {
+      console.error('Error loading cascade history:', error);
+      container.innerHTML = Components.errorAlert(`Failed to load cascades: ${error.message}`);
+    }
+  }
+
+  /**
+   * Pre-fill the AI Plan Generator form from a cascade's entity IDs
+   * @param {Array<string>} entityIds - Entity IDs to pre-fill
+   */
+  prefillFromCascade(entityIds) {
+    const entitiesInput = document.getElementById('planGenEntities');
+    if (entitiesInput && entityIds && entityIds.length > 0) {
+      entitiesInput.value = entityIds.join(', ');
+      // Scroll to generator section
+      entitiesInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      entitiesInput.focus();
+      this.showToast('Entity IDs pre-filled \u2014 click Generate Plan to create a plan', 'success');
     }
   }
 

@@ -712,6 +712,83 @@ async def get_cascade_details(
         raise HTTPException(status_code=500, detail="Failed to retrieve cascade details") from None
 
 
+@router.get("/healing/cascades", response_model=list[HealingCascadeResponse])
+async def list_cascades(
+    instance_id: str = Query("all", description="Instance ID or 'all' for all instances"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum cascades to return"),
+    plan_suggested_only: bool = Query(
+        False, description="Only return cascades where AI plan generation was suggested"
+    ),
+) -> list[HealingCascadeResponse]:
+    """List recent healing cascade executions.
+
+    Returns recent cascade executions with their routing strategy and outcome.
+    Use plan_suggested_only=true to find cascades that had no matching plan.
+
+    Args:
+        instance_id: Instance ID or 'all' for aggregate
+        limit: Maximum results to return
+        plan_suggested_only: If True, only return cascades where plan_generation_suggested is True
+
+    Returns:
+        List of cascade execution records
+
+    Raises:
+        HTTPException: Database not available (503) or error (500)
+    """
+    from sqlalchemy import desc, select
+
+    service = get_service()
+    if not service.database:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        async with service.database.async_session() as session:
+            stmt = select(HealingCascadeExecution).order_by(
+                desc(HealingCascadeExecution.created_at)
+            )
+
+            if instance_id != "all":
+                stmt = stmt.where(HealingCascadeExecution.instance_id == instance_id)
+
+            if plan_suggested_only:
+                stmt = stmt.where(HealingCascadeExecution.plan_generation_suggested.is_(True))
+
+            stmt = stmt.limit(limit)
+
+            result = await session.execute(stmt)
+            cascades = result.scalars().all()
+
+            return [
+                HealingCascadeResponse(
+                    id=c.id,
+                    instance_id=c.instance_id,
+                    automation_id=c.automation_id,
+                    execution_id=c.execution_id,
+                    trigger_type=c.trigger_type,
+                    routing_strategy=c.routing_strategy,
+                    entity_level_attempted=c.entity_level_attempted,
+                    entity_level_success=c.entity_level_success,
+                    device_level_attempted=c.device_level_attempted,
+                    device_level_success=c.device_level_success,
+                    integration_level_attempted=c.integration_level_attempted,
+                    integration_level_success=c.integration_level_success,
+                    final_success=c.final_success,
+                    total_duration_seconds=c.total_duration_seconds,
+                    created_at=c.created_at,
+                    completed_at=c.completed_at,
+                    plan_generation_suggested=getattr(c, "plan_generation_suggested", False),
+                    entity_actions=[],  # Not fetched for list view
+                    device_actions=[],
+                )
+                for c in cascades
+            ]
+
+    except Exception as e:
+        logger.error(f"Failed to fetch cascade list: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch cascades: {e}") from e
+
+
 @router.get("/healing/statistics", response_model=HealingStatisticsResponse)
 async def get_healing_statistics(
     instance_id: str = Query(..., description="Instance ID"),
