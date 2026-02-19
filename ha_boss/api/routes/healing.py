@@ -5,7 +5,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Path, Query
-from sqlalchemy import func
+from sqlalchemy import desc, func
+from sqlalchemy import select as sa_select
 
 from ha_boss.api.app import get_service
 from ha_boss.api.models import (
@@ -736,15 +737,13 @@ async def list_cascades(
     Raises:
         HTTPException: Database not available (503) or error (500)
     """
-    from sqlalchemy import desc, select
-
     service = get_service()
     if not service.database:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
         async with service.database.async_session() as session:
-            stmt = select(HealingCascadeExecution).order_by(
+            stmt = sa_select(HealingCascadeExecution).order_by(
                 desc(HealingCascadeExecution.created_at)
             )
 
@@ -777,7 +776,7 @@ async def list_cascades(
                     total_duration_seconds=c.total_duration_seconds,
                     created_at=c.created_at,
                     completed_at=c.completed_at,
-                    plan_generation_suggested=getattr(c, "plan_generation_suggested", False),
+                    plan_generation_suggested=c.plan_generation_suggested,
                     entity_actions=[],  # Not fetched for list view
                     device_actions=[],
                 )

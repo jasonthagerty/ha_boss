@@ -1776,23 +1776,25 @@ class Dashboard {
         return;
       }
 
-      const headers = ['Time', 'Automation', 'Entities', 'Outcome', ''];
-      const rows = cascades.map(c => ({
-        'Time': Components.escapeHtml(new Date(c.created_at).toLocaleString()),
-        'Automation': Components.escapeHtml(Components.truncate(c.automation_id || 'unknown', 30)),
-        'Entities': c.failed_entities && c.failed_entities.length > 0
-          ? Components.escapeHtml(c.failed_entities.slice(0, 2).join(', ') + (c.failed_entities.length > 2 ? ` +${c.failed_entities.length - 2}` : ''))
-          : '\u2014',
-        'Outcome': c.final_success === true
-          ? '<span class="text-green-600 text-xs font-medium">Healed</span>'
-          : c.final_success === false
-            ? '<span class="text-red-600 text-xs font-medium">Failed</span>'
-            : '<span class="text-gray-500 text-xs">In progress</span>',
-        '': `<button onclick="window.dashboard.prefillFromCascade(${JSON.stringify(c.failed_entities || []).replace(/"/g, '&quot;')})"
-                    class="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded hover:bg-purple-200">
-               Generate \u2728
-             </button>`
-      }));
+      const headers = ['Time', 'Automation', 'Outcome', ''];
+      const rows = cascades.map(c => {
+        // Store entity IDs in a data attribute to avoid XSS via inline event handlers
+        const entitiesJson = Components.escapeHtml(JSON.stringify(c.entity_ids || []));
+        return {
+          'Time': Components.escapeHtml(new Date(c.created_at).toLocaleString()),
+          'Automation': Components.escapeHtml(Components.truncate(c.automation_id || 'unknown', 30)),
+          'Outcome': c.final_success === true
+            ? '<span class="text-green-600 text-xs font-medium">Healed</span>'
+            : c.final_success === false
+              ? '<span class="text-red-600 text-xs font-medium">Failed</span>'
+              : '<span class="text-gray-500 text-xs">In progress</span>',
+          '': `<button data-entities="${entitiesJson}"
+                      onclick="window.dashboard.prefillFromCascadeBtn(this)"
+                      class="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded hover:bg-purple-200">
+                 Generate \u2728
+               </button>`,
+        };
+      });
 
       container.innerHTML = Components.table(headers, rows, { hoverable: true, rawHtml: ['Outcome', ''] });
 
@@ -1806,6 +1808,20 @@ class Dashboard {
    * Pre-fill the AI Plan Generator form from a cascade's entity IDs
    * @param {Array<string>} entityIds - Entity IDs to pre-fill
    */
+  /**
+   * Thin wrapper called from the Generate button's data-entities attribute.
+   * Reads entity IDs from the button's data attribute (XSS-safe).
+   * @param {HTMLElement} btn - The clicked button element
+   */
+  prefillFromCascadeBtn(btn) {
+    try {
+      const entityIds = JSON.parse(btn.dataset.entities || '[]');
+      this.prefillFromCascade(entityIds);
+    } catch (e) {
+      console.error('Failed to parse entity IDs from button', e);
+    }
+  }
+
   prefillFromCascade(entityIds) {
     const entitiesInput = document.getElementById('planGenEntities');
     if (entitiesInput && entityIds && entityIds.length > 0) {
@@ -1813,7 +1829,7 @@ class Dashboard {
       // Scroll to generator section
       entitiesInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
       entitiesInput.focus();
-      this.showToast('Entity IDs pre-filled \u2014 click Generate Plan to create a plan', 'success');
+      this.showToast('Entity IDs pre-filled \u2014 click Generate Plan to create a plan', 'info');
     }
   }
 

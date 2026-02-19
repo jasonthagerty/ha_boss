@@ -61,6 +61,7 @@ def mock_cascade_executions():
             total_duration_seconds=2.5,
             created_at=now - timedelta(hours=2),
             completed_at=now - timedelta(hours=2, minutes=-1),
+            plan_generation_suggested=False,
         ),
         HealingCascadeExecution(
             id=2,
@@ -80,6 +81,7 @@ def mock_cascade_executions():
             total_duration_seconds=8.3,
             created_at=now - timedelta(hours=1),
             completed_at=now - timedelta(hours=1, minutes=-2),
+            plan_generation_suggested=False,
         ),
         HealingCascadeExecution(
             id=3,
@@ -99,6 +101,7 @@ def mock_cascade_executions():
             total_duration_seconds=15.7,
             created_at=now - timedelta(minutes=30),
             completed_at=now - timedelta(minutes=28),
+            plan_generation_suggested=False,
         ),
     ]
 
