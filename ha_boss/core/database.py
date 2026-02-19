@@ -872,6 +872,9 @@ class HealingCascadeExecution(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # AI plan generation
+    plan_generation_suggested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     __table_args__ = (
         Index("idx_healing_cascade_executions_instance_automation", "instance_id", "automation_id"),
     )

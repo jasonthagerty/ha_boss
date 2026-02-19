@@ -140,6 +140,7 @@ def _build_cascade_response(
         total_duration_seconds=cascade.total_duration_seconds,
         created_at=cascade.created_at,
         completed_at=cascade.completed_at,
+        plan_generation_suggested=getattr(cascade, "plan_generation_suggested", False),
         entity_actions=[
             EntityActionResponse(
                 id=action.id,

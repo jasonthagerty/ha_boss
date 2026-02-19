@@ -652,6 +652,12 @@ class HealingCascadeResponse(BaseModel):
     created_at: datetime = Field(..., description="When cascade was initiated")
     completed_at: datetime | None = Field(None, description="When cascade completed")
 
+    # AI plan generation flag
+    plan_generation_suggested: bool = Field(
+        default=False,
+        description="Whether AI plan generation was suggested (no plan matched)",
+    )
+
     # Child actions
     entity_actions: list[EntityActionResponse] = Field(
         default_factory=list, description="Entity-level healing actions performed"
@@ -804,3 +810,35 @@ class HealingPlanMatchTestResponse(BaseModel):
     matched: bool = Field(..., description="Whether any plan matched")
     plan_name: str | None = Field(None, description="Matched plan name")
     plan_priority: int | None = Field(None, description="Matched plan priority")
+
+
+class GeneratePlanRequest(BaseModel):
+    """Request to generate a healing plan using AI."""
+
+    entity_ids: list[str] = Field(..., description="Entity IDs that failed")
+    failure_type: str = Field(default="unavailable", description="Type of failure")
+    integration_domain: str | None = Field(None, description="Optional integration domain")
+    instance_id: str = Field(default="default", description="Home Assistant instance ID")
+
+
+class GeneratePlanResponse(BaseModel):
+    """Response from AI healing plan generation."""
+
+    generated: bool = Field(..., description="Whether a plan was successfully generated")
+    yaml_content: str | None = Field(None, description="Generated YAML string")
+    plan: "HealingPlanResponse | None" = Field(None, description="Parsed plan details")
+    error: str | None = Field(None, description="Error message if generation failed")
+
+
+class AnonymizePlanResponse(BaseModel):
+    """Response from healing plan anonymization."""
+
+    yaml_content: str = Field(..., description="Anonymized YAML string")
+    plan: "HealingPlanResponse" = Field(..., description="Parsed anonymized plan")
+
+
+class CommunityUrlResponse(BaseModel):
+    """Response with GitHub community sharing URL."""
+
+    url: str = Field(..., description="GitHub new-issue URL with pre-filled YAML")
+    repo: str = Field(..., description="Community plans repository (org/repo)")
