@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 9
+CURRENT_DB_VERSION = 10
 
 
 class Base(DeclarativeBase):
@@ -871,6 +871,9 @@ class HealingCascadeExecution(Base):
         DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    # AI plan generation
+    plan_generation_suggested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     __table_args__ = (
         Index("idx_healing_cascade_executions_instance_automation", "instance_id", "automation_id"),
