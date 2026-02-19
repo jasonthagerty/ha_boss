@@ -199,6 +199,7 @@ async def create_plan(request: HealingPlanValidateRequest) -> HealingPlanRespons
             if existing:
                 existing.version = plan.version
                 existing.description = plan.description
+                existing.enabled = plan.enabled
                 existing.priority = plan.priority
                 existing.match_criteria = plan.match.model_dump()
                 existing.steps = [s.model_dump() for s in plan.steps]
@@ -234,7 +235,8 @@ async def create_plan(request: HealingPlanValidateRequest) -> HealingPlanRespons
 @router.post("/healing/plans/generate", response_model=GeneratePlanResponse)
 async def generate_plan(request: GeneratePlanRequest) -> GeneratePlanResponse:
     """Generate a healing plan using AI for the given failure context."""
-    from ha_boss.healing.plan_anonymizer import PlanAnonymizer
+    import yaml as _yaml
+
     from ha_boss.healing.plan_generator import PlanGenerator
     from ha_boss.intelligence.claude_client import ClaudeClient
     from ha_boss.intelligence.llm_router import LLMRouter
@@ -283,7 +285,6 @@ async def generate_plan(request: GeneratePlanRequest) -> GeneratePlanResponse:
     )
 
     generator = PlanGenerator(llm_router=llm_router)
-    anonymizer = PlanAnonymizer()
 
     plan = await generator.generate_plan(
         failed_entities=request.entity_ids,
@@ -299,7 +300,11 @@ async def generate_plan(request: GeneratePlanRequest) -> GeneratePlanResponse:
             error="AI plan generation failed — LLM unavailable or returned invalid YAML",
         )
 
-    yaml_content = anonymizer.plan_to_yaml(plan)
+    yaml_content = _yaml.dump(
+        plan.model_dump(exclude_none=True),
+        default_flow_style=False,
+        allow_unicode=True,
+    )
     return GeneratePlanResponse(
         generated=True,
         yaml_content=yaml_content,
@@ -349,11 +354,21 @@ async def get_community_url(request: HealingPlanValidateRequest) -> CommunityUrl
 
     repo = service.config.healing.community_plans_repo
     title = f"Healing Plan: {plan.name}"
-    body = f"```yaml\n{request.yaml_content}\n```"
+    # Escape triple backticks in YAML to prevent breaking the markdown code fence
+    safe_yaml = request.yaml_content.replace("```", "~~~")
+    body = f"```yaml\n{safe_yaml}\n```"
 
-    encoded_title = urllib.parse.quote(title)
-    encoded_body = urllib.parse.quote(body)
+    encoded_title = urllib.parse.quote(title, safe="")
+    encoded_body = urllib.parse.quote(body, safe="")
     url = f"https://github.com/{repo}/issues/new?title={encoded_title}&body={encoded_body}"
+
+    # Truncate body if URL exceeds GitHub's practical limit (~8000 chars)
+    if len(url) > 8000:
+        max_yaml_len = max(100, len(request.yaml_content) - (len(url) - 8000) - 50)
+        safe_yaml = request.yaml_content[:max_yaml_len].replace("```", "~~~") + "\n# (truncated)"
+        body = f"```yaml\n{safe_yaml}\n```"
+        encoded_body = urllib.parse.quote(body, safe="")
+        url = f"https://github.com/{repo}/issues/new?title={encoded_title}&body={encoded_body}"
 
     return CommunityUrlResponse(url=url, repo=repo)
 

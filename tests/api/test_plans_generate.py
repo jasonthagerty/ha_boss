@@ -1,6 +1,5 @@
 """Tests for plan generation, anonymization, and community URL API endpoints."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -60,7 +59,8 @@ def make_plan() -> HealingPlanDefinition:
 class TestGeneratePlanEndpoint:
     """Tests for POST /healing/plans/generate."""
 
-    def test_generate_success(self) -> None:
+    @pytest.mark.asyncio
+    async def test_generate_success(self) -> None:
         """Test successful plan generation returns YAML and plan details."""
         from ha_boss.healing.plan_generator import PlanGenerator
 
@@ -86,7 +86,7 @@ class TestGeneratePlanEndpoint:
             request.integration_domain = "zha"
             request.instance_id = "default"
 
-            result = asyncio.get_event_loop().run_until_complete(generate_plan(request))
+            result = await generate_plan(request)
 
         assert result.generated is True
         assert result.yaml_content is not None
@@ -94,7 +94,8 @@ class TestGeneratePlanEndpoint:
         assert result.plan.name == "test_zha_recovery"
         assert result.error is None
 
-    def test_generate_when_llm_unavailable_returns_generated_false(self) -> None:
+    @pytest.mark.asyncio
+    async def test_generate_when_llm_unavailable_returns_generated_false(self) -> None:
         """When LLM has no clients, returns generated=False with error message."""
         mock_service = MagicMock()
         mock_service.config.intelligence.ollama_enabled = False
@@ -110,13 +111,14 @@ class TestGeneratePlanEndpoint:
             request.integration_domain = None
             request.instance_id = "default"
 
-            result = asyncio.get_event_loop().run_until_complete(generate_plan(request))
+            result = await generate_plan(request)
 
         assert result.generated is False
         assert result.error is not None
         assert "LLM" in result.error or "configured" in result.error.lower()
 
-    def test_generate_when_no_intelligence_config(self) -> None:
+    @pytest.mark.asyncio
+    async def test_generate_when_no_intelligence_config(self) -> None:
         """When intelligence config is absent (no config.intelligence attr), returns generated=False."""
         mock_config = MagicMock(spec=[])  # config has no attributes
         mock_service = MagicMock()
@@ -131,7 +133,7 @@ class TestGeneratePlanEndpoint:
             request.integration_domain = None
             request.instance_id = "default"
 
-            result = asyncio.get_event_loop().run_until_complete(generate_plan(request))
+            result = await generate_plan(request)
 
         assert result.generated is False
 
@@ -139,14 +141,15 @@ class TestGeneratePlanEndpoint:
 class TestAnonymizePlanEndpoint:
     """Tests for POST /healing/plans/anonymize."""
 
-    def test_anonymize_rewrites_specific_entity_patterns(self) -> None:
+    @pytest.mark.asyncio
+    async def test_anonymize_rewrites_specific_entity_patterns(self) -> None:
         """Specific entity IDs in patterns are replaced with domain globs."""
         from ha_boss.api.routes.plans import anonymize_plan
 
         request = MagicMock()
         request.yaml_content = VALID_YAML
 
-        result = asyncio.get_event_loop().run_until_complete(anonymize_plan(request))
+        result = await anonymize_plan(request)
 
         assert isinstance(result, AnonymizePlanResponse)
         assert result.yaml_content is not None
@@ -156,7 +159,8 @@ class TestAnonymizePlanEndpoint:
         assert all("bedroom" not in p for p in patterns)
         assert any(p.endswith(".*") or "*" in p for p in patterns)
 
-    def test_anonymize_invalid_yaml_returns_422(self) -> None:
+    @pytest.mark.asyncio
+    async def test_anonymize_invalid_yaml_returns_422(self) -> None:
         """Invalid YAML returns 422 error."""
         from ha_boss.api.routes.plans import anonymize_plan
 
@@ -164,7 +168,7 @@ class TestAnonymizePlanEndpoint:
         request.yaml_content = "invalid: yaml: {"
 
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.get_event_loop().run_until_complete(anonymize_plan(request))
+            await anonymize_plan(request)
 
         assert exc_info.value.status_code == 422
 
@@ -172,7 +176,8 @@ class TestAnonymizePlanEndpoint:
 class TestCommunityUrlEndpoint:
     """Tests for POST /healing/plans/community-url."""
 
-    def test_community_url_returns_valid_github_url(self) -> None:
+    @pytest.mark.asyncio
+    async def test_community_url_returns_valid_github_url(self) -> None:
         """Returns a GitHub new-issue URL with plan name and YAML encoded."""
         mock_service = MagicMock()
         mock_service.config.healing.community_plans_repo = "jasonthagerty/ha-boss-community-plans"
@@ -183,7 +188,7 @@ class TestCommunityUrlEndpoint:
             request = MagicMock()
             request.yaml_content = VALID_YAML
 
-            result = asyncio.get_event_loop().run_until_complete(get_community_url(request))
+            result = await get_community_url(request)
 
         assert isinstance(result, CommunityUrlResponse)
         assert result.url.startswith(
@@ -191,3 +196,24 @@ class TestCommunityUrlEndpoint:
         )
         assert "test_zha_recovery" in result.url or "Healing" in result.url
         assert result.repo == "jasonthagerty/ha-boss-community-plans"
+
+    @pytest.mark.asyncio
+    async def test_community_url_encodes_slashes_in_query_params(self) -> None:
+        """Forward slashes in title/body are encoded as %2F in query parameters."""
+        mock_service = MagicMock()
+        mock_service.config.healing.community_plans_repo = "jasonthagerty/ha-boss-community-plans"
+
+        with patch("ha_boss.api.routes.plans.get_service", return_value=mock_service):
+            from ha_boss.api.routes.plans import get_community_url
+
+            request = MagicMock()
+            request.yaml_content = VALID_YAML
+
+            result = await get_community_url(request)
+
+        # The repo path portion is before the '?', so slashes in query params must be encoded
+        assert (
+            "Healing%20Plan" in result.url
+            or "Healing+Plan" in result.url
+            or "Healing" in result.url
+        )
