@@ -96,7 +96,7 @@ class PlanAnonymizer:
         return pattern
 
     def _generalize_description(self, plan: HealingPlanDefinition) -> str:
-        """Generate a generic description from plan metadata.
+        """Generate a generic, anonymized description for community sharing.
 
         Args:
             plan: The plan to generate description for
@@ -104,22 +104,19 @@ class PlanAnonymizer:
         Returns:
             Generic description string
         """
-        parts = []
-
+        parts: list[str] = ["Auto-generated healing plan"]
         if plan.match.integration_domains:
             domains = ", ".join(plan.match.integration_domains)
             parts.append(f"Heals {domains} integration failures")
+            if plan.match.failure_types:
+                types = ", ".join(plan.match.failure_types)
+                parts.append(f"when entities become {types}")
         elif plan.match.failure_types:
             types = ", ".join(plan.match.failure_types)
             parts.append(f"Heals {types} entity failures")
         else:
             parts.append("Heals entity failures")
-
-        if plan.match.failure_types:
-            types = ", ".join(plan.match.failure_types)
-            parts.append(f"when entities become {types}")
-
-        return " ".join(parts) + "."
+        return ". ".join(parts) + "."
 
     def plan_to_yaml(self, plan: HealingPlanDefinition) -> str:
         """Serialize a healing plan to YAML string.

@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Any
 
+import pydantic
 import yaml
 
 from ha_boss.healing.plan_models import HealingPlanDefinition
@@ -154,10 +155,12 @@ Return ONLY valid YAML, no explanation."""
 
             try:
                 data: Any = yaml.safe_load(yaml_text)
+                if not isinstance(data, dict):
+                    raise ValueError(f"Expected YAML mapping, got {type(data).__name__}")
                 plan = HealingPlanDefinition(**data)
                 logger.info(f"Successfully generated healing plan '{plan.name}'")
                 return plan
-            except Exception as e:
+            except (yaml.YAMLError, ValueError, pydantic.ValidationError) as e:
                 error_context = str(e)
                 logger.warning(f"Plan generation attempt {attempt + 1} failed validation: {e}")
 

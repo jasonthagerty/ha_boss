@@ -826,7 +826,7 @@ class GeneratePlanResponse(BaseModel):
 
     generated: bool = Field(..., description="Whether a plan was successfully generated")
     yaml_content: str | None = Field(None, description="Generated YAML string")
-    plan: "HealingPlanResponse | None" = Field(None, description="Parsed plan details")
+    plan: HealingPlanResponse | None = Field(None, description="Parsed plan details")
     error: str | None = Field(None, description="Error message if generation failed")
 
 
@@ -834,7 +834,7 @@ class AnonymizePlanResponse(BaseModel):
     """Response from healing plan anonymization."""
 
     yaml_content: str = Field(..., description="Anonymized YAML string")
-    plan: "HealingPlanResponse" = Field(..., description="Parsed anonymized plan")
+    plan: HealingPlanResponse = Field(..., description="Parsed anonymized plan")
 
 
 class CommunityUrlResponse(BaseModel):
