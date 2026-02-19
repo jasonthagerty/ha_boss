@@ -409,6 +409,77 @@ export class APIClient {
     return this.request('GET', `/healing/plans/${encodeURIComponent(planName)}/executions?limit=${limit}`);
   }
 
+  /**
+   * Generate a healing plan using AI
+   * POST /api/healing/plans/generate
+   * @param {Array<string>} entityIds - Failed entity IDs
+   * @param {string} failureType - Failure type (unavailable, unknown)
+   * @param {string|null} integrationDomain - Optional integration domain
+   * @param {string} instanceId - Instance ID
+   */
+  async generateHealingPlan(entityIds, failureType = 'unavailable', integrationDomain = null, instanceId = 'default') {
+    const body = {
+      entity_ids: entityIds,
+      failure_type: failureType,
+      instance_id: instanceId
+    };
+    if (integrationDomain) {
+      body.integration_domain = integrationDomain;
+    }
+    return this.request('POST', '/healing/plans/generate', {
+      body: JSON.stringify(body)
+    });
+  }
+
+  /**
+   * Anonymize a healing plan YAML for community sharing
+   * POST /api/healing/plans/anonymize
+   * @param {string} yamlContent - YAML plan content to anonymize
+   */
+  async anonymizePlan(yamlContent) {
+    return this.request('POST', '/healing/plans/anonymize', {
+      body: JSON.stringify({ yaml_content: yamlContent })
+    });
+  }
+
+  /**
+   * Get a GitHub URL for sharing a healing plan with the community
+   * POST /api/healing/plans/community-url
+   * @param {string} yamlContent - YAML plan content (will be embedded in URL)
+   */
+  async getCommunityUrl(yamlContent) {
+    return this.request('POST', '/healing/plans/community-url', {
+      body: JSON.stringify({ yaml_content: yamlContent })
+    });
+  }
+
+  /**
+   * Save a healing plan via the API
+   * POST /api/healing/plans
+   * @param {string} yamlContent - YAML plan content to save
+   */
+  async saveHealingPlan(yamlContent) {
+    return this.request('POST', '/healing/plans', {
+      body: JSON.stringify({ yaml_content: yamlContent })
+    });
+  }
+
+  /**
+   * List recent healing cascade executions
+   * GET /api/healing/cascades
+   * @param {string|null} instanceId - Instance ID (null for current)
+   * @param {number} limit - Maximum results
+   * @param {boolean} planSuggestedOnly - Only return cascades needing a plan
+   */
+  async getCascades(instanceId = null, limit = 20, planSuggestedOnly = false) {
+    const params = new URLSearchParams();
+    const instance = instanceId !== null ? instanceId : this.currentInstance;
+    if (instance) params.set('instance_id', instance);
+    params.set('limit', limit);
+    if (planSuggestedOnly) params.set('plan_suggested_only', 'true');
+    return this.request('GET', `/healing/cascades?${params}`);
+  }
+
   // ==================== Configuration Endpoints ====================
 
   /**
