@@ -1,6 +1,5 @@
 """Tests for PlanAnonymizer."""
 
-
 from ha_boss.healing.plan_anonymizer import PlanAnonymizer
 from ha_boss.healing.plan_models import (
     HealingPlanDefinition,
