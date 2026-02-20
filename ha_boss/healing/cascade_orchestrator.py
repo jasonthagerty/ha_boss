@@ -318,7 +318,7 @@ class CascadeOrchestrator:
             return None
 
         try:
-            plan = self.plan_matcher.find_matching_plan(context)
+            plan = await self.plan_matcher.find_matching_plan(context)
             if not plan:
                 return None
 
