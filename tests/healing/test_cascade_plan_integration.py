@@ -156,7 +156,7 @@ async def test_plan_routing_matches_and_succeeds() -> None:
     plan_executor = AsyncMock()
     mock_plan = _make_plan_mock("test_plan")
 
-    plan_matcher.find_matching_plan.return_value = mock_plan
+    plan_matcher.find_matching_plan = AsyncMock(return_value=mock_plan)
     plan_executor.execute_plan.return_value = _success_plan_result()
 
     orchestrator = _make_orchestrator(plan_matcher=plan_matcher, plan_executor=plan_executor)
@@ -192,7 +192,7 @@ async def test_plan_routing_matches_but_fails_falls_through() -> None:
     plan_executor = AsyncMock()
     mock_plan = _make_plan_mock()
 
-    plan_matcher.find_matching_plan.return_value = mock_plan
+    plan_matcher.find_matching_plan = AsyncMock(return_value=mock_plan)
     plan_executor.execute_plan.return_value = _failure_plan_result()
 
     orchestrator = _make_orchestrator(plan_matcher=plan_matcher, plan_executor=plan_executor)
@@ -221,7 +221,7 @@ async def test_plan_routing_no_match() -> None:
     plan_matcher = MagicMock()
     plan_executor = AsyncMock()
 
-    plan_matcher.find_matching_plan.return_value = None
+    plan_matcher.find_matching_plan = AsyncMock(return_value=None)
 
     orchestrator = _make_orchestrator(plan_matcher=plan_matcher, plan_executor=plan_executor)
     orchestrator.entity_healer.heal.return_value = _make_entity_result()
@@ -250,7 +250,7 @@ async def test_plan_routing_exception_falls_through() -> None:
     plan_matcher = MagicMock()
     plan_executor = AsyncMock()
 
-    plan_matcher.find_matching_plan.side_effect = RuntimeError("Plan matching failed")
+    plan_matcher.find_matching_plan = AsyncMock(side_effect=RuntimeError("Plan matching failed"))
 
     orchestrator = _make_orchestrator(plan_matcher=plan_matcher, plan_executor=plan_executor)
     orchestrator.entity_healer.heal.return_value = _make_entity_result()
@@ -278,7 +278,7 @@ async def test_plan_routing_before_intelligent() -> None:
     plan_executor = AsyncMock()
     mock_plan = _make_plan_mock("test_plan")
 
-    plan_matcher.find_matching_plan.return_value = mock_plan
+    plan_matcher.find_matching_plan = AsyncMock(return_value=mock_plan)
     plan_executor.execute_plan.return_value = _success_plan_result()
 
     orchestrator = _make_orchestrator(plan_matcher=plan_matcher, plan_executor=plan_executor)
