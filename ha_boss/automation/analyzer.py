@@ -507,7 +507,18 @@ class AutomationAnalyzer:
         system_prompt = (
             "You are a Home Assistant automation expert. Analyze the automation "
             "and provide specific, actionable suggestions. Focus on efficiency, "
-            "reliability, and best practices. Be concise but helpful."
+            "reliability, and best practices. Be concise but helpful.\n\n"
+            "Home Assistant automation best practices:\n"
+            "- Use trigger IDs (id: field) when multiple triggers exist for clarity in conditions\n"
+            "- Debounce noisy sensors with `for:` on triggers to avoid rapid-fire executions\n"
+            "- Use `choose` action for multi-branch logic instead of multiple `if` blocks\n"
+            "- Prefer `wait_for_trigger` with timeout over bare `delay` for sequential logic\n"
+            "- Use `mode: queued` or `mode: single` instead of `mode: restart` for long-running automations\n"
+            "- Target `area_id` or `device_id` instead of listing entity_ids where possible\n"
+            "- Prefer domain-specific services (light.turn_on, switch.turn_off) over homeassistant.turn_on\n"
+            "- Use `response_variable` with action calls that return data rather than separate state reads\n"
+            "- Avoid `platform: state` triggers without `to:` — they fire on attribute changes too\n"
+            "- Use `condition: state` with `for:` to confirm state has been held before acting"
         )
 
         try:

@@ -164,6 +164,15 @@ SUGGESTIONS:
 2. [Second suggestion]
 3. [Third suggestion if needed]
 
+Common integration failure patterns to recognise:
+- ZHA/Zigbee: "unavailable" usually means coordinator lost radio contact; reload integration before blaming the device
+- Z-Wave JS: node unavailable → check USB controller connection; "interview failed" → rediscover the node
+- MQTT: entities unavailable → broker likely restarted or network interrupted; check broker logs first
+- ESPHome: "Transport closed" or "Connection refused" → device rebooted or lost WiFi; check device logs via ESPHome dashboard
+- HomeKit: pairing lost → remove and re-add the accessory in HA
+- Cloud integrations (Google Home, Alexa, Nabu Casa): token expiry → re-authenticate via HA integrations UI
+- Network-dependent integrations: verify HA host network connectivity before assuming integration fault
+
 Be concise and practical. Focus on the most likely causes and solutions."""
 
     def _parse_response(self, response: str) -> dict[str, str]:
