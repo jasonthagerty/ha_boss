@@ -51,6 +51,27 @@ Schema:
       timeout_seconds: 30
   tags: ["tag1"]
 
+Action semantics:
+- retry_service_call: re-fires the last HA service call; best for transient entity-level errors
+- reconnect: re-establishes the protocol connection (TCP socket, serial port, USB)
+- reload_integration: reloads the config entry non-destructively; fast, low disruption
+- rediscover: triggers device/entity re-discovery; use when entities go missing after reload
+- reboot: restarts the Home Assistant process; highest disruption, last resort only
+
+Integration-specific recovery order (prefer least-disruptive first):
+- zha (Zigbee): reload_integration → rediscover → reboot
+- zwave_js: reload_integration → rediscover (dead nodes) → reconnect (USB controller lost)
+- mqtt: reload_integration (broker reconnects automatically on reload)
+- esphome: retry_service_call → reload_integration (device likely rebooted or lost WiFi)
+- homekit_controller: reload_integration → rediscover (lost pairing)
+- generic/unknown: retry_service_call (entity) → reload_integration (integration) → reboot
+
+Priority guidance:
+- 90-100: all entities in an integration unavailable simultaneously
+- 60-89: partial failure or repeated single-entity errors
+- 30-59: degraded reliability, intermittent failures
+- 0-29: optional optimizations
+
 Return ONLY valid YAML, no explanation."""
 
     def __init__(self, llm_router: LLMRouter) -> None:
