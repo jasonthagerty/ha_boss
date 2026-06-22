@@ -101,6 +101,33 @@ class NotificationEscalator:
         await self.notification_manager.notify(context)
         logger.info(f"Sent healing failure notification for {health_issue.entity_id}")
 
+    async def notify_issue_detected(
+        self,
+        health_issue: HealthIssue,
+    ) -> None:
+        """Send notification about a detected issue without attempting to heal.
+
+        Used for monitor-and-notify operation, where HA Boss reports problems
+        (e.g. a stuck or offline sensor) without reloading integrations.
+
+        Args:
+            health_issue: Health issue that was detected
+        """
+        if not self.config.notifications.on_issue_detected:
+            logger.debug("Issue-detected notifications are disabled")
+            return
+
+        context = NotificationContext(
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
+            entity_id=health_issue.entity_id,
+            issue_type=health_issue.issue_type,
+            detected_at=health_issue.detected_at,
+        )
+
+        await self.notification_manager.notify(context)
+        logger.info(f"Sent issue-detected notification for {health_issue.entity_id}")
+
     async def notify_recovery(
         self,
         entity_id: str,
@@ -115,6 +142,10 @@ class NotificationEscalator:
         # Dismiss previous failure notification if it exists
         notification_id = f"haboss_healing_failure_{entity_id.replace('.', '_')}"
         await self.notification_manager.dismiss(notification_id)
+
+        # Dismiss previous issue-detected notification if it exists
+        issue_notification_id = f"haboss_issue_detected_{entity_id.replace('.', '_')}"
+        await self.notification_manager.dismiss(issue_notification_id)
 
         # Send recovery notification
         context = NotificationContext(

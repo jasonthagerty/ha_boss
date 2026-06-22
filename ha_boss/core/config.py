@@ -351,6 +351,13 @@ class NotificationsConfig(BaseSettings):
         default=True,
         description="Notify when healing fails",
     )
+    on_issue_detected: bool = Field(
+        default=False,
+        description=(
+            "Notify when an issue is detected even if auto-healing is disabled "
+            "(monitor-and-notify mode)"
+        ),
+    )
     weekly_summary: bool = Field(
         default=True,
         description="Send weekly summary reports",

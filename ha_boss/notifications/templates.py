@@ -16,6 +16,7 @@ class NotificationType(StrEnum):
     WEEKLY_SUMMARY = "weekly_summary"
     RECOVERY = "recovery"
     ANOMALY_DETECTED = "anomaly_detected"
+    ISSUE_DETECTED = "issue_detected"
 
 
 class NotificationSeverity(StrEnum):
@@ -262,6 +263,42 @@ class RecoveryTemplate(NotificationTemplate):
         return title, message
 
 
+class IssueDetectedTemplate(NotificationTemplate):
+    """Template for issue-detected notifications (monitor-and-notify mode)."""
+
+    @staticmethod
+    def render(context: NotificationContext) -> tuple[str, str]:
+        """Render issue-detected notification.
+
+        Args:
+            context: Notification context
+
+        Returns:
+            Tuple of (title, message)
+        """
+        title = "HA Boss: Entity Issue Detected"
+
+        lines = [
+            f"**Entity:** `{context.entity_id}`",
+            f"**Issue:** {context.issue_type or 'Unknown'}",
+        ]
+
+        if context.detected_at:
+            time_ago = IssueDetectedTemplate.format_time_ago(context.detected_at)
+            lines.append(f"**Detected:** {time_ago}")
+
+        lines.extend(
+            [
+                "",
+                "Auto-healing is disabled, so no automatic action was taken.",
+                "Please check the entity or its integration.",
+            ]
+        )
+
+        message = "\n".join(lines)
+        return title, message
+
+
 class CircuitBreakerTemplate(NotificationTemplate):
     """Template for circuit breaker notifications."""
 
@@ -485,6 +522,7 @@ class TemplateRegistry:
         NotificationType.CONNECTION_ERROR: ConnectionErrorTemplate,
         NotificationType.WEEKLY_SUMMARY: WeeklySummaryTemplate,
         NotificationType.ANOMALY_DETECTED: AnomalyDetectedTemplate,
+        NotificationType.ISSUE_DETECTED: IssueDetectedTemplate,
     }
 
     @classmethod

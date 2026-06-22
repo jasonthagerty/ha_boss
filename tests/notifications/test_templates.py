@@ -9,6 +9,7 @@ from ha_boss.notifications.templates import (
     ConnectionErrorTemplate,
     HealingFailureTemplate,
     HealingSuccessTemplate,
+    IssueDetectedTemplate,
     NotificationContext,
     NotificationSeverity,
     NotificationTemplate,
@@ -206,6 +207,43 @@ class TestRecoveryTemplate:
         assert "recovered" in message.lower()
 
 
+class TestIssueDetectedTemplate:
+    """Tests for IssueDetectedTemplate."""
+
+    def test_render_basic(self) -> None:
+        """Test rendering an issue-detected notification."""
+        context = NotificationContext(
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
+            entity_id="binary_sensor.back_patio_motion",
+            issue_type="unavailable",
+            detected_at=datetime.now(UTC) - timedelta(minutes=5),
+        )
+
+        title, message = IssueDetectedTemplate.render(context)
+
+        assert title == "HA Boss: Entity Issue Detected"
+        assert "binary_sensor.back_patio_motion" in message
+        assert "unavailable" in message
+        assert "5 minutes ago" in message
+        # Must make clear no automatic action was taken
+        assert "no automatic action" in message.lower()
+
+    def test_render_minimal(self) -> None:
+        """Test rendering without optional detected_at."""
+        context = NotificationContext(
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
+            entity_id="sensor.test",
+        )
+
+        title, message = IssueDetectedTemplate.render(context)
+
+        assert title == "HA Boss: Entity Issue Detected"
+        assert "sensor.test" in message
+        assert "Unknown" in message
+
+
 class TestCircuitBreakerTemplate:
     """Tests for CircuitBreakerTemplate."""
 
@@ -378,6 +416,20 @@ class TestTemplateRegistry:
         title, message = TemplateRegistry.render(context)
 
         assert title == "HA Boss: Entity Recovered"
+
+    def test_render_issue_detected(self) -> None:
+        """Test registry renders issue detected correctly."""
+        context = NotificationContext(
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
+            entity_id="sensor.test",
+            issue_type="stale",
+        )
+
+        title, message = TemplateRegistry.render(context)
+
+        assert title == "HA Boss: Entity Issue Detected"
+        assert "sensor.test" in message
 
     def test_render_circuit_breaker(self) -> None:
         """Test registry renders circuit breaker correctly."""

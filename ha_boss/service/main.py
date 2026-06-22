@@ -965,6 +965,22 @@ Access the web dashboard at `/dashboard` for a visual interface.
         # Skip healing for recovery events
         if issue.issue_type == "recovered":
             logger.info(f"[{instance_id}] Entity {issue.entity_id} recovered automatically")
+            # In monitor-and-notify mode, clear any prior issue-detected alert
+            escalation_manager = self.escalation_managers.get(instance_id)
+            if escalation_manager and self.config.notifications.on_issue_detected:
+                try:
+                    previous_issue_type = "unknown"
+                    if issue.details:
+                        previous_issue_type = issue.details.get("previous_issue_type", "unknown")
+                    await escalation_manager.notify_recovery(
+                        entity_id=issue.entity_id,
+                        previous_issue_type=previous_issue_type,
+                    )
+                except Exception as e:
+                    logger.debug(
+                        f"[{instance_id}] Failed to send recovery notification for "
+                        f"{issue.entity_id}: {e}"
+                    )
             return
 
         # Get instance components
@@ -1138,6 +1154,15 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 )
         else:
             logger.info(f"[{instance_id}] Auto-healing disabled, issue logged only")
+            # Monitor-and-notify mode: alert on detection without reloading anything
+            if escalation_manager and issue.issue_type in ("unavailable", "stale"):
+                try:
+                    await escalation_manager.notify_issue_detected(issue)
+                except Exception as e:
+                    logger.error(
+                        f"[{instance_id}] Failed to send issue-detected notification for "
+                        f"{issue.entity_id}: {e}"
+                    )
 
     async def stop(self) -> None:
         """Gracefully stop the HA Boss service."""

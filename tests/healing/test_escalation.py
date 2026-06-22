@@ -157,8 +157,9 @@ async def test_notify_recovery_dismisses_previous(escalator, sample_health_issue
     # Now send recovery
     await escalator.notify_recovery("sensor.test_sensor", "unavailable")
 
-    # Verify dismiss was called
-    mock_ha_client.call_service.assert_called_once_with(
+    # Verify both prior notifications are dismissed (healing failure + issue-detected)
+    assert mock_ha_client.call_service.call_count == 2
+    mock_ha_client.call_service.assert_any_call(
         "persistent_notification",
         "dismiss",
         {"notification_id": "haboss_healing_failure_sensor_test_sensor"},
@@ -253,3 +254,60 @@ async def test_uses_notification_manager(mock_config, mock_ha_client):
     # Verify NotificationManager is created
     assert hasattr(escalator, "notification_manager")
     assert escalator.notification_manager is not None
+
+
+@pytest.fixture
+def issue_detect_config():
+    """Create config with monitor-and-notify (on_issue_detected) enabled."""
+    return Config(
+        home_assistant=HomeAssistantConfig(
+            url="http://homeassistant.local:8123",
+            token="test_token",
+        ),
+        notifications=NotificationsConfig(
+            on_healing_failure=False,
+            on_issue_detected=True,
+            weekly_summary=False,
+        ),
+        mode="production",
+    )
+
+
+@pytest.mark.asyncio
+async def test_notify_issue_detected_enabled(
+    issue_detect_config, sample_health_issue, mock_ha_client
+):
+    """Test issue-detected notification is sent when enabled."""
+    escalator = NotificationEscalator(issue_detect_config, mock_ha_client)
+
+    await escalator.notify_issue_detected(sample_health_issue)
+
+    mock_ha_client.create_persistent_notification.assert_called_once()
+    call_args = mock_ha_client.create_persistent_notification.call_args
+    assert call_args.kwargs["title"] == "HA Boss: Entity Issue Detected"
+    assert "sensor.test_sensor" in call_args.kwargs["message"]
+    assert "unavailable" in call_args.kwargs["message"]
+
+
+@pytest.mark.asyncio
+async def test_notify_issue_detected_disabled(escalator, sample_health_issue, mock_ha_client):
+    """Test issue-detected notification is suppressed when flag is off (default)."""
+    # Default mock_config leaves on_issue_detected at its default (False)
+    await escalator.notify_issue_detected(sample_health_issue)
+
+    mock_ha_client.create_persistent_notification.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_recovery_dismisses_issue_detected(escalator, mock_ha_client):
+    """Test recovery dismisses a prior issue-detected notification."""
+    await escalator.notify_recovery(
+        entity_id="sensor.test_sensor", previous_issue_type="unavailable"
+    )
+
+    dismissed_ids = [
+        call.args[2]["notification_id"]
+        for call in mock_ha_client.call_service.call_args_list
+        if call.args[:2] == ("persistent_notification", "dismiss")
+    ]
+    assert "haboss_issue_detected_sensor_test_sensor" in dismissed_ids
