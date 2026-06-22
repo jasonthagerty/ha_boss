@@ -19,6 +19,7 @@ class NotificationChannel(StrEnum):
 
     HOME_ASSISTANT = "home_assistant"  # HA persistent notifications
     CLI = "cli"  # CLI/stdout via logging (for Docker logs)
+    MOBILE = "mobile"  # Mobile push via notify.send_message
 
 
 class NotificationManager:
@@ -50,10 +51,16 @@ class NotificationManager:
         # notification_id -> context
         self._sent_notifications: dict[str, NotificationContext] = {}
 
+        # Track sent mobile pushes separately (no dismiss concept; cleared on recovery)
+        self._sent_mobile_notifications: dict[str, NotificationContext] = {}
+
         # Channel enablement
         self._channels: dict[NotificationChannel, bool] = {
             NotificationChannel.HOME_ASSISTANT: ha_client is not None,
             NotificationChannel.CLI: True,  # Always available
+            NotificationChannel.MOBILE: (
+                ha_client is not None and bool(config.notifications.mobile_push_services)
+            ),
         }
 
     def enable_channel(self, channel: NotificationChannel) -> None:
@@ -111,6 +118,8 @@ class NotificationManager:
                     await self._send_to_home_assistant(title, message, context)
                 elif channel == NotificationChannel.CLI:
                     await self._send_to_cli(title, message, context)
+                elif channel == NotificationChannel.MOBILE:
+                    await self._send_to_mobile(title, message, context)
             except Exception as e:
                 logger.error(f"Failed to send notification to {channel}: {e}", exc_info=True)
 
@@ -125,6 +134,10 @@ class NotificationManager:
             notification_id: Notification ID to dismiss
             channel: Channel to dismiss from (only HA supported)
         """
+        # Re-arm the mobile push for this id (push can't be recalled, but a future
+        # recurrence should alert again). Done regardless of HA dismiss outcome.
+        self._sent_mobile_notifications.pop(notification_id, None)
+
         if channel != NotificationChannel.HOME_ASSISTANT:
             logger.debug(f"Dismiss not supported for channel: {channel}")
             return
@@ -220,6 +233,57 @@ class NotificationManager:
         # Log with appropriate level
         logger.log(log_level, cli_message)
 
+    async def _send_to_mobile(
+        self,
+        title: str,
+        message: str,
+        context: NotificationContext,
+    ) -> None:
+        """Send notification as a mobile push via notify.send_message.
+
+        Sends to each configured notify entity (e.g. notify.jason_s_iphone).
+        Deduplicates per notification_id so a persistent issue pushes once.
+
+        Args:
+            title: Notification title
+            message: Notification message
+            context: Notification context
+        """
+        if self.ha_client is None:
+            logger.warning("Cannot send mobile push: ha_client is None")
+            return
+
+        services = self.config.notifications.mobile_push_services
+        if not services:
+            return
+
+        notification_id = self._generate_notification_id(context)
+
+        # Deduplicate (avoid re-pushing the same issue every health-check cycle)
+        if notification_id in self._sent_mobile_notifications:
+            logger.debug(f"Mobile push {notification_id} already sent, skipping")
+            return
+
+        if self.config.is_dry_run:
+            logger.info(f"[DRY RUN] Would send mobile push to {services}: {title}")
+            return
+
+        sent_any = False
+        for service in services:
+            try:
+                await self.ha_client.call_service(
+                    "notify",
+                    "send_message",
+                    {"entity_id": service, "title": title, "message": message},
+                )
+                sent_any = True
+            except Exception as e:
+                logger.error(f"Failed to send mobile push to {service}: {e}")
+
+        if sent_any:
+            self._sent_mobile_notifications[notification_id] = context
+            logger.info(f"Sent mobile push: {notification_id}")
+
     def _generate_notification_id(self, context: NotificationContext) -> str:
         """Generate unique notification ID for tracking.
 
@@ -273,6 +337,7 @@ class NotificationManager:
             NotificationSeverity.CRITICAL,
         ):
             channels.append(NotificationChannel.HOME_ASSISTANT)
+            channels.append(NotificationChannel.MOBILE)
 
         return channels
 

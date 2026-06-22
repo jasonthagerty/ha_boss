@@ -358,6 +358,13 @@ class NotificationsConfig(BaseSettings):
             "(monitor-and-notify mode)"
         ),
     )
+    mobile_push_services: list[str] = Field(
+        default_factory=list,
+        description=(
+            "notify entity_ids (e.g. 'notify.jason_s_iphone') to also send mobile push "
+            "alerts to via notify.send_message; empty = mobile push disabled"
+        ),
+    )
     weekly_summary: bool = Field(
         default=True,
         description="Send weekly summary reports",
