@@ -372,13 +372,13 @@ class HABossService:
 
                 plan_loader = PlanLoader(
                     database=self.database,
-                    builtin_enabled=self.config.healing.healing_plans_use_builtin,
+                    use_builtin=self.config.healing.healing_plans_use_builtin,
                     user_plans_directory=self.config.healing.healing_plans_directory,
                 )
-                plans = plan_loader.load_all_plans()
+                plans = await plan_loader.load_all_plans()
                 logger.info(f"[{instance_id}] Loaded {len(plans)} healing plan(s)")
 
-                plan_matcher = PlanMatcher(plans=plans)
+                plan_matcher = PlanMatcher(plan_loader=plan_loader)
                 plan_executor = PlanExecutor(
                     database=self.database,
                     entity_healer=self.entity_healers[instance_id],
