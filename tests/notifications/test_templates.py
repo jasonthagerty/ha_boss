@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from ha_boss.notifications.templates import (
+    ActionVerificationFailedTemplate,
     CircuitBreakerTemplate,
     ConnectionErrorTemplate,
     HealingFailureTemplate,
@@ -597,3 +598,87 @@ class TestOutOfScopeAuditTemplate:
         assert title == "HA Boss: Out-of-Scope Audit"
         # Should not crash; returns a sensible default
         assert message
+
+
+class TestActionVerificationFailedTemplate:
+    """Tests for ActionVerificationFailedTemplate."""
+
+    def _make_context(
+        self,
+        entity_id: str = "light.bedroom",
+        service: str = "light.turn_off",
+        expected_state: str = "off",
+        actual_state: str = "on",
+        delay_seconds: int = 30,
+    ) -> NotificationContext:
+        return NotificationContext(
+            notification_type=NotificationType.ACTION_VERIFICATION_FAILED,
+            severity=NotificationSeverity.WARNING,
+            entity_id=entity_id,
+            extra={
+                "service": service,
+                "expected_state": expected_state,
+                "actual_state": actual_state,
+                "delay_seconds": delay_seconds,
+            },
+        )
+
+    def test_title(self) -> None:
+        """Template title is 'HA Boss: Action Did Not Take Effect'."""
+        context = self._make_context()
+        title, _ = ActionVerificationFailedTemplate.render(context)
+        assert title == "HA Boss: Action Did Not Take Effect"
+
+    def test_body_contains_entity_id(self) -> None:
+        """Rendered body contains the target entity ID."""
+        context = self._make_context(entity_id="switch.outlet")
+        _, message = ActionVerificationFailedTemplate.render(context)
+        assert "switch.outlet" in message
+
+    def test_body_contains_service(self) -> None:
+        """Rendered body contains the service that was called."""
+        context = self._make_context(service="switch.turn_off")
+        _, message = ActionVerificationFailedTemplate.render(context)
+        assert "switch.turn_off" in message
+
+    def test_body_contains_expected_and_actual_state(self) -> None:
+        """Rendered body contains both expected and actual state."""
+        context = self._make_context(expected_state="off", actual_state="on")
+        _, message = ActionVerificationFailedTemplate.render(context)
+        assert "off" in message
+        assert "on" in message
+
+    def test_body_contains_delay_seconds(self) -> None:
+        """Rendered body contains the delay in seconds."""
+        context = self._make_context(delay_seconds=45)
+        _, message = ActionVerificationFailedTemplate.render(context)
+        assert "45" in message
+
+    def test_render_with_missing_extra_does_not_crash(self) -> None:
+        """Rendering with no extra dict falls back to 'unknown' values gracefully."""
+        context = NotificationContext(
+            notification_type=NotificationType.ACTION_VERIFICATION_FAILED,
+            severity=NotificationSeverity.WARNING,
+            entity_id="light.bedroom",
+            extra=None,
+        )
+        title, message = ActionVerificationFailedTemplate.render(context)
+        assert title == "HA Boss: Action Did Not Take Effect"
+        assert message  # Should not crash
+
+    def test_registered_in_template_registry(self) -> None:
+        """ActionVerificationFailedTemplate is registered and renders via TemplateRegistry."""
+        context = NotificationContext(
+            notification_type=NotificationType.ACTION_VERIFICATION_FAILED,
+            severity=NotificationSeverity.WARNING,
+            entity_id="light.bedroom",
+            extra={
+                "service": "light.turn_off",
+                "expected_state": "off",
+                "actual_state": "on",
+                "delay_seconds": 30,
+            },
+        )
+        title, message = TemplateRegistry.render(context)
+        assert title == "HA Boss: Action Did Not Take Effect"
+        assert "light.bedroom" in message

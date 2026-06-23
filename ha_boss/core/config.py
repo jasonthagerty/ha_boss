@@ -212,6 +212,25 @@ class OutOfScopeAuditConfig(BaseSettings):
     )
 
 
+class ActionVerificationConfig(BaseSettings):
+    """Configuration for action (service-call) verification.
+
+    When enabled, HA Boss observes state-changing service calls and checks that
+    the target entity reaches the expected state within ``delay_seconds``.  If
+    the entity did NOT reach the expected state a WARNING notification is sent.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable action verification (check that service calls take effect)",
+    )
+    delay_seconds: int = Field(
+        default=30,
+        description="Seconds to wait before checking whether the action took effect",
+        gt=0,
+    )
+
+
 class MonitoringConfig(BaseSettings):
     """Entity monitoring configuration."""
 
@@ -259,6 +278,12 @@ class MonitoringConfig(BaseSettings):
     out_of_scope_audit: OutOfScopeAuditConfig = Field(
         default_factory=OutOfScopeAuditConfig,
         description="Periodic audit of entities not in the monitored set",
+    )
+
+    # Action verification configuration
+    action_verification: ActionVerificationConfig = Field(
+        default_factory=ActionVerificationConfig,
+        description="Verify that service calls produce the expected entity state",
     )
 
     # Per-entity overrides

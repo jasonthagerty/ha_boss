@@ -18,6 +18,7 @@ class NotificationType(StrEnum):
     ANOMALY_DETECTED = "anomaly_detected"
     ISSUE_DETECTED = "issue_detected"
     OUT_OF_SCOPE_AUDIT = "out_of_scope_audit"
+    ACTION_VERIFICATION_FAILED = "action_verification_failed"
 
 
 class NotificationSeverity(StrEnum):
@@ -579,6 +580,55 @@ class OutOfScopeAuditTemplate(NotificationTemplate):
         return title, message
 
 
+class ActionVerificationFailedTemplate(NotificationTemplate):
+    """Template for action-verification-failed notifications.
+
+    Fired when a state-changing service call did not produce the expected entity
+    state within the configured delay window.
+    """
+
+    @staticmethod
+    def render(context: NotificationContext) -> tuple[str, str]:
+        """Render action-verification-failed notification.
+
+        Expects the following keys in ``context.extra``:
+
+        - ``service`` (str): Full service name that was called, e.g. ``"light.turn_off"``.
+        - ``expected_state`` (str): The state the entity was expected to reach.
+        - ``actual_state`` (str): The state the entity actually has.
+        - ``delay_seconds`` (int): How many seconds elapsed before the check ran.
+
+        ``context.entity_id`` must be the target entity ID.
+
+        Args:
+            context: Notification context
+
+        Returns:
+            Tuple of (title, message)
+        """
+        title = "HA Boss: Action Did Not Take Effect"
+
+        extra = context.extra or {}
+        service = extra.get("service", "unknown service")
+        expected_state = extra.get("expected_state", "unknown")
+        actual_state = extra.get("actual_state", "unknown")
+        delay_seconds = extra.get("delay_seconds", 0)
+
+        lines = [
+            f"**Entity:** `{context.entity_id}`",
+            f"**Service Called:** `{service}`",
+            f"**Expected State:** `{expected_state}`",
+            f"**Actual State:** `{actual_state}`",
+            f"**Check Delay:** {delay_seconds}s",
+            "",
+            "The entity did not reach the expected state after the service call.",
+            "Please check the device or integration for issues.",
+        ]
+
+        message = "\n".join(lines)
+        return title, message
+
+
 class TemplateRegistry:
     """Registry for mapping notification types to templates."""
 
@@ -592,6 +642,7 @@ class TemplateRegistry:
         NotificationType.ANOMALY_DETECTED: AnomalyDetectedTemplate,
         NotificationType.ISSUE_DETECTED: IssueDetectedTemplate,
         NotificationType.OUT_OF_SCOPE_AUDIT: OutOfScopeAuditTemplate,
+        NotificationType.ACTION_VERIFICATION_FAILED: ActionVerificationFailedTemplate,
     }
 
     @classmethod

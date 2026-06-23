@@ -80,6 +80,7 @@ class HABossService:
         self.entity_healers: dict[str, EntityHealer] = {}
         self.device_healers: dict[str, DeviceHealer] = {}
         self.out_of_scope_auditors: dict[str, Any] = {}  # OutOfScopeAuditor
+        self.action_verifiers: dict[str, Any] = {}  # ActionVerifier
 
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
@@ -442,14 +443,37 @@ class HABossService:
                     "Audit feature disabled for this instance."
                 )
 
+        # 9h. Initialize action verifier (if enabled)
+        if self.config.monitoring.action_verification.enabled:
+            try:
+                from ha_boss.monitoring.action_verifier import ActionVerifier
+
+                logger.info(f"[{instance_id}] Initializing action verifier...")
+                self.action_verifiers[instance_id] = ActionVerifier(
+                    ha_client=self.ha_clients[instance_id],
+                    notification_manager=self.notification_managers[instance_id],
+                    config=self.config,
+                    instance_id=instance_id,
+                )
+                logger.info(f"[{instance_id}] ✓ Action verifier initialized")
+            except Exception as e:
+                logger.warning(
+                    f"[{instance_id}] Failed to initialize action verifier: {e}. "
+                    "Action verification disabled for this instance."
+                )
+
         # 10. Connect WebSocket
         logger.info(f"[{instance_id}] Connecting to Home Assistant WebSocket...")
+        action_verifier = self.action_verifiers.get(instance_id)
         self.websocket_clients[instance_id] = WebSocketClient(
             instance=instance,
             config=self.config,
             entity_discovery=self.entity_discoveries.get(instance_id),
             automation_tracker=self.automation_trackers.get(instance_id),
             on_state_changed=lambda event: self._on_websocket_state_changed(instance_id, event),
+            on_service_call=(
+                action_verifier.handle_service_call if action_verifier is not None else None
+            ),
         )
         await self.websocket_clients[instance_id].start()
 
@@ -1328,12 +1352,21 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 except Exception as e:
                     logger.error(f"[{instance_id}] Error cleaning up automation tracker: {e}")
 
+            # Cancel any pending action verification tasks
+            action_verifier = self.action_verifiers.get(instance_id)
+            if action_verifier:
+                try:
+                    await action_verifier.shutdown()
+                except Exception as e:
+                    logger.error(f"[{instance_id}] Error shutting down action verifier: {e}")
+
             # Remove new components from dictionaries
             self.health_trackers.pop(instance_id, None)
             self.cascade_orchestrators.pop(instance_id, None)
             self.entity_healers.pop(instance_id, None)
             self.device_healers.pop(instance_id, None)
             self.out_of_scope_auditors.pop(instance_id, None)
+            self.action_verifiers.pop(instance_id, None)
 
         # Close database (shared)
         if self.database:
