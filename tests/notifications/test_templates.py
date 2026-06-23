@@ -14,6 +14,7 @@ from ha_boss.notifications.templates import (
     NotificationSeverity,
     NotificationTemplate,
     NotificationType,
+    OutOfScopeAuditTemplate,
     RecoveryTemplate,
     TemplateRegistry,
     WeeklySummaryTemplate,
@@ -465,3 +466,134 @@ class TestTemplateRegistry:
         title, message = TemplateRegistry.render(context)
 
         assert title == "HA Boss: Weekly Summary"
+
+    def test_render_out_of_scope_audit(self) -> None:
+        """Test registry renders out-of-scope audit correctly."""
+        context = NotificationContext(
+            notification_type=NotificationType.OUT_OF_SCOPE_AUDIT,
+            severity=NotificationSeverity.INFO,
+            stats={
+                "new_failures": [
+                    {"entity_id": "light.garage", "state": "unavailable", "group": "hue"},
+                ],
+                "chronic_count": 2,
+                "total_out_of_scope": 50,
+            },
+        )
+
+        title, message = TemplateRegistry.render(context)
+
+        assert title == "HA Boss: Out-of-Scope Audit"
+        assert "light.garage" in message
+        assert "hue" in message
+        assert "2 chronic" in message
+
+
+class TestOutOfScopeAuditTemplate:
+    """Tests for OutOfScopeAuditTemplate."""
+
+    def test_render_basic(self) -> None:
+        """Test basic out-of-scope audit rendering with new failures."""
+        context = NotificationContext(
+            notification_type=NotificationType.OUT_OF_SCOPE_AUDIT,
+            severity=NotificationSeverity.INFO,
+            stats={
+                "new_failures": [
+                    {
+                        "entity_id": "sensor.garage_temp",
+                        "state": "unavailable",
+                        "group": "zigbee2mqtt",
+                    },
+                    {
+                        "entity_id": "light.porch",
+                        "state": "unknown",
+                        "group": "hue",
+                    },
+                ],
+                "chronic_count": 0,
+                "total_out_of_scope": 100,
+            },
+        )
+
+        title, message = OutOfScopeAuditTemplate.render(context)
+
+        assert title == "HA Boss: Out-of-Scope Audit"
+        assert "sensor.garage_temp" in message
+        assert "light.porch" in message
+        assert "zigbee2mqtt" in message
+        assert "hue" in message
+        assert "100" in message
+
+    def test_render_with_chronic_count(self) -> None:
+        """Test rendering includes chronic suppression line when count > 0."""
+        context = NotificationContext(
+            notification_type=NotificationType.OUT_OF_SCOPE_AUDIT,
+            severity=NotificationSeverity.INFO,
+            stats={
+                "new_failures": [
+                    {"entity_id": "sensor.x", "state": "unavailable", "group": "sensor"},
+                ],
+                "chronic_count": 5,
+                "total_out_of_scope": 200,
+            },
+        )
+
+        title, message = OutOfScopeAuditTemplate.render(context)
+
+        assert "5 chronic" in message
+        assert "suppressed" in message
+
+    def test_render_no_failures(self) -> None:
+        """Test rendering when there are no new or chronic failures."""
+        context = NotificationContext(
+            notification_type=NotificationType.OUT_OF_SCOPE_AUDIT,
+            severity=NotificationSeverity.INFO,
+            stats={
+                "new_failures": [],
+                "chronic_count": 0,
+                "total_out_of_scope": 30,
+            },
+        )
+
+        title, message = OutOfScopeAuditTemplate.render(context)
+
+        assert "No new unavailable" in message
+
+    def test_render_groups_entities_by_integration(self) -> None:
+        """Test that entities are grouped by integration in the rendered output."""
+        context = NotificationContext(
+            notification_type=NotificationType.OUT_OF_SCOPE_AUDIT,
+            severity=NotificationSeverity.INFO,
+            stats={
+                "new_failures": [
+                    {"entity_id": "light.a", "state": "unavailable", "group": "hue"},
+                    {"entity_id": "light.b", "state": "unavailable", "group": "hue"},
+                    {"entity_id": "sensor.c", "state": "unavailable", "group": "zwave"},
+                ],
+                "chronic_count": 0,
+                "total_out_of_scope": 10,
+            },
+        )
+
+        title, message = OutOfScopeAuditTemplate.render(context)
+
+        # Both hue entities should appear under the hue group
+        assert "hue" in message
+        assert "light.a" in message
+        assert "light.b" in message
+        assert "zwave" in message
+        assert "sensor.c" in message
+
+    def test_render_empty_stats(self) -> None:
+        """Test rendering with minimal/empty stats dict."""
+        context = NotificationContext(
+            notification_type=NotificationType.OUT_OF_SCOPE_AUDIT,
+            severity=NotificationSeverity.INFO,
+            stats={},
+        )
+
+        title, message = OutOfScopeAuditTemplate.render(context)
+
+        assert title == "HA Boss: Out-of-Scope Audit"
+        # Should not crash; returns a sensible default
+        assert message

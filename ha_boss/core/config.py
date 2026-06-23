@@ -185,6 +185,33 @@ class EntityOverride(BaseModel):
     )
 
 
+class OutOfScopeAuditConfig(BaseSettings):
+    """Configuration for the out-of-scope entity audit."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable periodic audit of out-of-scope entities",
+    )
+    interval_seconds: int = Field(
+        default=86400,
+        description="Audit interval in seconds (default: 1 day)",
+        ge=0,
+    )
+    chronic_threshold_seconds: int = Field(
+        default=259200,
+        description="Seconds before an entity is considered chronically unavailable (default: 3 days)",
+        ge=0,
+    )
+    include_stale: bool = Field(
+        default=False,
+        description="Include stale entities (no update within stale_threshold_seconds) in audit",
+    )
+    group_by_integration: bool = Field(
+        default=True,
+        description="Group digest by integration (domain fallback if mapping unavailable)",
+    )
+
+
 class MonitoringConfig(BaseSettings):
     """Entity monitoring configuration."""
 
@@ -226,6 +253,12 @@ class MonitoringConfig(BaseSettings):
     auto_discovery: AutoDiscoveryConfig = Field(
         default_factory=AutoDiscoveryConfig,
         description="Auto-discovery configuration",
+    )
+
+    # Out-of-scope entity audit configuration
+    out_of_scope_audit: OutOfScopeAuditConfig = Field(
+        default_factory=OutOfScopeAuditConfig,
+        description="Periodic audit of entities not in the monitored set",
     )
 
     # Per-entity overrides

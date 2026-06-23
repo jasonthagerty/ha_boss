@@ -79,6 +79,7 @@ class HABossService:
         self.cascade_orchestrators: dict[str, CascadeOrchestrator] = {}
         self.entity_healers: dict[str, EntityHealer] = {}
         self.device_healers: dict[str, DeviceHealer] = {}
+        self.out_of_scope_auditors: dict[str, Any] = {}  # OutOfScopeAuditor
 
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
@@ -417,6 +418,30 @@ class HABossService:
         )
         logger.info(f"[{instance_id}] ✓ Automation tracker initialized")
 
+        # 9g. Initialize out-of-scope auditor (if enabled)
+        if self.config.monitoring.out_of_scope_audit.enabled:
+            try:
+                from ha_boss.monitoring.out_of_scope_audit import OutOfScopeAuditor
+
+                logger.info(f"[{instance_id}] Initializing out-of-scope auditor...")
+                if self.database is None:
+                    raise RuntimeError("Database must be initialized before creating auditor")
+                self.out_of_scope_auditors[instance_id] = OutOfScopeAuditor(
+                    ha_client=self.ha_clients[instance_id],
+                    entity_discovery=self.entity_discoveries.get(instance_id),
+                    integration_discovery=self.integration_discoveries.get(instance_id),
+                    database=self.database,
+                    notification_manager=self.notification_managers[instance_id],
+                    config=self.config,
+                    instance_id=instance_id,
+                )
+                logger.info(f"[{instance_id}] ✓ Out-of-scope auditor initialized")
+            except Exception as e:
+                logger.warning(
+                    f"[{instance_id}] Failed to initialize out-of-scope auditor: {e}. "
+                    "Audit feature disabled for this instance."
+                )
+
         # 10. Connect WebSocket
         logger.info(f"[{instance_id}] Connecting to Home Assistant WebSocket...")
         self.websocket_clients[instance_id] = WebSocketClient(
@@ -596,6 +621,14 @@ class HABossService:
                     )
                 )
                 task.set_name(f"periodic_discovery_refresh_{instance_id}")
+                self._tasks.append(task)
+
+            # Periodic out-of-scope audit (if enabled and interval > 0)
+            auditor = self.out_of_scope_auditors.get(instance_id)
+            audit_cfg = self.config.monitoring.out_of_scope_audit
+            if auditor and audit_cfg.enabled and audit_cfg.interval_seconds > 0:
+                task = asyncio.create_task(self._periodic_out_of_scope_audit(instance_id))
+                task.set_name(f"periodic_out_of_scope_audit_{instance_id}")
                 self._tasks.append(task)
 
         # Note: HealthMonitor runs its own internal monitoring loop (per instance)
@@ -846,6 +879,40 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 logger.error(
                     f"[{instance_id}] Error in periodic snapshot validation: {e}", exc_info=True
                 )
+
+    async def _periodic_out_of_scope_audit(self, instance_id: str) -> None:
+        """Periodically run the out-of-scope entity audit.
+
+        Sleeps for the configured interval between runs so the first run
+        happens after one full interval (startup is already busy).
+
+        Args:
+            instance_id: Home Assistant instance identifier
+        """
+        interval = self.config.monitoring.out_of_scope_audit.interval_seconds
+
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+
+            auditor = self.out_of_scope_auditors.get(instance_id)
+            if auditor is None:
+                break
+
+            try:
+                stats = await auditor.run_audit()
+                logger.info(
+                    f"[{instance_id}] Out-of-scope audit: "
+                    f"{stats.get('new_count', 0)} new, "
+                    f"{stats.get('chronic_count', 0)} chronic, "
+                    f"{stats.get('recovered_count', 0)} recovered"
+                )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[{instance_id}] Error in out-of-scope audit: {e}", exc_info=True)
 
     async def _on_websocket_state_changed(self, instance_id: str, event: dict[str, Any]) -> None:
         """Handle state_changed events from WebSocket.
@@ -1266,6 +1333,7 @@ Access the web dashboard at `/dashboard` for a visual interface.
             self.cascade_orchestrators.pop(instance_id, None)
             self.entity_healers.pop(instance_id, None)
             self.device_healers.pop(instance_id, None)
+            self.out_of_scope_auditors.pop(instance_id, None)
 
         # Close database (shared)
         if self.database:
