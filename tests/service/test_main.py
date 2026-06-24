@@ -169,6 +169,14 @@ class TestHABossServiceStart:
             assert mock_client.get_states.call_count == 3
             # Note: StateTracker.initialize() is no longer called in multi-instance architecture
             mock_monitor.start.assert_called_once()
+
+            # Regression: the StateTracker MUST be wired with the discovery services,
+            # otherwise its cache (and thus the health monitor) is never scoped to the
+            # discovered set and every entity — including unreferenced cloud ones like
+            # PSN/Plex — gets monitored and flagged when it flaps.
+            tracker_kwargs = mock_state_tracker.call_args.kwargs
+            assert tracker_kwargs.get("entity_discovery") is mock_entity_disc
+            assert tracker_kwargs.get("integration_discovery") is mock_discovery
             # WebSocket now uses start() instead of connect() for initialization
             mock_ws.start.assert_called_once()
 
