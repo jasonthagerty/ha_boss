@@ -679,45 +679,6 @@ class OutcomeValidationConfig(BaseSettings):
     )
 
 
-class APIConfig(BaseModel):
-    """REST API configuration."""
-
-    enabled: bool = Field(
-        default=False,
-        description="Enable REST API server",
-    )
-    host: str = Field(
-        default="0.0.0.0",
-        description="API server host",
-    )
-    port: int = Field(
-        default=8000,
-        ge=1,
-        le=65535,
-        description="API server port",
-    )
-    cors_enabled: bool = Field(
-        default=True,
-        description="Enable CORS middleware",
-    )
-    cors_origins: list[str] = Field(
-        default_factory=lambda: ["*"],
-        description="Allowed CORS origins (* for all)",
-    )
-    auth_enabled: bool = Field(
-        default=False,
-        description="Enable API key authentication",
-    )
-    api_keys: list[str] = Field(
-        default_factory=list,
-        description="Valid API keys for authentication",
-    )
-    require_https: bool = Field(
-        default=False,
-        description="Require HTTPS for API requests",
-    )
-
-
 class Config(BaseSettings):
     """Main HA Boss configuration."""
 
@@ -739,7 +700,6 @@ class Config(BaseSettings):
     rest: RESTConfig = Field(default_factory=RESTConfig)
     intelligence: IntelligenceConfig = Field(default_factory=IntelligenceConfig)
     outcome_validation: OutcomeValidationConfig = Field(default_factory=OutcomeValidationConfig)
-    api: APIConfig = Field(default_factory=APIConfig)
 
     mode: Literal["production", "dry_run", "testing"] = Field(
         default="production",

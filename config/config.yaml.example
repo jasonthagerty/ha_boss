@@ -279,28 +279,3 @@ outcome_validation:
   # an automation as "validated healthy" in reliability scoring
   # Range: 1-100, recommended: 3-5
   consecutive_success_threshold: 3
-
-# REST API server configuration
-api:
-  # Enable the REST API server (required for health checks)
-  enabled: true
-
-  # Host and port for the API server
-  host: "0.0.0.0"
-  port: 8000
-
-  # CORS settings (for web dashboards and WebSocket origin validation)
-  # IMPORTANT: WebSocket connections are validated against these origins
-  # for security. Restrict in production to prevent cross-site attacks.
-  cors_enabled: true
-  cors_origins:
-    - "*"  # Allow all origins (SECURITY WARNING: only use in trusted networks!)
-    # Production examples:
-    # - "http://localhost:8000"        # Same-origin only
-    # - "http://homeassistant.local:8123"  # Home Assistant dashboard
-    # - "https://my-domain.com"        # External dashboard
-    # - "http://localhost:*"           # Wildcard port matching
-
-  # Optional: API key authentication
-  auth_enabled: false
-  api_keys: []
