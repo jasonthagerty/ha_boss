@@ -66,6 +66,25 @@ monitoring:
   # Used to validate WebSocket cache
   snapshot_interval_seconds: 300  # 5 minutes
 
+  # Out-of-scope audit: periodic digest of entities that are unavailable but are
+  # NOT used in any automation/scene/script (i.e. outside the monitored set).
+  # Informational only — sent as a persistent-notification digest, never mobile.
+  # Only net-new failures are reported; chronic ones are summarised as a count.
+  out_of_scope_audit:
+    enabled: false                     # Opt-in (off by default)
+    interval_seconds: 86400            # Run daily
+    chronic_threshold_seconds: 259200  # 3 days → "chronic", suppressed to a count line
+    include_stale: false               # Also report stale (not just unavailable) entities
+    group_by_integration: true         # Group the digest by integration (domain fallback)
+
+  # Action verification: after a state-changing service call (turn_on/off, cover
+  # open/close, lock/unlock, homeassistant.turn_*), verify the target entity
+  # actually reaches the intended state within delay_seconds; if not, send a
+  # WARNING notification (persistent + mobile push). Generic across automations.
+  action_verification:
+    enabled: false        # Opt-in (off by default)
+    delay_seconds: 30     # How long to wait for the entity to reach the expected state
+
 healing:
   # Enable auto-healing
   enabled: true
@@ -113,6 +132,15 @@ healing:
 notifications:
   # Send notifications when auto-healing fails
   on_healing_failure: true
+
+  # Monitor-and-notify mode: alert when an issue is detected even if auto-healing
+  # is disabled — get told about stuck/offline entities without any reloads.
+  on_issue_detected: false
+
+  # Mobile push: also send WARNING+ notifications to these notify entities via
+  # notify.send_message (e.g. the HA companion app). Empty = mobile disabled.
+  # Example: ["notify.jasons_iphone", "notify.melissas_iphone"]
+  mobile_push_services: []
 
   # Send weekly summary reports
   weekly_summary: true

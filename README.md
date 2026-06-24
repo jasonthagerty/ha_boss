@@ -13,6 +13,9 @@ A standalone Python service that monitors Home Assistant instances, automaticall
 - **🏠 Multi-Instance Support** - Manage multiple Home Assistant instances from one deployment
 - **🎯 Auto-Discovery** - Automatically finds entities from automations/scenes/scripts
 - **🔧 Auto-Healing** - Automatically reloads failed integrations with circuit breakers
+- **📣 Proactive Alerts** - Notify on stuck/offline entities even with healing disabled, with optional mobile push
+- **✅ Action Verification** - Warns if a commanded entity (turn on/off, garage, lock…) doesn't reach the intended state within a grace window
+- **🗂️ Out-of-Scope Audit** - Periodic digest of unavailable entities not used by any automation/scene/script
 - **🛡️ Safety First** - Dry-run mode, graceful degradation, automatic reconnection
 - **📊 Pattern Analysis** - Tracks reliability metrics and failure patterns
 - **🤖 AI Intelligence** - Local LLM (Ollama) + Claude API for automation analysis and optimization
