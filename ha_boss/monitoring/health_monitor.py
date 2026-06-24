@@ -33,6 +33,7 @@ class HealthMonitor:
         database: Database,
         state_tracker: StateTracker,
         on_issue_detected: Callable[[HealthIssue], Coroutine[Any, Any, None]] | None = None,
+        integration_classifier: Any | None = None,
     ) -> None:
         """Initialize health monitor.
 
@@ -41,11 +42,14 @@ class HealthMonitor:
             database: Database manager
             state_tracker: State tracker for entity states
             on_issue_detected: Optional callback when issue detected
+            integration_classifier: Optional classifier used to detect cloud
+                (internet-dependent) entities for gentler grace/notification.
         """
         self.config = config
         self.database = database
         self.state_tracker = state_tracker
         self.on_issue_detected = on_issue_detected
+        self.integration_classifier = integration_classifier
 
         # Track when issues were first detected (for grace period)
         # entity_id -> (issue_type, first_detected_time)
@@ -165,9 +169,13 @@ class HealthMonitor:
                 self._issue_tracker[entity_id] = (issue_type, now)
                 return
 
-            # Check if grace period has elapsed
+            # Check if grace period has elapsed (cloud entities get a longer grace)
             time_in_issue = now - first_detected
-            grace_period = timedelta(seconds=self.config.monitoring.grace_period_seconds)
+            grace_period = timedelta(
+                seconds=self.config.monitoring.get_entity_grace_period(
+                    entity_id, is_cloud=self._is_cloud(entity_id)
+                )
+            )
 
             if time_in_issue < grace_period:
                 # Still in grace period, don't report yet
@@ -234,6 +242,7 @@ class HealthMonitor:
                 "last_updated": entity_state.last_updated.isoformat(),
                 "grace_period_seconds": self.config.monitoring.grace_period_seconds,
             },
+            is_cloud=self._is_cloud(entity_id),
         )
 
         # Persist to database
@@ -321,6 +330,12 @@ class HealthMonitor:
 
         return False
 
+    def _is_cloud(self, entity_id: str) -> bool:
+        """Whether an entity belongs to a cloud (internet-dependent) integration."""
+        if self.integration_classifier is None:
+            return False
+        return bool(self.integration_classifier.is_cloud(entity_id))
+
     async def check_entity_now(self, entity_id: str) -> HealthIssue | None:
         """Manually check health of a specific entity (bypasses grace period).
 
@@ -346,6 +361,7 @@ class HealthMonitor:
                 "state": entity_state.state,
                 "last_updated": entity_state.last_updated.isoformat(),
             },
+            is_cloud=self._is_cloud(entity_id),
         )
 
 

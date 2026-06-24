@@ -248,6 +248,102 @@ class TestHealthMonitorGracePeriod:
             assert health_monitor._issue_tracker["sensor.test"][0] == "unknown"
 
 
+class TestHealthMonitorCloud:
+    """Tests for cloud (internet-dependent) entity handling."""
+
+    def _cloud_monitor(
+        self,
+        mock_config: Config,
+        mock_database: Database,
+        mock_state_tracker: StateTracker,
+        cloud_ids: set[str],
+    ) -> HealthMonitor:
+        classifier = MagicMock()
+        classifier.is_cloud = lambda eid: eid in cloud_ids
+        return HealthMonitor(
+            mock_config,
+            mock_database,
+            mock_state_tracker,
+            integration_classifier=classifier,
+        )
+
+    def test_is_cloud_without_classifier_is_false(self, health_monitor: HealthMonitor) -> None:
+        """No classifier wired → nothing is treated as cloud."""
+        assert health_monitor._is_cloud("media_player.tv") is False
+
+    def test_is_cloud_delegates_to_classifier(
+        self, mock_config, mock_database, mock_state_tracker
+    ) -> None:
+        monitor = self._cloud_monitor(
+            mock_config, mock_database, mock_state_tracker, {"media_player.tv"}
+        )
+        assert monitor._is_cloud("media_player.tv") is True
+        assert monitor._is_cloud("light.kitchen") is False
+
+    @pytest.mark.asyncio
+    async def test_check_entity_now_stamps_is_cloud(
+        self, mock_config, mock_database, mock_state_tracker
+    ) -> None:
+        mock_state_tracker.get_state = AsyncMock(
+            return_value=EntityState(
+                entity_id="media_player.tv", state="unavailable", last_updated=datetime.now(UTC)
+            )
+        )
+        monitor = self._cloud_monitor(
+            mock_config, mock_database, mock_state_tracker, {"media_player.tv"}
+        )
+        issue = await monitor.check_entity_now("media_player.tv")
+        assert issue is not None
+        assert issue.is_cloud is True
+
+    @pytest.mark.asyncio
+    async def test_cloud_entity_not_reported_before_cloud_grace(
+        self, mock_config, mock_database, mock_state_tracker
+    ) -> None:
+        """A cloud entity uses the longer cloud grace (900s), not the 300s default."""
+        monitor = self._cloud_monitor(
+            mock_config, mock_database, mock_state_tracker, {"media_player.tv"}
+        )
+        entity_state = EntityState(
+            entity_id="media_player.tv", state="unavailable", last_updated=datetime.now(UTC)
+        )
+        callback = AsyncMock()
+        monitor.on_issue_detected = callback
+
+        # Detected 8 minutes ago: past the 300s default grace, but within the 900s cloud grace.
+        monitor._issue_tracker["media_player.tv"] = (
+            "unavailable",
+            datetime.now(UTC) - timedelta(minutes=8),
+        )
+        with patch.object(monitor, "_persist_health_event", new_callable=AsyncMock):
+            await monitor._handle_detected_issue(entity_state, "unavailable")
+            callback.assert_not_called()  # still within cloud grace
+
+    @pytest.mark.asyncio
+    async def test_cloud_entity_reported_after_cloud_grace(
+        self, mock_config, mock_database, mock_state_tracker
+    ) -> None:
+        monitor = self._cloud_monitor(
+            mock_config, mock_database, mock_state_tracker, {"media_player.tv"}
+        )
+        entity_state = EntityState(
+            entity_id="media_player.tv", state="unavailable", last_updated=datetime.now(UTC)
+        )
+        callback = AsyncMock()
+        monitor.on_issue_detected = callback
+
+        # Detected 20 minutes ago: past the 900s cloud grace.
+        monitor._issue_tracker["media_player.tv"] = (
+            "unavailable",
+            datetime.now(UTC) - timedelta(minutes=20),
+        )
+        with patch.object(monitor, "_persist_health_event", new_callable=AsyncMock):
+            await monitor._handle_detected_issue(entity_state, "unavailable")
+            callback.assert_called_once()
+            issue = callback.call_args.args[0]
+            assert issue.is_cloud is True
+
+
 class TestHealthMonitorRecovery:
     """Tests for entity recovery handling."""
 

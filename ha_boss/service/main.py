@@ -70,6 +70,7 @@ class HABossService:
         self.health_monitors: dict[str, HealthMonitor] = {}
         self.integration_discoveries: dict[str, IntegrationDiscovery] = {}
         self.entity_discoveries: dict[str, Any] = {}  # EntityDiscoveryService
+        self.integration_classifiers: dict[str, Any] = {}  # IntegrationClassifier (cloud detect)
         self.healing_managers: dict[str, HealingManager] = {}
         self.notification_managers: dict[str, NotificationManager] = {}
         self.escalation_managers: dict[str, NotificationEscalator] = {}
@@ -278,6 +279,31 @@ class HABossService:
 
         logger.info(f"[{instance_id}] ✓ State tracker initialized with {len(states)} entities")
 
+        # 5b. Classify integrations by iot_class (cloud vs local) so the health
+        # monitor can treat internet-dependent integrations (PSN, Plex, Life360)
+        # gently. Best-effort: degrade to "no entity is cloud" if it fails.
+        if self.config.monitoring.cloud_handling.enabled:
+            try:
+                from ha_boss.discovery.integration_classifier import IntegrationClassifier
+
+                classifier = IntegrationClassifier(
+                    ha_client=self.ha_clients[instance_id],
+                    config=self.config,
+                    database=self.database,
+                    instance_id=instance_id,
+                )
+                await classifier.refresh()
+                self.integration_classifiers[instance_id] = classifier
+                logger.info(f"[{instance_id}] ✓ Integration classifier initialized")
+            except Exception as e:
+                logger.warning(
+                    f"[{instance_id}] Integration classification failed, continuing without "
+                    f"cloud handling: {e}"
+                )
+                self.integration_classifiers[instance_id] = None
+        else:
+            self.integration_classifiers[instance_id] = None
+
         # 6. Initialize health monitor
         logger.info(f"[{instance_id}] Initializing health monitor...")
         self.health_monitors[instance_id] = HealthMonitor(
@@ -285,6 +311,7 @@ class HABossService:
             state_tracker=self.state_trackers[instance_id],
             database=self.database,
             on_issue_detected=lambda issue: self._on_health_issue(instance_id, issue),
+            integration_classifier=self.integration_classifiers.get(instance_id),
         )
         await self.health_monitors[instance_id].start()
         logger.info(f"[{instance_id}] ✓ Health monitor started")

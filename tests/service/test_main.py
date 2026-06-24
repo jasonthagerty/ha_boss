@@ -104,6 +104,8 @@ class TestHABossServiceStart:
 
             mock_client = AsyncMock()
             mock_client.get_states = AsyncMock(return_value=[])
+            mock_client.get_integration_manifests = AsyncMock(return_value=[])
+            mock_client.get_entity_registry = AsyncMock(return_value=[])
             mock_ha_client_class.return_value = mock_client
 
             mock_discovery = AsyncMock()

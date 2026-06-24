@@ -173,6 +173,92 @@ class HomeAssistantClient:
         """
         return cast(list[dict[str, Any]], await self._request("GET", "/api/states"))
 
+    async def _ws_command(self, command: dict[str, Any]) -> Any:
+        """Run a single WebSocket request/response command.
+
+        Opens a short-lived authenticated WebSocket connection, sends one
+        command, waits for the matching ``result`` message, and closes. Used for
+        WS-only APIs that have no REST equivalent (manifests, entity registry).
+
+        Args:
+            command: Command payload WITHOUT the ``id`` field (added here).
+
+        Returns:
+            The ``result`` field of the response.
+
+        Raises:
+            HomeAssistantConnectionError: Connection/transport failure.
+            HomeAssistantAuthError: Authentication rejected.
+            HomeAssistantAPIError: HA returned ``success: false``.
+        """
+        ws_url = (
+            self.base_url.replace("http://", "ws://").replace("https://", "wss://")
+            + "/api/websocket"
+        )
+        await self._ensure_session()
+        assert self._session is not None
+        session = self._session
+
+        async def _exchange() -> Any:
+            async with session.ws_connect(ws_url) as ws:
+                # Auth handshake
+                auth_required = await ws.receive_json()
+                if auth_required.get("type") != "auth_required":
+                    raise HomeAssistantConnectionError(
+                        f"Expected auth_required, got: {auth_required.get('type')}"
+                    )
+                await ws.send_json({"type": "auth", "access_token": self.token})
+                auth_result = await ws.receive_json()
+                if auth_result.get("type") == "auth_invalid":
+                    raise HomeAssistantAuthError(
+                        f"WebSocket auth failed: {auth_result.get('message')}"
+                    )
+                if auth_result.get("type") != "auth_ok":
+                    raise HomeAssistantConnectionError(
+                        f"Unexpected auth response: {auth_result.get('type')}"
+                    )
+
+                # Send the command and wait for the matching result
+                msg_id = 1
+                await ws.send_json({"id": msg_id, **command})
+                while True:
+                    response = await ws.receive_json()
+                    if response.get("type") == "result" and response.get("id") == msg_id:
+                        if not response.get("success", False):
+                            raise HomeAssistantAPIError(
+                                f"WS command {command.get('type')!r} failed: "
+                                f"{response.get('error')}"
+                            )
+                        return response.get("result")
+
+        try:
+            return await asyncio.wait_for(_exchange(), timeout=self.timeout)
+        except (HomeAssistantAuthError, HomeAssistantAPIError):
+            raise
+        except Exception as e:
+            raise HomeAssistantConnectionError(
+                f"WS command {command.get('type')!r} failed: {e}"
+            ) from e
+
+    async def get_integration_manifests(self) -> list[dict[str, Any]]:
+        """Fetch all integration manifests (domain → iot_class, name, ...).
+
+        Returns:
+            List of manifest dicts, each with at least ``domain`` and ``iot_class``.
+        """
+        return cast(list[dict[str, Any]], await self._ws_command({"type": "manifest/list"}))
+
+    async def get_entity_registry(self) -> list[dict[str, Any]]:
+        """Fetch the entity registry (entity_id → platform/integration, ...).
+
+        Returns:
+            List of entity registry entries, each with ``entity_id`` and ``platform``.
+        """
+        return cast(
+            list[dict[str, Any]],
+            await self._ws_command({"type": "config/entity_registry/list"}),
+        )
+
     async def get_state(self, entity_id: str) -> dict[str, Any]:
         """Get state for specific entity.
 

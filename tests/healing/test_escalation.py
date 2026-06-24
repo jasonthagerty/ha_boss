@@ -87,6 +87,67 @@ def sample_health_issue():
 
 
 @pytest.mark.asyncio
+async def test_notify_issue_detected_cloud_suppresses_mobile(issue_detect_config, mock_ha_client):
+    """A cloud entity's issue notification omits the MOBILE channel."""
+    from ha_boss.notifications import NotificationChannel
+
+    escalator = NotificationEscalator(issue_detect_config, mock_ha_client)
+    escalator.notification_manager.notify = AsyncMock()
+
+    issue = HealthIssue(
+        entity_id="media_player.lg_webos_tv",
+        issue_type="unavailable",
+        detected_at=datetime.now(UTC),
+        is_cloud=True,
+    )
+    await escalator.notify_issue_detected(issue)
+
+    channels = escalator.notification_manager.notify.call_args.kwargs.get("channels")
+    assert channels is not None
+    assert NotificationChannel.MOBILE not in channels
+    assert NotificationChannel.HOME_ASSISTANT in channels
+
+
+@pytest.mark.asyncio
+async def test_notify_issue_detected_noncloud_uses_default_routing(
+    issue_detect_config, mock_ha_client
+):
+    """A non-cloud entity uses default severity routing (channels=None → mobile allowed)."""
+    escalator = NotificationEscalator(issue_detect_config, mock_ha_client)
+    escalator.notification_manager.notify = AsyncMock()
+
+    issue = HealthIssue(
+        entity_id="binary_sensor.back_patio_motion",
+        issue_type="unavailable",
+        detected_at=datetime.now(UTC),
+        is_cloud=False,
+    )
+    await escalator.notify_issue_detected(issue)
+
+    assert escalator.notification_manager.notify.call_args.kwargs.get("channels") is None
+
+
+@pytest.mark.asyncio
+async def test_notify_issue_detected_cloud_keeps_mobile_when_not_suppressed(
+    issue_detect_config, mock_ha_client
+):
+    """If suppress_mobile_push is off, cloud entities use default routing."""
+    issue_detect_config.monitoring.cloud_handling.suppress_mobile_push = False
+    escalator = NotificationEscalator(issue_detect_config, mock_ha_client)
+    escalator.notification_manager.notify = AsyncMock()
+
+    issue = HealthIssue(
+        entity_id="media_player.lg_webos_tv",
+        issue_type="unavailable",
+        detected_at=datetime.now(UTC),
+        is_cloud=True,
+    )
+    await escalator.notify_issue_detected(issue)
+
+    assert escalator.notification_manager.notify.call_args.kwargs.get("channels") is None
+
+
+@pytest.mark.asyncio
 async def test_escalator_creation(mock_config, mock_ha_client):
     """Test creating notification escalator via factory function."""
     escalator = await create_notification_escalator(mock_config, mock_ha_client)

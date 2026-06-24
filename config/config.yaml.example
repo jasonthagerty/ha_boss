@@ -95,6 +95,17 @@ monitoring:
     enabled: false        # Opt-in (off by default)
     delay_seconds: 30     # How long to wait for the entity to reach the expected state
 
+  # Cloud (internet-dependent) integration handling. Integrations whose HA
+  # manifest iot_class is cloud_polling/cloud_push (e.g. PlayStation Network,
+  # Plex, Life360) flap unavailable on external availability HA Boss can't heal.
+  # When enabled, their entities get a longer grace and no mobile push (HA/CLI
+  # still notified), instead of paging on every blip.
+  cloud_handling:
+    enabled: true
+    iot_classes: ["cloud_polling", "cloud_push"]
+    suppress_mobile_push: true
+    grace_period_seconds: 900   # longer grace for cloud entities (null = use default)
+
 healing:
   # Enable auto-healing
   enabled: true

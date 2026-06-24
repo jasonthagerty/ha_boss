@@ -16,6 +16,8 @@ class HealthIssue:
         issue_type: Type of issue (e.g., "unavailable", "stale", "unknown")
         detected_at: When the issue was first detected
         details: Optional additional context about the issue
+        is_cloud: Whether the entity belongs to a cloud (internet-dependent)
+            integration; used to route notifications more gently.
     """
 
     def __init__(
@@ -24,11 +26,13 @@ class HealthIssue:
         issue_type: str,
         detected_at: datetime,
         details: dict[str, Any] | None = None,
+        is_cloud: bool = False,
     ):
         self.entity_id = entity_id
         self.issue_type = issue_type
         self.detected_at = detected_at
         self.details = details or {}
+        self.is_cloud = is_cloud
 
     def __repr__(self) -> str:
         return (

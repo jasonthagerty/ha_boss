@@ -206,3 +206,37 @@ def test_is_unavailable_expected_glob_match():
     cfg = MonitoringConfig(unavailable_ok=["media_player.*"])
     assert cfg.is_unavailable_expected("media_player.kitchen") is True
     assert cfg.is_unavailable_expected("switch.fan") is False
+
+
+def test_cloud_handling_defaults():
+    """Cloud handling is on by default with sensible cloud iot_classes."""
+    cfg = MonitoringConfig()
+    assert cfg.cloud_handling.enabled is True
+    assert cfg.cloud_handling.suppress_mobile_push is True
+    assert cfg.cloud_handling.grace_period_seconds == 900
+    assert set(cfg.cloud_handling.iot_classes) == {"cloud_polling", "cloud_push"}
+
+
+def test_grace_period_cloud_vs_default():
+    """Cloud entities get the cloud grace; non-cloud get the default."""
+    cfg = MonitoringConfig(grace_period_seconds=300)
+    assert cfg.get_entity_grace_period("sensor.x", is_cloud=False) == 300
+    assert cfg.get_entity_grace_period("sensor.x", is_cloud=True) == 900
+
+
+def test_grace_period_entity_override_beats_cloud():
+    """An explicit per-entity override takes precedence over cloud grace."""
+    from ha_boss.core.config import EntityOverride
+
+    cfg = MonitoringConfig(
+        grace_period_seconds=300,
+        entity_overrides={"sensor.crit": EntityOverride(grace_period_seconds=60)},
+    )
+    assert cfg.get_entity_grace_period("sensor.crit", is_cloud=True) == 60
+
+
+def test_grace_period_cloud_disabled_uses_default():
+    """When cloud handling is disabled, cloud entities use the default grace."""
+    cfg = MonitoringConfig(grace_period_seconds=300)
+    cfg.cloud_handling.enabled = False
+    assert cfg.get_entity_grace_period("sensor.x", is_cloud=True) == 300
