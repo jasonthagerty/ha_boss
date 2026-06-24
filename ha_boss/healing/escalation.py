@@ -9,6 +9,7 @@ from ha_boss.core.ha_client import HomeAssistantClient
 from ha_boss.core.types import HealthIssue
 from ha_boss.intelligence.llm_router import LLMRouter
 from ha_boss.notifications import (
+    NotificationChannel,
     NotificationContext,
     NotificationManager,
     NotificationSeverity,
@@ -125,7 +126,16 @@ class NotificationEscalator:
             detected_at=health_issue.detected_at,
         )
 
-        await self.notification_manager.notify(context)
+        # Cloud (internet-dependent) entities flap on external availability we
+        # cannot heal — keep them off mobile push to avoid noise; HA/CLI still get it.
+        channels = None
+        if health_issue.is_cloud and self.config.monitoring.cloud_handling.suppress_mobile_push:
+            channels = [NotificationChannel.CLI, NotificationChannel.HOME_ASSISTANT]
+            logger.debug(
+                f"Cloud entity {health_issue.entity_id}: suppressing mobile push " "(HA/CLI only)"
+            )
+
+        await self.notification_manager.notify(context, channels=channels)
         logger.info(f"Sent issue-detected notification for {health_issue.entity_id}")
 
     async def notify_recovery(

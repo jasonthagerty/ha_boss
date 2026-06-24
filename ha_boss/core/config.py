@@ -213,6 +213,38 @@ class OutOfScopeAuditConfig(BaseSettings):
     )
 
 
+class CloudHandlingConfig(BaseSettings):
+    """Handling for internet-dependent (cloud) integrations.
+
+    Cloud integrations (HA manifest ``iot_class`` of ``cloud_polling`` /
+    ``cloud_push``) flap ``unavailable`` based on external availability that HA
+    Boss cannot heal, so alerting on them — especially via mobile push — is
+    noisy. When enabled, entities belonging to a cloud integration get a longer
+    grace period and (optionally) no mobile push; they still alert via HA/CLI.
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable gentler handling of cloud (internet-dependent) integrations",
+    )
+    iot_classes: list[str] = Field(
+        default_factory=lambda: ["cloud_polling", "cloud_push"],
+        description="HA manifest iot_class values treated as 'cloud' / internet-dependent",
+    )
+    suppress_mobile_push: bool = Field(
+        default=True,
+        description="Do not send mobile push for cloud-entity issues (HA/CLI only)",
+    )
+    grace_period_seconds: int | None = Field(
+        default=900,
+        description=(
+            "Grace period for cloud entities before reporting (None = use the default "
+            "monitoring grace_period_seconds)"
+        ),
+        ge=0,
+    )
+
+
 class ActionVerificationConfig(BaseSettings):
     """Configuration for action (service-call) verification.
 
@@ -297,24 +329,40 @@ class MonitoringConfig(BaseSettings):
         description="Verify that service calls produce the expected entity state",
     )
 
+    # Cloud (internet-dependent) integration handling
+    cloud_handling: CloudHandlingConfig = Field(
+        default_factory=CloudHandlingConfig,
+        description="Gentler handling of cloud/internet-dependent integrations",
+    )
+
     # Per-entity overrides
     entity_overrides: dict[str, EntityOverride] = Field(
         default_factory=dict,
         description="Per-entity configuration overrides",
     )
 
-    def get_entity_grace_period(self, entity_id: str) -> int:
+    def get_entity_grace_period(self, entity_id: str, is_cloud: bool = False) -> int:
         """Get grace period for entity, checking overrides first.
+
+        Precedence: explicit per-entity override > cloud grace (when ``is_cloud``
+        and cloud handling enabled with a configured cloud grace) > default.
 
         Args:
             entity_id: Entity to get grace period for
+            is_cloud: Whether the entity belongs to a cloud integration
 
         Returns:
-            Grace period in seconds (override or default)
+            Grace period in seconds
         """
         override = self.entity_overrides.get(entity_id)
         if override and override.grace_period_seconds is not None:
             return override.grace_period_seconds
+        if (
+            is_cloud
+            and self.cloud_handling.enabled
+            and self.cloud_handling.grace_period_seconds is not None
+        ):
+            return self.cloud_handling.grace_period_seconds
         return self.grace_period_seconds
 
     def is_unavailable_expected(self, entity_id: str) -> bool:

@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 11
+CURRENT_DB_VERSION = 12
 
 
 class Base(DeclarativeBase):
@@ -135,6 +135,9 @@ class Integration(Base):
     domain: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source: Mapped[str | None] = mapped_column(String(50))
+    # HA manifest iot_class: cloud_polling / cloud_push / local_polling / local_push /
+    # calculated / assumed_state. Used to treat internet-dependent integrations gently.
+    iot_class: Mapped[str | None] = mapped_column(String(50))
     entity_ids: Mapped[str | None] = mapped_column(Text)  # JSON string of entity IDs
     is_discovered: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

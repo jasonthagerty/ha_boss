@@ -450,3 +450,88 @@ async def test_create_automation_api_error(client):
 
     with pytest.raises(HomeAssistantAPIError, match="Failed to create automation"):
         await client.create_automation(automation_config)
+
+
+def _ws_session(messages):
+    """Build a mock aiohttp session whose ws_connect yields a ws replaying messages."""
+    ws = AsyncMock()
+    ws.receive_json = AsyncMock(side_effect=list(messages))
+    ws.send_json = AsyncMock()
+
+    cm = AsyncMock()
+    cm.__aenter__ = AsyncMock(return_value=ws)
+    cm.__aexit__ = AsyncMock(return_value=False)
+
+    session = MagicMock()
+    session.closed = False
+    session.ws_connect = MagicMock(return_value=cm)
+    return session, ws
+
+
+@pytest.mark.asyncio
+async def test_get_integration_manifests_ws(client):
+    """manifest/list returns the command result after the auth handshake."""
+    manifests = [{"domain": "hue", "iot_class": "local_push"}]
+    session, ws = _ws_session(
+        [
+            {"type": "auth_required"},
+            {"type": "auth_ok"},
+            {"type": "result", "id": 1, "success": True, "result": manifests},
+        ]
+    )
+    client._session = session
+
+    result = await client.get_integration_manifests()
+    assert result == manifests
+    # The command sent was manifest/list with an id
+    sent = ws.send_json.call_args_list[-1].args[0]
+    assert sent["type"] == "manifest/list"
+    assert "id" in sent
+
+
+@pytest.mark.asyncio
+async def test_get_entity_registry_ws(client):
+    """config/entity_registry/list returns its result."""
+    registry = [{"entity_id": "light.kitchen", "platform": "hue"}]
+    session, _ = _ws_session(
+        [
+            {"type": "auth_required"},
+            {"type": "auth_ok"},
+            {"type": "result", "id": 1, "success": True, "result": registry},
+        ]
+    )
+    client._session = session
+
+    result = await client.get_entity_registry()
+    assert result == registry
+
+
+@pytest.mark.asyncio
+async def test_ws_command_auth_invalid_raises(client):
+    """auth_invalid during handshake raises HomeAssistantAuthError."""
+    session, _ = _ws_session(
+        [
+            {"type": "auth_required"},
+            {"type": "auth_invalid", "message": "bad token"},
+        ]
+    )
+    client._session = session
+
+    with pytest.raises(HomeAssistantAuthError):
+        await client.get_integration_manifests()
+
+
+@pytest.mark.asyncio
+async def test_ws_command_unsuccessful_result_raises(client):
+    """A result with success=false raises HomeAssistantAPIError."""
+    session, _ = _ws_session(
+        [
+            {"type": "auth_required"},
+            {"type": "auth_ok"},
+            {"type": "result", "id": 1, "success": False, "error": {"code": "x"}},
+        ]
+    )
+    client._session = session
+
+    with pytest.raises(HomeAssistantAPIError):
+        await client.get_entity_registry()

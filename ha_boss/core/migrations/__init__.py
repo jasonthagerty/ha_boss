@@ -158,6 +158,7 @@ def _load_migrations() -> None:
     from ha_boss.core.migrations.v9_add_healing_plans import migrate_v8_to_v9
     from ha_boss.core.migrations.v10_plan_generation_suggested import migrate_v9_to_v10
     from ha_boss.core.migrations.v11_out_of_scope_audit import migrate_v10_to_v11
+    from ha_boss.core.migrations.v12_integration_iot_class import migrate_v11_to_v12
 
     # Register all migrations with the registry
     MIGRATION_REGISTRY.register(
@@ -204,6 +205,11 @@ def _load_migrations() -> None:
         target_version=11,
         migrate_func=migrate_v10_to_v11,
         description="Add out-of-scope audit status table",
+    )
+    MIGRATION_REGISTRY.register(
+        target_version=12,
+        migrate_func=migrate_v11_to_v12,
+        description="Add iot_class to integrations",
     )
 
 
