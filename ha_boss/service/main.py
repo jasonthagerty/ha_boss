@@ -1056,20 +1056,16 @@ Access the web dashboard at `/dashboard` for a visual interface.
         # Skip healing for recovery events
         if issue.issue_type == "recovered":
             logger.info(f"[{instance_id}] Entity {issue.entity_id} recovered automatically")
-            # In monitor-and-notify mode, clear any prior issue-detected alert
+            # In monitor-and-notify mode, clear any prior issue-detected alert WITHOUT
+            # emitting a recovery notification (a user who only enabled on_issue_detected
+            # did not opt into recovery alerts; those remain tied to healing).
             escalation_manager = self.escalation_managers.get(instance_id)
             if escalation_manager and self.config.notifications.on_issue_detected:
                 try:
-                    previous_issue_type = "unknown"
-                    if issue.details:
-                        previous_issue_type = issue.details.get("previous_issue_type", "unknown")
-                    await escalation_manager.notify_recovery(
-                        entity_id=issue.entity_id,
-                        previous_issue_type=previous_issue_type,
-                    )
+                    await escalation_manager.dismiss_issue_detected(issue.entity_id)
                 except Exception as e:
                     logger.debug(
-                        f"[{instance_id}] Failed to send recovery notification for "
+                        f"[{instance_id}] Failed to clear issue-detected notification for "
                         f"{issue.entity_id}: {e}"
                     )
             return

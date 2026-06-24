@@ -311,3 +311,21 @@ async def test_notify_recovery_dismisses_issue_detected(escalator, mock_ha_clien
         if call.args[:2] == ("persistent_notification", "dismiss")
     ]
     assert "haboss_issue_detected_sensor_test_sensor" in dismissed_ids
+
+
+@pytest.mark.asyncio
+async def test_dismiss_issue_detected_clears_without_recovery_notification(
+    escalator, mock_ha_client
+):
+    """dismiss_issue_detected clears the issue-detected alert but sends NO recovery notification."""
+    await escalator.dismiss_issue_detected("sensor.test_sensor")
+
+    # The issue-detected notification is dismissed...
+    dismissed_ids = [
+        call.args[2]["notification_id"]
+        for call in mock_ha_client.call_service.call_args_list
+        if call.args[:2] == ("persistent_notification", "dismiss")
+    ]
+    assert dismissed_ids == ["haboss_issue_detected_sensor_test_sensor"]
+    # ...and no RECOVERY (or any) notification is created.
+    mock_ha_client.create_persistent_notification.assert_not_called()

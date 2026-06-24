@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -69,7 +70,7 @@ def _make_verifier(
     )
 
 
-def _state_response(state: str) -> dict:
+def _state_response(state: str) -> dict[str, Any]:
     """Build a minimal HA state dict."""
     return {"entity_id": "light.bedroom", "state": state, "attributes": {}}
 

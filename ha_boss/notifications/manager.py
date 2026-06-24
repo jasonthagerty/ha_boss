@@ -284,6 +284,20 @@ class NotificationManager:
             self._sent_mobile_notifications[notification_id] = context
             logger.info(f"Sent mobile push: {notification_id}")
 
+    def notification_id_for(self, context: NotificationContext) -> str:
+        """Return the notification ID that ``notify(context)`` would use.
+
+        Public accessor so callers can dismiss/replace a prior notification
+        without re-deriving the ID format themselves.
+
+        Args:
+            context: Notification context.
+
+        Returns:
+            The deterministic notification ID for this context.
+        """
+        return self._generate_notification_id(context)
+
     def _generate_notification_id(self, context: NotificationContext) -> str:
         """Generate unique notification ID for tracking.
 

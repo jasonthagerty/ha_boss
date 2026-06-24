@@ -129,18 +129,20 @@ class OutOfScopeAuditor:
             s["entity_id"]: s.get("last_updated", "") for s in all_states if "entity_id" in s
         }
 
-        # 3. Classify bad out-of-scope entities
+        # 3. Classify bad out-of-scope entities.
+        # Mirror the real-time monitor-and-notify path (service/main.py), which
+        # flags "unavailable" (and "stale" when include_stale is set) but not
+        # "unknown" — keeping the two surfaces consistent for a user who enables
+        # both features.
         bad_entity_ids: set[str] = set()
         for eid in out_of_scope_ids:
             state = state_map.get(eid, "")
-            if state in ("unavailable", "unknown"):
+            if state == "unavailable":
                 bad_entity_ids.add(eid)
-            elif self._audit_cfg.include_stale:
-                (
-                    bad_entity_ids.add(eid)
-                    if self._is_stale(last_updated_map.get(eid, ""), now)
-                    else None
-                )
+            elif self._audit_cfg.include_stale and self._is_stale(
+                last_updated_map.get(eid, ""), now
+            ):
+                bad_entity_ids.add(eid)
 
         # 4. Load current baseline from DB
         async with self.database.async_session() as session:
@@ -339,10 +341,8 @@ class OutOfScopeAuditor:
         )
 
         # First dismiss the previous digest so the new one replaces it cleanly.
-        prev_notification_id = (
-            f"haboss_{NotificationType.OUT_OF_SCOPE_AUDIT.value}"
-            f"_{_AUDIT_NOTIFICATION_ID_SUFFIX.replace(' ', '_').lower()}"
-        )
+        # Ask the manager for the ID rather than re-deriving the format here.
+        prev_notification_id = self.notification_manager.notification_id_for(context)
         try:
             await self.notification_manager.dismiss(prev_notification_id)
         except Exception as exc:

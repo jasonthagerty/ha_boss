@@ -516,7 +516,7 @@ async def test_no_stale_when_include_stale_false(
         config=cfg,
     )
     stats = await auditor.run_audit()
-    # "on" state is not unavailable/unknown; not stale in the check because include_stale=False
+    # "on" state is not unavailable; not stale in the check because include_stale=False
     assert stats["bad_count"] == 0
 
 

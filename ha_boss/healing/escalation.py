@@ -158,6 +158,21 @@ class NotificationEscalator:
         await self.notification_manager.notify(context)
         logger.info(f"Sent recovery notification for {entity_id}")
 
+    async def dismiss_issue_detected(self, entity_id: str) -> None:
+        """Clear a prior issue-detected notification without sending a recovery alert.
+
+        Used by monitor-and-notify mode on recovery: it dismisses the
+        issue-detected notification (and re-arms its mobile push) but does NOT
+        emit a RECOVERY notification, so a user who only enabled
+        ``on_issue_detected`` is not sent recovery alerts they did not configure.
+
+        Args:
+            entity_id: Entity that recovered.
+        """
+        issue_notification_id = f"haboss_issue_detected_{entity_id.replace('.', '_')}"
+        await self.notification_manager.dismiss(issue_notification_id)
+        logger.debug(f"Cleared issue-detected notification for {entity_id}")
+
     async def notify_circuit_breaker_open(
         self,
         integration_name: str,
