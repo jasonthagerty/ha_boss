@@ -18,15 +18,3 @@ services:
     #   - ./ha_boss:/app/ha_boss:ro
     #   - ./config:/app/config:ro
     #   - ./data:/app/data:rw
-
-  haboss-mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile.mcp
-    image: ha-boss-mcp:dev
-    pull_policy: build
-    # Override with local source code mount for development (optional)
-    # volumes:
-    #   - ./ha_boss_mcp/ha_boss_mcp:/app/ha_boss_mcp:ro
-    #   - ./config:/app/config:ro
-    #   - ./data:/app/data:ro

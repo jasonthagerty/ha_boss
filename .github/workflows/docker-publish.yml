@@ -89,9 +89,6 @@ jobs:
           - component: ha-boss
             dockerfile: Dockerfile
             context: .
-          - component: ha-boss-mcp
-            dockerfile: Dockerfile.mcp
-            context: .
 
     steps:
       - name: Checkout repository
