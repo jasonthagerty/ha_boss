@@ -50,6 +50,16 @@ monitoring:
     - "sensor.uptime*"
     - "sun.sun"
 
+  # Entities for which the 'unavailable' state is EXPECTED/normal (glob patterns).
+  # Some devices report 'unavailable' simply because they are powered off (e.g. a
+  # TV or media player). Matching entities are NOT flagged as unavailable/stale by
+  # the health monitor, and a turn_off that leaves them unavailable is treated as
+  # success by the action verifier. Leave empty unless a device legitimately drops
+  # to 'unavailable' when off.
+  unavailable_ok: []
+  # Example:
+  #   - "media_player.lg_webos_tv_oled65c8pua"
+
   # Grace period before considering entity truly unavailable (seconds)
   grace_period_seconds: 300  # 5 minutes
 

@@ -295,6 +295,20 @@ class ActionVerifier:
                 )
                 return
 
+            # Some entities (e.g. a TV/media player) report 'unavailable' as their
+            # normal powered-off state, so a successful turn_off lands on
+            # 'unavailable' rather than 'off'. Treat that as success.
+            if (
+                actual == "unavailable"
+                and expected == "off"
+                and self.config.monitoring.is_unavailable_expected(entity_id)
+            ):
+                logger.debug(
+                    f"[{self.instance_id}] action_verifier: {entity_id} is 'unavailable' after "
+                    f"turn_off — accepted as expected powered-off state (unavailable_ok)"
+                )
+                return
+
             # State mismatch — send WARNING notification
             logger.warning(
                 f"[{self.instance_id}] action_verifier: {entity_id} did NOT reach expected "

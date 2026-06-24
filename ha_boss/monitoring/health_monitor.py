@@ -126,6 +126,11 @@ class HealthMonitor:
 
         # Check for unavailable state
         if state == "unavailable":
+            # Some entities (e.g. a TV/media player) report 'unavailable' as their
+            # normal powered-off state. For those, unavailable is healthy and we
+            # skip the stale check too (an off device naturally stops updating).
+            if self.config.monitoring.is_unavailable_expected(entity_state.entity_id):
+                return None
             return "unavailable"
 
         # Check for unknown state

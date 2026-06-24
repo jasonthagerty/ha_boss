@@ -137,6 +137,42 @@ class TestHealthMonitorDetection:
         issue_type = health_monitor._detect_issue_type(entity_state)
         assert issue_type is None
 
+    def test_unavailable_ok_suppresses_unavailable(self, health_monitor: HealthMonitor) -> None:
+        """An entity in unavailable_ok is healthy when unavailable (e.g. TV off)."""
+        health_monitor.config.monitoring.unavailable_ok = ["media_player.lg_webos_tv_oled65c8pua"]
+        entity_state = EntityState(
+            entity_id="media_player.lg_webos_tv_oled65c8pua",
+            state="unavailable",
+            last_updated=datetime.now(UTC),
+        )
+
+        assert health_monitor._detect_issue_type(entity_state) is None
+
+    def test_unavailable_ok_also_suppresses_stale(self, health_monitor: HealthMonitor) -> None:
+        """A powered-off unavailable_ok entity stops updating; it must not be flagged stale."""
+        health_monitor.config.monitoring.unavailable_ok = ["media_player.*"]
+        old_time = datetime.now(UTC) - timedelta(hours=2)
+        entity_state = EntityState(
+            entity_id="media_player.lg_webos_tv_oled65c8pua",
+            state="unavailable",
+            last_updated=old_time,
+        )
+
+        assert health_monitor._detect_issue_type(entity_state) is None
+
+    def test_unavailable_ok_does_not_affect_other_entities(
+        self, health_monitor: HealthMonitor
+    ) -> None:
+        """unavailable_ok must not suppress unavailable for non-matching entities."""
+        health_monitor.config.monitoring.unavailable_ok = ["media_player.lg_webos_tv_oled65c8pua"]
+        entity_state = EntityState(
+            entity_id="light.back_patio",
+            state="unavailable",
+            last_updated=datetime.now(UTC),
+        )
+
+        assert health_monitor._detect_issue_type(entity_state) == "unavailable"
+
 
 class TestHealthMonitorGracePeriod:
     """Tests for grace period handling."""

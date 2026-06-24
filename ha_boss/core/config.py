@@ -1,5 +1,6 @@
 """Configuration management with Pydantic."""
 
+import fnmatch
 import os
 from pathlib import Path
 from typing import Any, Literal
@@ -247,6 +248,16 @@ class MonitoringConfig(BaseSettings):
         ],
         description="Entity patterns to exclude from monitoring",
     )
+    unavailable_ok: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Entity patterns for which the 'unavailable' state is expected/normal "
+            "(e.g. a TV or media player that reports unavailable when powered off). "
+            "Matching entities are not flagged as unavailable/stale by the health "
+            "monitor, and a turn_off that leaves them unavailable is treated as "
+            "success by the action verifier."
+        ),
+    )
     grace_period_seconds: int = Field(
         default=300,
         description="Default grace period before entity considered unavailable",
@@ -305,6 +316,20 @@ class MonitoringConfig(BaseSettings):
         if override and override.grace_period_seconds is not None:
             return override.grace_period_seconds
         return self.grace_period_seconds
+
+    def is_unavailable_expected(self, entity_id: str) -> bool:
+        """Check if 'unavailable' is an expected/normal state for an entity.
+
+        Used to suppress false-positive alerts for devices that report
+        ``unavailable`` when they are simply powered off (e.g. TVs).
+
+        Args:
+            entity_id: Entity to check against the ``unavailable_ok`` patterns.
+
+        Returns:
+            True if the entity matches any ``unavailable_ok`` pattern.
+        """
+        return any(fnmatch.fnmatch(entity_id, pattern) for pattern in self.unavailable_ok)
 
 
 class HealingConfig(BaseSettings):

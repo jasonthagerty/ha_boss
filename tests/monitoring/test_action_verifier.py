@@ -381,6 +381,67 @@ class TestVerification:
             assert call_args.kwargs.get("channels") is None
 
 
+class TestUnavailableOkOnTurnOff:
+    """Tests for treating 'unavailable' as a successful turn_off for unavailable_ok entities."""
+
+    def _verifier_with_unavailable_ok(
+        self,
+        patterns: list[str],
+        actual_state: str,
+        notification_manager: AsyncMock,
+    ) -> ActionVerifier:
+        """Build a verifier whose target returns ``actual_state`` and has the given patterns."""
+        ha_client = AsyncMock()
+        ha_client.get_state = AsyncMock(return_value={"state": actual_state, "attributes": {}})
+        cfg = _make_config(delay_seconds=1)
+        cfg.monitoring.action_verification.delay_seconds = 0  # type: ignore[assignment]
+        cfg.monitoring.unavailable_ok = patterns
+        return ActionVerifier(
+            ha_client=ha_client,
+            notification_manager=notification_manager,
+            config=cfg,
+            instance_id="default",
+        )
+
+    @pytest.mark.asyncio
+    async def test_unavailable_after_turn_off_is_success(self) -> None:
+        """A TV that goes 'unavailable' after turn_off is treated as success (no warning)."""
+        notification_manager = AsyncMock()
+        verifier = self._verifier_with_unavailable_ok(
+            ["media_player.lg_webos_tv_oled65c8pua"], "unavailable", notification_manager
+        )
+
+        await verifier._verify(
+            "media_player.lg_webos_tv_oled65c8pua", "off", "media_player", "turn_off"
+        )
+
+        notification_manager.notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unavailable_not_in_list_still_warns(self) -> None:
+        """An entity NOT in unavailable_ok still warns when it lands on 'unavailable'."""
+        notification_manager = AsyncMock()
+        verifier = self._verifier_with_unavailable_ok(
+            ["media_player.lg_webos_tv_oled65c8pua"], "unavailable", notification_manager
+        )
+
+        await verifier._verify("light.back_patio", "off", "light", "turn_off")
+
+        notification_manager.notify.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_unavailable_after_turn_on_still_warns(self) -> None:
+        """unavailable_ok only excuses turn_off; a turn_on landing on 'unavailable' still warns."""
+        notification_manager = AsyncMock()
+        verifier = self._verifier_with_unavailable_ok(
+            ["switch.flaky"], "unavailable", notification_manager
+        )
+
+        await verifier._verify("switch.flaky", "on", "switch", "turn_on")
+
+        notification_manager.notify.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # Tests: supersede semantics
 # ---------------------------------------------------------------------------
