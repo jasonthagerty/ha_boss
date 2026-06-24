@@ -58,59 +58,35 @@ RUN mkdir -p /app/config /app/data && \
 # Add health check script (Python-based, no external dependencies)
 COPY --chmod=755 <<'EOF' /usr/local/bin/healthcheck.py
 #!/usr/bin/env python3
-"""Health check script for HA Boss container.
+"""Liveness check for HA Boss container.
 
-Calls the comprehensive /api/health endpoint which checks 22 components
-across 5 tiers (critical, essential, operational, healing, intelligence).
+HA Boss runs as a headless monitor-and-notify service with no HTTP server, so
+this verifies the main service process is alive by scanning /proc for the
+``haboss`` process. Dependency-free.
 
 Exit codes:
-  0 - Healthy or degraded (HTTP 200)
-  1 - Unhealthy (HTTP 503) or connection failed
+  0 - Service process running
+  1 - Service process not found
 """
+import os
 import sys
-import urllib.request
-import urllib.error
 
 def main() -> int:
-    """Run health check via API endpoint and return exit code."""
-    health_url = "http://localhost:8000/api/health"
+    """Return 0 if the haboss service process is running, else 1."""
+    self_pid = os.getpid()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit() or int(pid) == self_pid:
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmdline = f.read().replace(b"\x00", b" ").decode("utf-8", "ignore")
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+        if "haboss" in cmdline or "ha_boss" in cmdline:
+            return 0
 
-    try:
-        # Make request to health endpoint with 5 second timeout
-        with urllib.request.urlopen(health_url, timeout=5) as response:
-            status_code = response.getcode()
-
-            # 200 OK = healthy or degraded (service still functional)
-            if status_code == 200:
-                return 0
-
-            # Any other 2xx code is also acceptable
-            if 200 <= status_code < 300:
-                return 0
-
-            # Non-2xx response
-            print(f"Health check returned status {status_code}", file=sys.stderr)
-            return 1
-
-    except urllib.error.HTTPError as e:
-        # 503 Service Unavailable = unhealthy (critical failure)
-        if e.code == 503:
-            print("Health check reports service unhealthy (503)", file=sys.stderr)
-            return 1
-
-        # Other HTTP errors
-        print(f"Health check HTTP error: {e.code} {e.reason}", file=sys.stderr)
-        return 1
-
-    except urllib.error.URLError as e:
-        # Connection failed (API not running)
-        print(f"Cannot connect to API: {e.reason}", file=sys.stderr)
-        return 1
-
-    except Exception as e:
-        # Unexpected error
-        print(f"Health check failed: {e}", file=sys.stderr)
-        return 1
+    print("HA Boss service process not found", file=sys.stderr)
+    return 1
 
 if __name__ == "__main__":
     sys.exit(main())
@@ -118,9 +94,6 @@ EOF
 
 # Switch to non-root user
 USER haboss
-
-# Expose API port
-EXPOSE 8000
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

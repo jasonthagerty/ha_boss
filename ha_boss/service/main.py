@@ -86,7 +86,6 @@ class HABossService:
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
         self._shutdown_event = asyncio.Event()
-        self._api_server: Any = None  # Uvicorn server instance
 
         # Statistics (per instance)
         self.start_time: datetime | None = None
@@ -97,8 +96,6 @@ class HABossService:
 
         # WebSocket broadcast throttling (per instance, per entity)
         # Key: f"{instance_id}:{entity_id}", Value: last broadcast timestamp
-        self._last_ws_broadcasts: dict[str, datetime] = {}
-        self._ws_broadcast_min_interval: float = 1.0  # Minimum 1 second between broadcasts
 
     def _get_default_instance_id(self) -> str:
         """Get the default instance ID (first instance or 'default').
@@ -514,18 +511,6 @@ class HABossService:
 
         logger.info(f"[{instance_id}] ✓ WebSocket connected and subscribed")
 
-        # Emit WebSocket event for instance connection
-        try:
-            from ha_boss.api.websocket_manager import get_websocket_manager
-
-            ws_manager = get_websocket_manager()
-            await ws_manager.broadcast_instance_connection(
-                instance_id=instance_id,
-                connected=True,
-            )
-        except Exception as e:
-            logger.debug(f"[{instance_id}] Failed to broadcast instance connection: {e}")
-
         logger.info(f"[{instance_id}] ✅ Instance initialization complete")
 
     async def start(self) -> None:
@@ -600,24 +585,8 @@ class HABossService:
 
             # If still no instances, start in API-only mode
             if not instances:
-                logger.warning(
-                    "No Home Assistant instances configured. "
-                    "Service starting in API-only mode. "
-                    "Configure instances via the dashboard at /dashboard"
-                )
-                # Start API server and wait for configuration
-                if self.config.api.enabled:
-                    api_addr = f"{self.config.api.host}:{self.config.api.port}"
-                    logger.info(f"Starting API server on {api_addr}...")
-                    self._start_api_server()
-                    self.state = ServiceState.RUNNING
-                    logger.info("✅ HA Boss API started (waiting for instance configuration)")
-                    return
-                else:
-                    raise ValueError(
-                        "No Home Assistant instances configured and API is disabled. "
-                        "Cannot start service."
-                    )
+                logger.warning("No Home Assistant instances configured.")
+                raise ValueError("No Home Assistant instances configured. Cannot start service.")
 
             logger.info(f"Initializing {len(instances)} Home Assistant instance(s)...")
 
@@ -636,18 +605,11 @@ class HABossService:
             logger.info("Starting background tasks...")
             self._start_background_tasks()
 
-            # 11. Start API server if enabled
-            if self.config.api.enabled:
-                api_addr = f"{self.config.api.host}:{self.config.api.port}"
-                logger.info(f"Starting API server on {api_addr}...")
-                self._start_api_server()
-
             self.state = ServiceState.RUNNING
             logger.info("✅ HA Boss service started successfully")
             logger.info(
                 f"Mode: {self.config.mode}, "
-                f"Healing: {'enabled' if self.config.healing.enabled else 'disabled'}, "
-                f"API: {'enabled' if self.config.api.enabled else 'disabled'}"
+                f"Healing: {'enabled' if self.config.healing.enabled else 'disabled'}"
             )
 
         except Exception as e:
@@ -696,212 +658,6 @@ class HABossService:
         logger.info(
             f"Started {len(self._tasks)} background tasks for {len(self.websocket_clients)} instance(s)"
         )
-
-    def _start_api_server(self) -> None:
-        """Start the FastAPI server in a background task."""
-        task = asyncio.create_task(self._run_api_server())
-        task.set_name("api_server")
-        self._tasks.append(task)
-
-        api_addr = f"{self.config.api.host}:{self.config.api.port}"
-        logger.info(f"API server task started - docs at http://{api_addr}/docs")
-
-    async def _run_api_server(self) -> None:
-        """Run the uvicorn API server."""
-        try:
-            from pathlib import Path
-
-            import uvicorn
-            from fastapi import FastAPI, HTTPException
-            from fastapi.middleware.cors import CORSMiddleware
-            from fastapi.responses import FileResponse
-            from fastapi.staticfiles import StaticFiles
-
-            # Import and patch the global service getter
-            import ha_boss.api.app as api_app
-
-            api_app._service = self  # Set global service instance for API routes
-
-            # Create FastAPI app with full configuration
-            app = FastAPI(
-                title="HA Boss API",
-                description="""
-## HA Boss REST API
-
-A RESTful API for monitoring, managing, and analyzing Home Assistant instances.
-
-### Features
-
-- **Status Monitoring** - Real-time service status, uptime, and statistics
-- **Entity Monitoring** - Track entity states and history
-- **Pattern Analysis** - Integration reliability and failure analysis
-- **Automation Management** - Analyze and generate automations with AI
-- **Manual Healing** - Trigger integration reloads on demand
-
-### Dashboard
-
-Access the web dashboard at `/dashboard` for a visual interface.
-                """,
-                version="0.1.0",
-                docs_url="/docs",
-                redoc_url="/redoc",
-                openapi_url="/openapi.json",
-            )
-
-            # Add CORS if enabled
-            if self.config.api.cors_enabled:
-                app.add_middleware(
-                    CORSMiddleware,
-                    allow_origins=self.config.api.cors_origins,
-                    allow_credentials=True,
-                    allow_methods=["*"],
-                    allow_headers=["*"],
-                )
-
-            # Import and mount all routers (use global service instance)
-            from ha_boss.api.routes import (
-                automations,
-                discovery,
-                healing,
-                monitoring,
-                patterns,
-                status,
-                websocket,
-            )
-            from ha_boss.api.routes import (
-                config as config_routes,
-            )
-
-            # Try to import plans router (may not be available on main branch)
-            plans_routes = None
-            try:
-                from ha_boss.api.routes import plans as plans_routes
-            except ImportError:
-                logger.info("Healing plan API routes not available")
-
-            # Add authentication dependency if enabled
-            dependencies = []
-            if self.config.api.auth_enabled:
-                from fastapi import Depends
-
-                from ha_boss.api.dependencies import verify_api_key
-
-                dependencies = [Depends(verify_api_key)]
-                logger.info("API authentication enabled")
-            else:
-                logger.info("API authentication disabled")
-
-            # Register all routers
-            app.include_router(
-                status.router, prefix="/api", tags=["Status"], dependencies=dependencies
-            )
-            app.include_router(
-                monitoring.router, prefix="/api", tags=["Monitoring"], dependencies=dependencies
-            )
-            app.include_router(
-                patterns.router,
-                prefix="/api",
-                tags=["Pattern Analysis"],
-                dependencies=dependencies,
-            )
-            app.include_router(
-                automations.router,
-                prefix="/api",
-                tags=["Automations"],
-                dependencies=dependencies,
-            )
-            app.include_router(
-                discovery.router,
-                prefix="/api",
-                tags=["Discovery"],
-                dependencies=dependencies,
-            )
-            app.include_router(
-                healing.router, prefix="/api", tags=["Healing"], dependencies=dependencies
-            )
-
-            # Register healing plans router if available
-            if plans_routes is not None:
-                app.include_router(
-                    plans_routes.router,
-                    prefix="/api",
-                    tags=["Healing Plans"],
-                    dependencies=dependencies,
-                )
-
-            app.include_router(
-                config_routes.router,
-                prefix="/api",
-                tags=["Configuration"],
-                dependencies=dependencies,
-            )
-
-            # WebSocket endpoint (no auth - same-origin only)
-            app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])
-
-            # Static file serving for dashboard
-            static_dir = Path(__file__).parent.parent / "api" / "static"
-            if static_dir.exists():
-                app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-                logger.info(f"Serving static files from: {static_dir}")
-
-                @app.get("/dashboard", include_in_schema=False)
-                async def dashboard() -> FileResponse:
-                    """Serve the API dashboard."""
-                    dashboard_file = static_dir / "index.html"
-                    if dashboard_file.exists():
-                        return FileResponse(dashboard_file)
-                    raise HTTPException(status_code=404, detail="Dashboard not found")
-
-                logger.info("Dashboard available at: /dashboard")
-            else:
-                logger.warning(
-                    f"Static files directory not found at {static_dir}, dashboard unavailable"
-                )
-
-            # Root endpoint
-            @app.get("/", include_in_schema=False)
-            async def root() -> dict[str, str]:
-                """Root endpoint with links to docs and dashboard."""
-                response = {
-                    "message": "HA Boss API",
-                    "docs": "/docs",
-                    "redoc": "/redoc",
-                    "openapi": "/openapi.json",
-                }
-
-                # Include dashboard link if static files exist
-                if static_dir.exists():
-                    response["dashboard"] = "/dashboard"
-
-                return response
-
-            # Create uvicorn config
-            config = uvicorn.Config(
-                app,
-                host=self.config.api.host,
-                port=self.config.api.port,
-                log_level="warning",  # Reduce uvicorn noise
-                access_log=False,
-            )
-
-            # Create and run server
-            server = uvicorn.Server(config)
-            self._api_server = server
-
-            api_addr = f"{self.config.api.host}:{self.config.api.port}"
-            logger.info(f"✓ API server running on http://{api_addr}")
-            logger.info(f"  Health check: http://{api_addr}/api/health")
-            logger.info(f"  API docs: http://{api_addr}/docs")
-            if static_dir.exists():
-                logger.info(f"  Dashboard: http://{api_addr}/dashboard")
-            await server.serve()
-
-        except ImportError as e:
-            logger.error(f"Failed to start API server - missing dependencies: {e}")
-            logger.info("Install with: pip install 'ha-boss[api]'")
-        except Exception as e:
-            logger.error(f"API server error: {e}", exc_info=True)
 
     async def _periodic_snapshot_validation(self, instance_id: str) -> None:
         """Periodically validate state tracker cache against REST API snapshot.
@@ -1002,44 +758,6 @@ Access the web dashboard at `/dashboard` for a visual interface.
             new_state: New entity state
             old_state: Previous state (if any)
         """
-        # Emit WebSocket event for real-time dashboard updates (with rate limiting)
-        try:
-            from ha_boss.api.websocket_manager import get_websocket_manager
-
-            # Check if we should broadcast (rate limiting)
-            broadcast_key = f"{instance_id}:{new_state.entity_id}"
-            now = datetime.now(UTC)
-            last_broadcast = self._last_ws_broadcasts.get(broadcast_key)
-
-            # Always broadcast if state value changed (not just attributes)
-            state_changed = old_state is None or old_state.state != new_state.state
-
-            # Otherwise, check throttle interval
-            should_broadcast = state_changed or (
-                last_broadcast is None
-                or (now - last_broadcast).total_seconds() >= self._ws_broadcast_min_interval
-            )
-
-            if should_broadcast:
-                ws_manager = get_websocket_manager()
-                await ws_manager.broadcast_entity_state(
-                    instance_id=instance_id,
-                    entity_id=new_state.entity_id,
-                    state={
-                        "state": new_state.state,
-                        "last_updated": new_state.last_updated.isoformat(),
-                        "attributes": new_state.attributes,
-                    },
-                )
-                self._last_ws_broadcasts[broadcast_key] = now
-            else:
-                logger.debug(
-                    f"[{instance_id}] Throttled WebSocket broadcast for {new_state.entity_id} "
-                    f"(last broadcast {(now - last_broadcast).total_seconds():.1f}s ago)"
-                )
-
-        except Exception as e:
-            logger.debug(f"[{instance_id}] Failed to broadcast state change: {e}")
 
         # Trigger health check for this specific entity on the correct instance
         health_monitor = self.health_monitors.get(instance_id)
@@ -1070,23 +788,6 @@ Access the web dashboard at `/dashboard` for a visual interface.
             f"[{instance_id}] Health issue detected: {issue.entity_id} - {issue.issue_type} "
             f"(detected at {issue.detected_at})"
         )
-
-        # Emit WebSocket event for health status update
-        try:
-            from ha_boss.api.websocket_manager import get_websocket_manager
-
-            ws_manager = get_websocket_manager()
-            await ws_manager.broadcast_health_status(
-                instance_id=instance_id,
-                health={
-                    "entity_id": issue.entity_id,
-                    "issue_type": issue.issue_type,
-                    "detected_at": issue.detected_at.isoformat(),
-                    "details": issue.details,
-                },
-            )
-        except Exception as e:
-            logger.debug(f"[{instance_id}] Failed to broadcast health status: {e}")
 
         # Skip healing for recovery events
         if issue.issue_type == "recovered":
@@ -1189,46 +890,9 @@ Access the web dashboard at `/dashboard` for a visual interface.
                         self.healings_succeeded.get(instance_id, 0) + 1
                     )
 
-                    # Emit WebSocket event for successful healing action
-                    try:
-                        from ha_boss.api.websocket_manager import get_websocket_manager
-
-                        ws_manager = get_websocket_manager()
-                        await ws_manager.broadcast_healing_action(
-                            instance_id=instance_id,
-                            action={
-                                "entity_id": issue.entity_id,
-                                "action": "heal",
-                                "success": True,
-                                "issue_type": issue.issue_type,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    except Exception as e:
-                        logger.debug(f"[{instance_id}] Failed to broadcast healing action: {e}")
-
                 else:
                     logger.warning(f"[{instance_id}] ✗ Healing failed for {issue.entity_id}")
                     self.healings_failed[instance_id] = self.healings_failed.get(instance_id, 0) + 1
-
-                    # Emit WebSocket event for failed healing action
-                    try:
-                        from ha_boss.api.websocket_manager import get_websocket_manager
-
-                        ws_manager = get_websocket_manager()
-                        await ws_manager.broadcast_healing_action(
-                            instance_id=instance_id,
-                            action={
-                                "entity_id": issue.entity_id,
-                                "action": "heal",
-                                "success": False,
-                                "issue_type": issue.issue_type,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                                "error": f"Healing failed after {self.config.healing.max_attempts} attempts",
-                            },
-                        )
-                    except Exception as e:
-                        logger.debug(f"[{instance_id}] Failed to broadcast healing action: {e}")
 
                     # Escalate to notifications
                     if escalation_manager:
@@ -1315,14 +979,6 @@ Access the web dashboard at `/dashboard` for a visual interface.
 
     async def _cleanup(self) -> None:
         """Clean up all components for all instances."""
-        # Stop API server (shared)
-        if self._api_server:
-            try:
-                logger.info("Stopping API server...")
-                self._api_server.should_exit = True
-                await asyncio.sleep(0.1)  # Give it time to shutdown gracefully
-            except Exception as e:
-                logger.error(f"Error stopping API server: {e}")
 
         # Clean up each instance
         for instance_id in list(self.ha_clients.keys()):
@@ -1349,20 +1005,6 @@ Access the web dashboard at `/dashboard` for a visual interface.
             if websocket_client:
                 try:
                     await websocket_client.stop()
-
-                    # Emit WebSocket event for instance disconnection
-                    try:
-                        from ha_boss.api.websocket_manager import get_websocket_manager
-
-                        ws_manager = get_websocket_manager()
-                        await ws_manager.broadcast_instance_connection(
-                            instance_id=instance_id,
-                            connected=False,
-                        )
-                    except Exception as e:
-                        logger.debug(
-                            f"[{instance_id}] Failed to broadcast instance disconnection: {e}"
-                        )
 
                 except Exception as e:
                     logger.error(f"[{instance_id}] Error stopping WebSocket: {e}")
