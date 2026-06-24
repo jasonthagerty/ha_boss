@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from ha_boss.core.config import Config, load_config
+from ha_boss.core.config import Config, MonitoringConfig, load_config
 from ha_boss.core.exceptions import ConfigurationError
 
 
@@ -185,3 +185,24 @@ def test_load_config_missing_required_fields(tmp_path, monkeypatch):
 
     with pytest.raises(ConfigurationError, match="Invalid configuration"):
         load_config(config_file)
+
+
+def test_is_unavailable_expected_default_empty():
+    """By default no entity is treated as expectedly-unavailable."""
+    cfg = MonitoringConfig()
+    assert cfg.unavailable_ok == []
+    assert cfg.is_unavailable_expected("media_player.lg_webos_tv_oled65c8pua") is False
+
+
+def test_is_unavailable_expected_exact_match():
+    """An exact entity_id in unavailable_ok matches."""
+    cfg = MonitoringConfig(unavailable_ok=["media_player.lg_webos_tv_oled65c8pua"])
+    assert cfg.is_unavailable_expected("media_player.lg_webos_tv_oled65c8pua") is True
+    assert cfg.is_unavailable_expected("light.back_patio") is False
+
+
+def test_is_unavailable_expected_glob_match():
+    """Glob patterns in unavailable_ok match by wildcard."""
+    cfg = MonitoringConfig(unavailable_ok=["media_player.*"])
+    assert cfg.is_unavailable_expected("media_player.kitchen") is True
+    assert cfg.is_unavailable_expected("switch.fan") is False
