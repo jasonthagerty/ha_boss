@@ -14,7 +14,7 @@ from ha_boss.core.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 # Current database schema version
-CURRENT_DB_VERSION = 10
+CURRENT_DB_VERSION = 11
 
 
 class Base(DeclarativeBase):
@@ -1090,6 +1090,44 @@ class StoredInstance(Base):
     def __repr__(self) -> str:
         status = "active" if self.is_active else "inactive"
         return f"<StoredInstance({self.instance_id}, {self.url}, {status})>"
+
+
+class OutOfScopeAuditStatus(Base):
+    """Track out-of-scope entities that are currently unavailable/unknown/stale.
+
+    Used by the out-of-scope audit feature to record when each out-of-scope
+    entity first went bad so that only net-new failures are included in the
+    periodic digest.  Entities that recover are deleted so that a future failure
+    is treated as new again.
+    """
+
+    __tablename__ = "out_of_scope_audit_status"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    instance_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_unavailable_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_state: Mapped[str | None] = mapped_column(String(255))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_oos_audit_instance_entity", "instance_id", "entity_id", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<OutOfScopeAuditStatus({self.instance_id}:{self.entity_id}, "
+            f"state={self.last_state}, first={self.first_unavailable_at})>"
+        )
 
 
 class Database:

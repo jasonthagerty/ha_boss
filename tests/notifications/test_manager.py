@@ -26,6 +26,7 @@ def mock_config() -> Config:
     config.notifications = MagicMock()
     config.notifications.on_healing_failure = True
     config.notifications.weekly_summary = True
+    config.notifications.mobile_push_services = []
     return config
 
 
@@ -478,3 +479,92 @@ async def test_create_notification_manager_without_client(mock_config: Config) -
 
     assert isinstance(manager, NotificationManager)
     assert manager.ha_client is None
+
+
+def _mobile_config(services: list[str]) -> Config:
+    """Build a mock config with mobile push services configured."""
+    config = MagicMock(spec=Config)
+    config.is_dry_run = False
+    config.notifications = MagicMock()
+    config.notifications.mobile_push_services = services
+    return config
+
+
+class TestMobilePush:
+    """Tests for the mobile push channel."""
+
+    def test_mobile_channel_enabled_when_configured(self, mock_ha_client: AsyncMock) -> None:
+        """Mobile channel is enabled only when services are configured."""
+        manager = NotificationManager(_mobile_config(["notify.jason_s_iphone"]), mock_ha_client)
+        assert manager._channels[NotificationChannel.MOBILE] is True
+
+    def test_mobile_channel_disabled_when_empty(self, mock_ha_client: AsyncMock) -> None:
+        """Mobile channel stays disabled with no services configured."""
+        manager = NotificationManager(_mobile_config([]), mock_ha_client)
+        assert manager._channels[NotificationChannel.MOBILE] is False
+
+    @pytest.mark.asyncio
+    async def test_warning_pushes_to_each_service(self, mock_ha_client: AsyncMock) -> None:
+        """A WARNING notification pushes to every configured notify entity."""
+        manager = NotificationManager(
+            _mobile_config(["notify.jason_s_iphone", "notify.melissas_iphone"]), mock_ha_client
+        )
+        context = NotificationContext(
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
+            entity_id="binary_sensor.back_patio_motion",
+            issue_type="unavailable",
+        )
+
+        await manager.notify(context)
+
+        pushes = [
+            c
+            for c in mock_ha_client.call_service.call_args_list
+            if c.args[:2] == ("notify", "send_message")
+        ]
+        assert len(pushes) == 2
+        assert {c.args[2]["entity_id"] for c in pushes} == {
+            "notify.jason_s_iphone",
+            "notify.melissas_iphone",
+        }
+        assert all("back_patio_motion" in c.args[2]["message"] for c in pushes)
+
+    @pytest.mark.asyncio
+    async def test_mobile_push_deduplicated(self, mock_ha_client: AsyncMock) -> None:
+        """Repeated detections of the same issue push only once."""
+        manager = NotificationManager(_mobile_config(["notify.jason_s_iphone"]), mock_ha_client)
+        context = NotificationContext(
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
+            entity_id="binary_sensor.back_patio_motion",
+            issue_type="unavailable",
+        )
+
+        await manager.notify(context)
+        mock_ha_client.call_service.reset_mock()
+        await manager.notify(context)
+
+        assert not [
+            c
+            for c in mock_ha_client.call_service.call_args_list
+            if c.args[:2] == ("notify", "send_message")
+        ]
+
+    @pytest.mark.asyncio
+    async def test_info_severity_does_not_push(self, mock_ha_client: AsyncMock) -> None:
+        """INFO-level notifications (e.g. recovery) do not push to mobile."""
+        manager = NotificationManager(_mobile_config(["notify.jason_s_iphone"]), mock_ha_client)
+        context = NotificationContext(
+            notification_type=NotificationType.RECOVERY,
+            severity=NotificationSeverity.INFO,
+            entity_id="binary_sensor.back_patio_motion",
+        )
+
+        await manager.notify(context)
+
+        assert not [
+            c
+            for c in mock_ha_client.call_service.call_args_list
+            if c.args[:2] == ("notify", "send_message")
+        ]

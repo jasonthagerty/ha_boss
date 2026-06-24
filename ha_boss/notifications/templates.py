@@ -16,6 +16,9 @@ class NotificationType(StrEnum):
     WEEKLY_SUMMARY = "weekly_summary"
     RECOVERY = "recovery"
     ANOMALY_DETECTED = "anomaly_detected"
+    ISSUE_DETECTED = "issue_detected"
+    OUT_OF_SCOPE_AUDIT = "out_of_scope_audit"
+    ACTION_VERIFICATION_FAILED = "action_verification_failed"
 
 
 class NotificationSeverity(StrEnum):
@@ -262,6 +265,42 @@ class RecoveryTemplate(NotificationTemplate):
         return title, message
 
 
+class IssueDetectedTemplate(NotificationTemplate):
+    """Template for issue-detected notifications (monitor-and-notify mode)."""
+
+    @staticmethod
+    def render(context: NotificationContext) -> tuple[str, str]:
+        """Render issue-detected notification.
+
+        Args:
+            context: Notification context
+
+        Returns:
+            Tuple of (title, message)
+        """
+        title = "HA Boss: Entity Issue Detected"
+
+        lines = [
+            f"**Entity:** `{context.entity_id}`",
+            f"**Issue:** {context.issue_type or 'Unknown'}",
+        ]
+
+        if context.detected_at:
+            time_ago = IssueDetectedTemplate.format_time_ago(context.detected_at)
+            lines.append(f"**Detected:** {time_ago}")
+
+        lines.extend(
+            [
+                "",
+                "Auto-healing is disabled, so no automatic action was taken.",
+                "Please check the entity or its integration.",
+            ]
+        )
+
+        message = "\n".join(lines)
+        return title, message
+
+
 class CircuitBreakerTemplate(NotificationTemplate):
     """Template for circuit breaker notifications."""
 
@@ -474,6 +513,122 @@ class AnomalyDetectedTemplate(NotificationTemplate):
         return title, message
 
 
+class OutOfScopeAuditTemplate(NotificationTemplate):
+    """Template for out-of-scope entity audit digest notifications."""
+
+    @staticmethod
+    def render(context: NotificationContext) -> tuple[str, str]:
+        """Render out-of-scope audit digest notification.
+
+        Expects the following keys in ``context.stats``:
+
+        - ``new_failures`` (list[dict]): Each dict has ``entity_id``, ``state``,
+          ``group`` (integration/domain), and ``first_unavailable_at`` (ISO string).
+        - ``chronic_count`` (int): Number of entities suppressed as chronic.
+        - ``total_out_of_scope`` (int): Total out-of-scope entity count.
+
+        Args:
+            context: Notification context
+
+        Returns:
+            Tuple of (title, message)
+        """
+        title = "HA Boss: Out-of-Scope Audit"
+        stats = context.stats or {}
+
+        new_failures: list[dict[str, Any]] = stats.get("new_failures", [])
+        chronic_count: int = stats.get("chronic_count", 0)
+        total_out_of_scope: int = stats.get("total_out_of_scope", 0)
+
+        lines: list[str] = [
+            f"**Out-of-Scope Entity Audit** ({total_out_of_scope} total unmonitored)",
+            "",
+        ]
+
+        if new_failures:
+            # Group failures by integration/domain
+            groups: dict[str, list[dict[str, Any]]] = {}
+            for failure in new_failures:
+                group = failure.get("group", "unknown")
+                groups.setdefault(group, []).append(failure)
+
+            lines.append("**New Unavailable Entities:**")
+            for group_name, entities in sorted(groups.items()):
+                lines.append(f"  **{group_name}** ({len(entities)}):")
+                for entity in entities:
+                    state = entity.get("state", "unavailable")
+                    entity_id = entity.get("entity_id", "unknown")
+                    lines.append(f"    - `{entity_id}` ({state})")
+            lines.append("")
+
+        if chronic_count > 0:
+            lines.append(
+                f"*{chronic_count} chronically-unavailable "
+                f"{'entity' if chronic_count == 1 else 'entities'} suppressed "
+                f"(already reported, still unavailable).*"
+            )
+            lines.append("")
+
+        if not new_failures and chronic_count == 0:
+            lines.append("No new unavailable entities detected.")
+            lines.append("")
+
+        lines.append("HA Boss monitors only entities referenced by automations/scenes/scripts.")
+        lines.append("These entities are outside that monitored set.")
+
+        message = "\n".join(lines)
+        return title, message
+
+
+class ActionVerificationFailedTemplate(NotificationTemplate):
+    """Template for action-verification-failed notifications.
+
+    Fired when a state-changing service call did not produce the expected entity
+    state within the configured delay window.
+    """
+
+    @staticmethod
+    def render(context: NotificationContext) -> tuple[str, str]:
+        """Render action-verification-failed notification.
+
+        Expects the following keys in ``context.extra``:
+
+        - ``service`` (str): Full service name that was called, e.g. ``"light.turn_off"``.
+        - ``expected_state`` (str): The state the entity was expected to reach.
+        - ``actual_state`` (str): The state the entity actually has.
+        - ``delay_seconds`` (int): How many seconds elapsed before the check ran.
+
+        ``context.entity_id`` must be the target entity ID.
+
+        Args:
+            context: Notification context
+
+        Returns:
+            Tuple of (title, message)
+        """
+        title = "HA Boss: Action Did Not Take Effect"
+
+        extra = context.extra or {}
+        service = extra.get("service", "unknown service")
+        expected_state = extra.get("expected_state", "unknown")
+        actual_state = extra.get("actual_state", "unknown")
+        delay_seconds = extra.get("delay_seconds", 0)
+
+        lines = [
+            f"**Entity:** `{context.entity_id}`",
+            f"**Service Called:** `{service}`",
+            f"**Expected State:** `{expected_state}`",
+            f"**Actual State:** `{actual_state}`",
+            f"**Check Delay:** {delay_seconds}s",
+            "",
+            "The entity did not reach the expected state after the service call.",
+            "Please check the device or integration for issues.",
+        ]
+
+        message = "\n".join(lines)
+        return title, message
+
+
 class TemplateRegistry:
     """Registry for mapping notification types to templates."""
 
@@ -485,6 +640,9 @@ class TemplateRegistry:
         NotificationType.CONNECTION_ERROR: ConnectionErrorTemplate,
         NotificationType.WEEKLY_SUMMARY: WeeklySummaryTemplate,
         NotificationType.ANOMALY_DETECTED: AnomalyDetectedTemplate,
+        NotificationType.ISSUE_DETECTED: IssueDetectedTemplate,
+        NotificationType.OUT_OF_SCOPE_AUDIT: OutOfScopeAuditTemplate,
+        NotificationType.ACTION_VERIFICATION_FAILED: ActionVerificationFailedTemplate,
     }
 
     @classmethod

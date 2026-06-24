@@ -20,6 +20,7 @@ def mock_config():
     config.notifications.on_healing_failure = True
     config.notifications.weekly_summary = True
     config.notifications.ai_enhanced = True
+    config.notifications.mobile_push_services = []
     config.mode = "production"
     config.is_dry_run = False
     return config
@@ -33,6 +34,7 @@ def mock_config_ai_disabled():
     config.notifications.on_healing_failure = True
     config.notifications.weekly_summary = True
     config.notifications.ai_enhanced = False
+    config.notifications.mobile_push_services = []
     config.mode = "production"
     config.is_dry_run = False
     return config

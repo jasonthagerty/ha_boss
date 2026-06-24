@@ -36,6 +36,7 @@ class WebSocketClient:
         entity_discovery: "EntityDiscoveryService | None" = None,
         automation_tracker: "AutomationTracker | None" = None,
         on_state_changed: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
+        on_service_call: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         """Initialize WebSocket client.
 
@@ -45,6 +46,9 @@ class WebSocketClient:
             entity_discovery: Optional entity discovery service for reload event handling
             automation_tracker: Optional automation tracker for usage tracking
             on_state_changed: Async callback for state_changed events
+            on_service_call: Optional async callback invoked for every call_service event
+                with the raw event data dict.  Called in addition to (not instead of)
+                the existing reload-trigger and automation-tracking logic.
         """
         # Build WebSocket URL from HTTP URL
         ws_url = instance.url.replace("http://", "ws://").replace("https://", "wss://")
@@ -62,6 +66,7 @@ class WebSocketClient:
 
         # Callbacks
         self.on_state_changed = on_state_changed
+        self.on_service_call = on_service_call
 
         # State
         self._ws: Any = None  # WebSocket connection
@@ -278,6 +283,14 @@ class WebSocketClient:
                     )
                 except Exception as e:
                     logger.debug(f"Failed to record service call: {e}")
+
+        # Dispatch to optional action-verification callback (additive — runs after
+        # existing reload and tracking logic above, never replaces them).
+        if self.on_service_call:
+            try:
+                await self.on_service_call(data)
+            except Exception as e:
+                logger.error(f"Error in on_service_call callback: {e}", exc_info=True)
 
     async def _listen_loop(self) -> None:
         """Main message listening loop."""

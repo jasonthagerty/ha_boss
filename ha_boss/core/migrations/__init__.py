@@ -157,6 +157,7 @@ def _load_migrations() -> None:
     from ha_boss.core.migrations.v8_multi_level_healing import migrate_v7_to_v8
     from ha_boss.core.migrations.v9_add_healing_plans import migrate_v8_to_v9
     from ha_boss.core.migrations.v10_plan_generation_suggested import migrate_v9_to_v10
+    from ha_boss.core.migrations.v11_out_of_scope_audit import migrate_v10_to_v11
 
     # Register all migrations with the registry
     MIGRATION_REGISTRY.register(
@@ -198,6 +199,11 @@ def _load_migrations() -> None:
         target_version=10,
         migrate_func=migrate_v9_to_v10,
         description="Add plan_generation_suggested flag",
+    )
+    MIGRATION_REGISTRY.register(
+        target_version=11,
+        migrate_func=migrate_v10_to_v11,
+        description="Add out-of-scope audit status table",
     )
 
 

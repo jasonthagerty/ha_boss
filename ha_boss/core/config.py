@@ -185,6 +185,52 @@ class EntityOverride(BaseModel):
     )
 
 
+class OutOfScopeAuditConfig(BaseSettings):
+    """Configuration for the out-of-scope entity audit."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable periodic audit of out-of-scope entities",
+    )
+    interval_seconds: int = Field(
+        default=86400,
+        description="Audit interval in seconds (default: 1 day)",
+        ge=0,
+    )
+    chronic_threshold_seconds: int = Field(
+        default=259200,
+        description="Seconds before an entity is considered chronically unavailable (default: 3 days)",
+        ge=0,
+    )
+    include_stale: bool = Field(
+        default=False,
+        description="Include stale entities (no update within stale_threshold_seconds) in audit",
+    )
+    group_by_integration: bool = Field(
+        default=True,
+        description="Group digest by integration (domain fallback if mapping unavailable)",
+    )
+
+
+class ActionVerificationConfig(BaseSettings):
+    """Configuration for action (service-call) verification.
+
+    When enabled, HA Boss observes state-changing service calls and checks that
+    the target entity reaches the expected state within ``delay_seconds``.  If
+    the entity did NOT reach the expected state a WARNING notification is sent.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable action verification (check that service calls take effect)",
+    )
+    delay_seconds: int = Field(
+        default=30,
+        description="Seconds to wait before checking whether the action took effect",
+        gt=0,
+    )
+
+
 class MonitoringConfig(BaseSettings):
     """Entity monitoring configuration."""
 
@@ -226,6 +272,18 @@ class MonitoringConfig(BaseSettings):
     auto_discovery: AutoDiscoveryConfig = Field(
         default_factory=AutoDiscoveryConfig,
         description="Auto-discovery configuration",
+    )
+
+    # Out-of-scope entity audit configuration
+    out_of_scope_audit: OutOfScopeAuditConfig = Field(
+        default_factory=OutOfScopeAuditConfig,
+        description="Periodic audit of entities not in the monitored set",
+    )
+
+    # Action verification configuration
+    action_verification: ActionVerificationConfig = Field(
+        default_factory=ActionVerificationConfig,
+        description="Verify that service calls produce the expected entity state",
     )
 
     # Per-entity overrides
@@ -350,6 +408,20 @@ class NotificationsConfig(BaseSettings):
     on_healing_failure: bool = Field(
         default=True,
         description="Notify when healing fails",
+    )
+    on_issue_detected: bool = Field(
+        default=False,
+        description=(
+            "Notify when an issue is detected even if auto-healing is disabled "
+            "(monitor-and-notify mode)"
+        ),
+    )
+    mobile_push_services: list[str] = Field(
+        default_factory=list,
+        description=(
+            "notify entity_ids (e.g. 'notify.jason_s_iphone') to also send mobile push "
+            "alerts to via notify.send_message; empty = mobile push disabled"
+        ),
     )
     weekly_summary: bool = Field(
         default=True,

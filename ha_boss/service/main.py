@@ -79,6 +79,8 @@ class HABossService:
         self.cascade_orchestrators: dict[str, CascadeOrchestrator] = {}
         self.entity_healers: dict[str, EntityHealer] = {}
         self.device_healers: dict[str, DeviceHealer] = {}
+        self.out_of_scope_auditors: dict[str, Any] = {}  # OutOfScopeAuditor
+        self.action_verifiers: dict[str, Any] = {}  # ActionVerifier
 
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
@@ -371,13 +373,13 @@ class HABossService:
 
                 plan_loader = PlanLoader(
                     database=self.database,
-                    builtin_enabled=self.config.healing.healing_plans_use_builtin,
+                    use_builtin=self.config.healing.healing_plans_use_builtin,
                     user_plans_directory=self.config.healing.healing_plans_directory,
                 )
-                plans = plan_loader.load_all_plans()
+                plans = await plan_loader.load_all_plans()
                 logger.info(f"[{instance_id}] Loaded {len(plans)} healing plan(s)")
 
-                plan_matcher = PlanMatcher(plans=plans)
+                plan_matcher = PlanMatcher(plan_loader=plan_loader)
                 plan_executor = PlanExecutor(
                     database=self.database,
                     entity_healer=self.entity_healers[instance_id],
@@ -417,14 +419,61 @@ class HABossService:
         )
         logger.info(f"[{instance_id}] ✓ Automation tracker initialized")
 
+        # 9g. Initialize out-of-scope auditor (if enabled)
+        if self.config.monitoring.out_of_scope_audit.enabled:
+            try:
+                from ha_boss.monitoring.out_of_scope_audit import OutOfScopeAuditor
+
+                logger.info(f"[{instance_id}] Initializing out-of-scope auditor...")
+                if self.database is None:
+                    raise RuntimeError("Database must be initialized before creating auditor")
+                self.out_of_scope_auditors[instance_id] = OutOfScopeAuditor(
+                    ha_client=self.ha_clients[instance_id],
+                    entity_discovery=self.entity_discoveries.get(instance_id),
+                    integration_discovery=self.integration_discoveries.get(instance_id),
+                    database=self.database,
+                    notification_manager=self.notification_managers[instance_id],
+                    config=self.config,
+                    instance_id=instance_id,
+                )
+                logger.info(f"[{instance_id}] ✓ Out-of-scope auditor initialized")
+            except Exception as e:
+                logger.warning(
+                    f"[{instance_id}] Failed to initialize out-of-scope auditor: {e}. "
+                    "Audit feature disabled for this instance."
+                )
+
+        # 9h. Initialize action verifier (if enabled)
+        if self.config.monitoring.action_verification.enabled:
+            try:
+                from ha_boss.monitoring.action_verifier import ActionVerifier
+
+                logger.info(f"[{instance_id}] Initializing action verifier...")
+                self.action_verifiers[instance_id] = ActionVerifier(
+                    ha_client=self.ha_clients[instance_id],
+                    notification_manager=self.notification_managers[instance_id],
+                    config=self.config,
+                    instance_id=instance_id,
+                )
+                logger.info(f"[{instance_id}] ✓ Action verifier initialized")
+            except Exception as e:
+                logger.warning(
+                    f"[{instance_id}] Failed to initialize action verifier: {e}. "
+                    "Action verification disabled for this instance."
+                )
+
         # 10. Connect WebSocket
         logger.info(f"[{instance_id}] Connecting to Home Assistant WebSocket...")
+        action_verifier = self.action_verifiers.get(instance_id)
         self.websocket_clients[instance_id] = WebSocketClient(
             instance=instance,
             config=self.config,
             entity_discovery=self.entity_discoveries.get(instance_id),
             automation_tracker=self.automation_trackers.get(instance_id),
             on_state_changed=lambda event: self._on_websocket_state_changed(instance_id, event),
+            on_service_call=(
+                action_verifier.handle_service_call if action_verifier is not None else None
+            ),
         )
         await self.websocket_clients[instance_id].start()
 
@@ -596,6 +645,14 @@ class HABossService:
                     )
                 )
                 task.set_name(f"periodic_discovery_refresh_{instance_id}")
+                self._tasks.append(task)
+
+            # Periodic out-of-scope audit (if enabled and interval > 0)
+            auditor = self.out_of_scope_auditors.get(instance_id)
+            audit_cfg = self.config.monitoring.out_of_scope_audit
+            if auditor and audit_cfg.enabled and audit_cfg.interval_seconds > 0:
+                task = asyncio.create_task(self._periodic_out_of_scope_audit(instance_id))
+                task.set_name(f"periodic_out_of_scope_audit_{instance_id}")
                 self._tasks.append(task)
 
         # Note: HealthMonitor runs its own internal monitoring loop (per instance)
@@ -847,6 +904,40 @@ Access the web dashboard at `/dashboard` for a visual interface.
                     f"[{instance_id}] Error in periodic snapshot validation: {e}", exc_info=True
                 )
 
+    async def _periodic_out_of_scope_audit(self, instance_id: str) -> None:
+        """Periodically run the out-of-scope entity audit.
+
+        Sleeps for the configured interval between runs so the first run
+        happens after one full interval (startup is already busy).
+
+        Args:
+            instance_id: Home Assistant instance identifier
+        """
+        interval = self.config.monitoring.out_of_scope_audit.interval_seconds
+
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+
+            auditor = self.out_of_scope_auditors.get(instance_id)
+            if auditor is None:
+                break
+
+            try:
+                stats = await auditor.run_audit()
+                logger.info(
+                    f"[{instance_id}] Out-of-scope audit: "
+                    f"{stats.get('new_count', 0)} new, "
+                    f"{stats.get('chronic_count', 0)} chronic, "
+                    f"{stats.get('recovered_count', 0)} recovered"
+                )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[{instance_id}] Error in out-of-scope audit: {e}", exc_info=True)
+
     async def _on_websocket_state_changed(self, instance_id: str, event: dict[str, Any]) -> None:
         """Handle state_changed events from WebSocket.
 
@@ -965,6 +1056,18 @@ Access the web dashboard at `/dashboard` for a visual interface.
         # Skip healing for recovery events
         if issue.issue_type == "recovered":
             logger.info(f"[{instance_id}] Entity {issue.entity_id} recovered automatically")
+            # In monitor-and-notify mode, clear any prior issue-detected alert WITHOUT
+            # emitting a recovery notification (a user who only enabled on_issue_detected
+            # did not opt into recovery alerts; those remain tied to healing).
+            escalation_manager = self.escalation_managers.get(instance_id)
+            if escalation_manager and self.config.notifications.on_issue_detected:
+                try:
+                    await escalation_manager.dismiss_issue_detected(issue.entity_id)
+                except Exception as e:
+                    logger.debug(
+                        f"[{instance_id}] Failed to clear issue-detected notification for "
+                        f"{issue.entity_id}: {e}"
+                    )
             return
 
         # Get instance components
@@ -1138,6 +1241,15 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 )
         else:
             logger.info(f"[{instance_id}] Auto-healing disabled, issue logged only")
+            # Monitor-and-notify mode: alert on detection without reloading anything
+            if escalation_manager and issue.issue_type in ("unavailable", "stale"):
+                try:
+                    await escalation_manager.notify_issue_detected(issue)
+                except Exception as e:
+                    logger.error(
+                        f"[{instance_id}] Failed to send issue-detected notification for "
+                        f"{issue.entity_id}: {e}"
+                    )
 
     async def stop(self) -> None:
         """Gracefully stop the HA Boss service."""
@@ -1236,11 +1348,21 @@ Access the web dashboard at `/dashboard` for a visual interface.
                 except Exception as e:
                     logger.error(f"[{instance_id}] Error cleaning up automation tracker: {e}")
 
+            # Cancel any pending action verification tasks
+            action_verifier = self.action_verifiers.get(instance_id)
+            if action_verifier:
+                try:
+                    await action_verifier.shutdown()
+                except Exception as e:
+                    logger.error(f"[{instance_id}] Error shutting down action verifier: {e}")
+
             # Remove new components from dictionaries
             self.health_trackers.pop(instance_id, None)
             self.cascade_orchestrators.pop(instance_id, None)
             self.entity_healers.pop(instance_id, None)
             self.device_healers.pop(instance_id, None)
+            self.out_of_scope_auditors.pop(instance_id, None)
+            self.action_verifiers.pop(instance_id, None)
 
         # Close database (shared)
         if self.database:
