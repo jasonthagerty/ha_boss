@@ -255,6 +255,14 @@ class HABossService:
         self.state_trackers[instance_id] = StateTracker(
             instance_id=instance_id,
             database=self.database,
+            # Wire in discovery so the tracker only caches (and the health monitor
+            # only checks) entities that auto-discovery found in automations/scenes/
+            # scripts. Without this the REST snapshot below loads ALL entities
+            # unfiltered, the monitored set is effectively "everything", and
+            # unreferenced cloud entities (PSN, Plex, Life360) get flagged when they
+            # flap. integration_discovery feeds entity→integration mapping.
+            entity_discovery=self.entity_discoveries.get(instance_id),
+            integration_discovery=self.integration_discoveries.get(instance_id),
             on_state_updated=on_state_updated_wrapper,
         )
 
