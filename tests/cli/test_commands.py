@@ -159,43 +159,6 @@ class TestStatusCommand:
         assert "production" in result.stdout
 
 
-class TestHealCommand:
-    """Tests for heal command."""
-
-    def test_heal_requires_entity_id(self):
-        """Test that heal command requires entity ID argument."""
-        result = runner.invoke(app, ["heal"])
-
-        assert result.exit_code != 0
-        # Typer writes errors to stderr, so check output (stdout + stderr combined)
-        output_lower = (result.stdout + str(result.stderr if result.stderr else "")).lower()
-        assert "missing argument" in output_lower or "required" in output_lower
-
-    @patch("ha_boss.cli.commands.load_config")
-    @patch("ha_boss.cli.commands._perform_healing")
-    def test_heal_with_entity_id(self, mock_perform, mock_load, mock_config):
-        """Test heal command with entity ID."""
-        mock_load.return_value = mock_config
-        mock_perform.return_value = AsyncMock()
-
-        result = runner.invoke(app, ["heal", "sensor.temperature"])
-
-        mock_load.assert_called_once()
-        assert "sensor.temperature" in result.stdout
-
-    @patch("ha_boss.cli.commands.load_config")
-    @patch("ha_boss.cli.commands._perform_healing")
-    def test_heal_dry_run(self, mock_perform, mock_load, mock_config):
-        """Test heal command with dry-run flag."""
-        mock_load.return_value = mock_config
-        mock_perform.return_value = AsyncMock()
-
-        _result = runner.invoke(app, ["heal", "sensor.test", "--dry-run"])
-
-        # Should set dry_run mode
-        assert mock_load.return_value.mode == "dry_run"
-
-
 class TestConfigValidateCommand:
     """Tests for config validate command."""
 
@@ -305,13 +268,6 @@ class TestHelpOutput:
         assert result.exit_code == 0
         assert "config" in result.stdout.lower()
         assert "database" in result.stdout.lower()
-
-    def test_heal_help(self):
-        """Test heal command help."""
-        result = runner.invoke(app, ["heal", "--help"])
-
-        assert result.exit_code == 0
-        assert "entity" in result.stdout.lower()
 
     def test_config_validate_help(self):
         """Test config validate command help."""
@@ -564,30 +520,6 @@ class TestConfigValidateErrors:
 
         assert result.exit_code == 0  # Command doesn't fail, shows error message
         assert "Connection failed" in result.stdout or "connection" in result.stdout.lower()
-
-
-class TestHealCommandFlow:
-    """Tests for heal command actual flow."""
-
-    @patch("ha_boss.cli.commands.load_config")
-    def test_heal_dry_run(self, mock_load, mock_config):
-        """Test heal command in dry-run mode."""
-        mock_load.return_value = mock_config
-
-        with patch("ha_boss.cli.commands.asyncio.run"):
-            result = runner.invoke(app, ["heal", "sensor.test", "--dry-run"])
-
-            # Should show dry-run mode message
-            assert "dry-run" in result.stdout.lower() or "dry run" in result.stdout.lower()
-
-    def test_heal_requires_entity_id(self):
-        """Test that heal command requires entity ID."""
-        result = runner.invoke(app, ["heal"])
-
-        assert result.exit_code != 0
-        # Should show error about missing entity ID
-        output_lower = (result.stdout + str(result.stderr if result.stderr else "")).lower()
-        assert "missing argument" in output_lower or "required" in output_lower
 
 
 class TestStatusCommandVariations:

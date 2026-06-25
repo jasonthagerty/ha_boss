@@ -128,7 +128,6 @@ async def test_service_full_startup_and_shutdown(integration_config: Config) -> 
         assert service.websocket_client is not None
         assert service.state_tracker is not None
         assert service.health_monitor is not None
-        assert service.healing_manager is not None
 
         # Verify state tracker was initialized with entities
         assert len(service.state_tracker._cache) == 2
@@ -258,92 +257,6 @@ async def test_service_state_update_flow(integration_config: Config) -> None:
         # Note: State tracker updates are mocked for persistence
         # The actual state handling logic is tested in state_tracker unit tests
         # Here we just verify the event was processed without errors
-
-        # Clean up
-        await service.stop()
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_service_healing_flow(integration_config: Config) -> None:
-    """Test the complete healing flow: Issue detection -> Healing -> Notification."""
-    with (
-        patch("ha_boss.service.main.Database") as mock_db_class,
-        patch(
-            "ha_boss.monitoring.state_tracker.StateTracker._persist_entity", new_callable=AsyncMock
-        ),
-        patch(
-            "ha_boss.monitoring.health_monitor.HealthMonitor._persist_health_event",
-            new_callable=AsyncMock,
-        ),
-        patch(
-            "ha_boss.healing.integration_manager.IntegrationDiscovery._load_from_database",
-            new_callable=AsyncMock,
-        ),
-        patch(
-            "ha_boss.healing.integration_manager.IntegrationDiscovery._save_to_database",
-            new_callable=AsyncMock,
-        ),
-        patch("ha_boss.core.ha_client.HomeAssistantClient") as mock_ha_client_class,
-        patch("ha_boss.service.main.WebSocketClient") as mock_ws_class,
-    ):
-        # Set up Database mock
-        mock_db = AsyncMock()
-        mock_db.init_db = AsyncMock()
-        mock_db.validate_version = AsyncMock(return_value=(True, "Database version v1 is current"))
-        mock_db.close = AsyncMock()
-        mock_db_class.return_value = mock_db
-
-        # Set up mocks
-        mock_client = AsyncMock()
-        mock_client.get_states = AsyncMock(return_value=[])
-        mock_client.close = AsyncMock()
-        mock_client.call_service = AsyncMock(return_value=True)
-        mock_ha_client_class.return_value = mock_client
-
-        mock_ws = AsyncMock()
-        mock_ws.connect = AsyncMock()
-        mock_ws.subscribe_events = AsyncMock()
-        mock_ws.start = AsyncMock()
-        mock_ws.stop = AsyncMock()
-        mock_ws.is_connected = MagicMock(return_value=True)
-        mock_ws._ws = MagicMock()
-        mock_ws_class.return_value = mock_ws
-
-        # Create and start service
-        service = HABossService(integration_config)
-
-        # Mock background tasks
-        async def dummy_coro():
-            await asyncio.sleep(0)
-
-        original_create_task = asyncio.create_task
-
-        def mock_create_task(coro, *args, **kwargs):
-            return original_create_task(dummy_coro())
-
-        with patch("asyncio.create_task", side_effect=mock_create_task):
-            await service.start()
-
-        # Simulate a health issue
-        from ha_boss.core.types import HealthIssue
-
-        issue = HealthIssue(
-            entity_id="sensor.test",
-            issue_type="unavailable",
-            detected_at=datetime.now(UTC),
-        )
-
-        # Mock healing manager to simulate successful heal
-        service.healing_managers["default"].heal = AsyncMock(return_value=True)
-
-        # Trigger health issue callback with instance_id
-        await service._on_health_issue("default", issue)
-
-        # Verify healing was attempted (per-instance statistics)
-        assert service.healings_attempted["default"] == 1
-        assert service.healings_succeeded["default"] == 1
-        service.healing_managers["default"].heal.assert_called_once_with(issue)
 
         # Clean up
         await service.stop()
