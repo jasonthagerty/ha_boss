@@ -380,101 +380,6 @@ class MonitoringConfig(BaseSettings):
         return any(fnmatch.fnmatch(entity_id, pattern) for pattern in self.unavailable_ok)
 
 
-class HealingConfig(BaseSettings):
-    """Auto-healing configuration."""
-
-    enabled: bool = Field(default=True, description="Enable auto-healing")
-    max_attempts: int = Field(
-        default=3,
-        description="Max healing attempts per integration",
-        ge=1,
-        le=10,
-    )
-    cooldown_seconds: int = Field(
-        default=300,
-        description="Cooldown between attempts",
-        ge=0,
-    )
-    circuit_breaker_threshold: int = Field(
-        default=10,
-        description="Stop trying after N total failures",
-        ge=1,
-    )
-    circuit_breaker_reset_seconds: int = Field(
-        default=3600,
-        description="Reset circuit breaker after this time",
-        ge=0,
-    )
-
-    # Entity-level healing configuration
-    entity_healing_max_attempts: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum retry attempts for entity-level healing",
-    )
-    entity_healing_base_delay: float = Field(
-        default=1.0,
-        ge=0.1,
-        le=60.0,
-        description="Base delay in seconds for exponential backoff",
-    )
-
-    # Device-level healing configuration
-    device_healing_reboot_timeout: float = Field(
-        default=30.0,
-        ge=5.0,
-        le=300.0,
-        description="Timeout in seconds for device reboot operations",
-    )
-
-    # Cascade orchestration configuration
-    cascade_timeout_seconds: float = Field(
-        default=120.0,
-        ge=10.0,
-        le=600.0,
-        description="Timeout in seconds for cascade healing operations",
-    )
-    max_concurrent_entity_healing: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum concurrent entity healing operations per cascade",
-    )
-
-    # Device state verification
-    device_state_verification_timeout: float = Field(
-        default=5.0,
-        ge=1.0,
-        le=60.0,
-        description="Timeout in seconds to wait for entity states to settle after device healing",
-    )
-    device_state_verification_partial_success_threshold: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Minimum ratio of entities that must recover for partial success (0.5 = 50%)",
-    )
-
-    # Healing plans (YAML-based healing strategies)
-    healing_plans_enabled: bool = Field(
-        default=True,
-        description="Enable YAML-based healing plans",
-    )
-    healing_plans_directory: str | None = Field(
-        default=None,
-        description="Directory for user-defined healing plan YAML files",
-    )
-    healing_plans_use_builtin: bool = Field(
-        default=True,
-        description="Load built-in healing plans",
-    )
-    community_plans_repo: str = Field(
-        default="jasonthagerty/ha-boss-community-plans",
-        description="GitHub repo for community plan sharing (org/repo format)",
-    )
-
-
 class NotificationsConfig(BaseSettings):
     """Notification configuration."""
 
@@ -595,90 +500,6 @@ class RESTConfig(BaseSettings):
     )
 
 
-class IntelligenceConfig(BaseSettings):
-    """Intelligence layer configuration."""
-
-    pattern_collection_enabled: bool = Field(
-        default=True,
-        description="Enable pattern collection for reliability analysis",
-    )
-
-    # Anomaly detection configuration
-    anomaly_detection_enabled: bool = Field(
-        default=True,
-        description="Enable automatic anomaly detection",
-    )
-    anomaly_sensitivity_threshold: float = Field(
-        default=2.0,
-        description="Standard deviations for anomaly detection (higher = less sensitive)",
-        ge=1.0,
-        le=5.0,
-    )
-    anomaly_scan_hours: int = Field(
-        default=24,
-        description="Hours of data to scan for anomalies",
-        ge=1,
-        le=168,
-    )
-
-    # AI/LLM configuration (Phase 3)
-    ollama_enabled: bool = Field(
-        default=True,
-        description="Enable Ollama for AI features",
-    )
-    ollama_url: str = Field(
-        default="http://localhost:11434",
-        description="Ollama API URL",
-    )
-    ollama_model: str = Field(
-        default="llama3.1:8b",
-        description="Ollama model to use",
-    )
-    ollama_timeout_seconds: float = Field(
-        default=30.0,
-        description="Ollama request timeout",
-        ge=1.0,
-    )
-
-    claude_enabled: bool = Field(
-        default=False,
-        description="Enable Claude API for complex tasks",
-    )
-    claude_api_key: str | None = Field(
-        default=None,
-        description="Claude API key (optional)",
-    )
-    claude_model: str = Field(
-        default="claude-3-5-sonnet-20241022",
-        description="Claude model to use",
-    )
-
-
-class OutcomeValidationConfig(BaseSettings):
-    """Outcome validation configuration."""
-
-    enabled: bool = Field(
-        default=True,
-        description="Enable automatic outcome validation for automations",
-    )
-    validation_delay_seconds: float = Field(
-        default=5.0,
-        description="Delay before validating outcomes (allows states to settle)",
-        ge=0.1,
-        le=60.0,
-    )
-    analyze_failures: bool = Field(
-        default=True,
-        description="Enable AI analysis of reported automation failures",
-    )
-    consecutive_success_threshold: int = Field(
-        default=3,
-        ge=1,
-        le=100,
-        description="Number of consecutive successes required for validation gating",
-    )
-
-
 class Config(BaseSettings):
     """Main HA Boss configuration."""
 
@@ -692,14 +513,11 @@ class Config(BaseSettings):
 
     home_assistant: HomeAssistantConfig
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
-    healing: HealingConfig = Field(default_factory=HealingConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     websocket: WebSocketConfig = Field(default_factory=WebSocketConfig)
     rest: RESTConfig = Field(default_factory=RESTConfig)
-    intelligence: IntelligenceConfig = Field(default_factory=IntelligenceConfig)
-    outcome_validation: OutcomeValidationConfig = Field(default_factory=OutcomeValidationConfig)
 
     mode: Literal["production", "dry_run", "testing"] = Field(
         default="production",

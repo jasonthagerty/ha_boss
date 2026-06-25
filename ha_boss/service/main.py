@@ -400,37 +400,9 @@ class HABossService:
                 raise DatabaseError(message)
             logger.info(f"✓ Database initialized ({message})")
 
-            # 2. Initialize all Home Assistant instances
-            # First check config file instances
+            # 2. Initialize all Home Assistant instances (from config: url/token or instances)
             instances = self.config.home_assistant.instances
-
-            # If no config instances, try to load from database (dashboard-configured)
             if not instances:
-                logger.info(
-                    "No instances in config, checking database for dashboard-configured instances..."
-                )
-                from ha_boss.core.config_service import ConfigService
-
-                config_service = ConfigService(self.database)
-                db_instances = await config_service.get_active_instances_for_startup()
-
-                if db_instances:
-                    logger.info(f"Found {len(db_instances)} instance(s) in database")
-                    from ha_boss.core.config import HomeAssistantInstance
-
-                    instances = [
-                        HomeAssistantInstance(
-                            instance_id=inst_id,
-                            url=url,
-                            token=token,
-                            bridge_enabled=bridge_enabled,
-                        )
-                        for inst_id, url, token, bridge_enabled in db_instances
-                    ]
-
-            # If still no instances, start in API-only mode
-            if not instances:
-                logger.warning("No Home Assistant instances configured.")
                 raise ValueError("No Home Assistant instances configured. Cannot start service.")
 
             logger.info(f"Initializing {len(instances)} Home Assistant instance(s)...")

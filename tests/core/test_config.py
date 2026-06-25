@@ -28,7 +28,6 @@ def test_config_defaults():
     assert config.home_assistant.instances[0].instance_id == "default"
     assert config.mode == "production"
     assert config.monitoring.grace_period_seconds == 300
-    assert config.healing.enabled is True
     assert config.is_production is True
     assert config.is_dry_run is False
 
@@ -102,8 +101,6 @@ def test_config_custom_values():
     assert config.mode == "dry_run"
     assert config.is_dry_run is True
     assert config.monitoring.grace_period_seconds == 600
-    assert config.healing.enabled is False
-    assert config.healing.max_attempts == 5
 
 
 def test_load_config_success(tmp_path):
