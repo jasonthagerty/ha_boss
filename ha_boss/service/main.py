@@ -66,7 +66,6 @@ class HABossService:
         self.integration_classifiers: dict[str, Any] = {}  # IntegrationClassifier (cloud detect)
         self.notification_managers: dict[str, NotificationManager] = {}
         self.escalation_managers: dict[str, NotificationEscalator] = {}
-        self.pattern_collectors: dict[str, Any] = {}  # PatternCollector (Phase 2)
         self.out_of_scope_auditors: dict[str, Any] = {}  # OutOfScopeAuditor
         self.action_verifiers: dict[str, Any] = {}  # ActionVerifier
 
@@ -127,11 +126,6 @@ class HABossService:
     def entity_discovery(self) -> Any:
         """Get the default entity discovery for backward compatibility."""
         return self.entity_discoveries.get(self._get_default_instance_id())
-
-    @property
-    def pattern_collector(self) -> Any:
-        """Get the default pattern collector for backward compatibility."""
-        return self.pattern_collectors.get(self._get_default_instance_id())
 
     async def _initialize_instance(
         self, instance_id: str, url: str, token: str, bridge_enabled: bool
@@ -302,22 +296,6 @@ class HABossService:
             ha_client=self.ha_clients[instance_id],
         )
         logger.info(f"[{instance_id}] ✓ Escalation manager initialized")
-
-        # 9. Initialize pattern collector (Phase 2)
-        if self.config.intelligence.pattern_collection_enabled:
-            try:
-                from ha_boss.intelligence.pattern_collector import PatternCollector
-
-                logger.info(f"[{instance_id}] Initializing pattern collector...")
-                self.pattern_collectors[instance_id] = PatternCollector(
-                    instance_id=instance_id,
-                    database=self.database,
-                    config=self.config,
-                )
-                logger.info(f"[{instance_id}] ✓ Pattern collector initialized")
-            except Exception as e:
-                logger.warning(f"[{instance_id}] Failed to initialize pattern collector: {e}")
-                logger.info(f"[{instance_id}] Continuing without pattern collection")
 
         # 9g. Initialize out-of-scope auditor (if enabled)
         if self.config.monitoring.out_of_scope_audit.enabled:
@@ -670,33 +648,7 @@ class HABossService:
                     )
             return
 
-        # Get instance components
-        pattern_collector = self.pattern_collectors.get(instance_id)
-        integration_discovery = self.integration_discoveries.get(instance_id)
         escalation_manager = self.escalation_managers.get(instance_id)
-
-        # Record unavailable event for pattern analysis (Phase 2)
-        if pattern_collector and issue.issue_type in ("unavailable", "stale"):
-            try:
-                # Get integration info
-                integration_id = None
-                integration_domain = None
-                if integration_discovery:
-                    integration_id = integration_discovery.get_integration_for_entity(
-                        issue.entity_id
-                    )
-                    if integration_id:
-                        integration_domain = integration_discovery.get_domain(integration_id)
-
-                await pattern_collector.record_entity_unavailable(
-                    entity_id=issue.entity_id,
-                    integration_id=integration_id,
-                    integration_domain=integration_domain,
-                    timestamp=issue.detected_at,
-                    details=issue.details,
-                )
-            except Exception as e:
-                logger.debug(f"[{instance_id}] Failed to record unavailable event: {e}")
 
         # Monitor-and-notify: alert on detection without reloading anything
         if escalation_manager and issue.issue_type in ("unavailable", "stale"):

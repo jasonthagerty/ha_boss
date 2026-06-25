@@ -7,7 +7,6 @@ from typing import Any
 from ha_boss.core.config import Config
 from ha_boss.core.ha_client import HomeAssistantClient
 from ha_boss.core.types import HealthIssue
-from ha_boss.intelligence.llm_router import LLMRouter
 from ha_boss.notifications import (
     NotificationChannel,
     NotificationContext,
@@ -15,7 +14,6 @@ from ha_boss.notifications import (
     NotificationSeverity,
     NotificationType,
 )
-from ha_boss.notifications.enhanced_generator import EnhancedNotificationGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -31,23 +29,15 @@ class NotificationEscalator:
         self,
         config: Config,
         ha_client: HomeAssistantClient,
-        llm_router: LLMRouter | None = None,
     ) -> None:
         """Initialize notification escalator.
 
         Args:
             config: HA Boss configuration
             ha_client: Home Assistant API client
-            llm_router: Optional LLM router for AI-enhanced notifications
         """
         self.config = config
         self.notification_manager = NotificationManager(config, ha_client)
-
-        # Initialize enhanced generator if LLM available and AI enhancement enabled
-        self.enhanced_generator: EnhancedNotificationGenerator | None = None
-        if llm_router and config.notifications.ai_enhanced:
-            self.enhanced_generator = EnhancedNotificationGenerator(llm_router)
-            logger.info("AI-enhanced notifications enabled")
 
     async def notify_healing_failure(
         self,
@@ -70,23 +60,7 @@ class NotificationEscalator:
             logger.debug("Healing failure notifications are disabled")
             return
 
-        # Generate AI-enhanced analysis if available
         extra: dict[str, Any] | None = None
-        if self.enhanced_generator:
-            logger.debug(f"Generating AI analysis for {health_issue.entity_id}")
-            ai_analysis = await self.enhanced_generator.generate_failure_analysis(
-                entity_id=health_issue.entity_id,
-                issue_type=health_issue.issue_type,
-                error=str(error),
-                attempts=attempts,
-                healing_stats=healing_stats,
-                integration_info=integration_info,
-            )
-            if ai_analysis:
-                extra = {"ai_analysis": ai_analysis}
-                logger.debug("AI analysis generated successfully")
-            else:
-                logger.debug("AI analysis generation failed, using standard notification")
 
         context = NotificationContext(
             notification_type=NotificationType.HEALING_FAILURE,
@@ -198,19 +172,7 @@ class NotificationEscalator:
             reset_time: When circuit breaker will reset
             healing_stats: Optional historical healing statistics
         """
-        # Generate AI-enhanced analysis if available
         extra: dict[str, Any] | None = None
-        if self.enhanced_generator:
-            logger.debug(f"Generating AI analysis for circuit breaker: {integration_name}")
-            ai_analysis = await self.enhanced_generator.generate_circuit_breaker_analysis(
-                integration_name=integration_name,
-                failure_count=failure_count,
-                reset_time=reset_time,
-                healing_stats=healing_stats,
-            )
-            if ai_analysis:
-                extra = {"ai_analysis": ai_analysis}
-                logger.debug("AI analysis generated successfully")
 
         context = NotificationContext(
             notification_type=NotificationType.CIRCUIT_BREAKER,
@@ -250,16 +212,14 @@ class NotificationEscalator:
 async def create_notification_escalator(
     config: Config,
     ha_client: HomeAssistantClient,
-    llm_router: LLMRouter | None = None,
 ) -> NotificationEscalator:
     """Create a notification escalator.
 
     Args:
         config: HA Boss configuration
         ha_client: Home Assistant API client
-        llm_router: Optional LLM router for AI-enhanced notifications
 
     Returns:
         Initialized notification escalator
     """
-    return NotificationEscalator(config, ha_client, llm_router)
+    return NotificationEscalator(config, ha_client)
