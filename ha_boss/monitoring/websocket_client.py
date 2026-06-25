@@ -17,7 +17,6 @@ from ha_boss.core.exceptions import (
 
 if TYPE_CHECKING:
     from ha_boss.discovery.entity_discovery import EntityDiscoveryService
-    from ha_boss.monitoring.automation_tracker import AutomationTracker
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,6 @@ class WebSocketClient:
         instance: HomeAssistantInstance,
         config: Config,
         entity_discovery: "EntityDiscoveryService | None" = None,
-        automation_tracker: "AutomationTracker | None" = None,
         on_state_changed: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
         on_service_call: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
@@ -44,7 +42,6 @@ class WebSocketClient:
             instance: Home Assistant instance configuration (URL, token, instance_id)
             config: HA Boss configuration for connection settings
             entity_discovery: Optional entity discovery service for reload event handling
-            automation_tracker: Optional automation tracker for usage tracking
             on_state_changed: Async callback for state_changed events
             on_service_call: Optional async callback invoked for every call_service event
                 with the raw event data dict.  Called in addition to (not instead of)
@@ -58,7 +55,6 @@ class WebSocketClient:
         self.instance_id = instance.instance_id
         self.config = config
         self.entity_discovery = entity_discovery
-        self.automation_tracker = automation_tracker
 
         # Connection settings
         self.max_retries = config.rest.retry_attempts
@@ -169,10 +165,6 @@ class WebSocketClient:
                 except Exception as e:
                     logger.error(f"Error in state_changed callback: {e}", exc_info=True)
 
-            elif event_type == "automation_triggered":
-                # Track automation execution
-                await self._handle_automation_triggered(event.get("data", {}))
-
             elif event_type == "call_service":
                 # Handle automation/scene/script reload events and track service calls
                 await self._handle_service_call(event.get("data", {}))
@@ -182,34 +174,6 @@ class WebSocketClient:
             pass
         else:
             logger.debug(f"Received message type: {msg_type}")
-
-    async def _handle_automation_triggered(self, data: dict[str, Any]) -> None:
-        """Handle automation_triggered events to track automation executions.
-
-        Args:
-            data: Automation triggered event data containing entity_id, trigger info
-        """
-        if not self.automation_tracker:
-            return
-
-        # Extract automation information from event data
-        entity_id = data.get("entity_id")
-        if not entity_id:
-            return
-
-        # Extract trigger information
-        trigger = data.get("trigger", {})
-        trigger_type = trigger.get("platform")  # e.g., "state", "time", "event"
-
-        # Track the execution (duration and success will be updated later if available)
-        try:
-            await self.automation_tracker.record_execution(
-                automation_id=entity_id,
-                trigger_type=trigger_type,
-                success=True,  # Assume success unless error state detected
-            )
-        except Exception as e:
-            logger.error(f"Failed to record automation execution for {entity_id}: {e}")
 
     async def _handle_service_call(self, data: dict[str, Any]) -> None:
         """Handle service call events for discovery refresh triggers and automation tracking.
@@ -252,37 +216,6 @@ class WebSocketClient:
                         )
                     except Exception as e:
                         logger.error(f"Discovery refresh failed after script reload: {e}")
-
-        # Track service calls made by automations if automation_tracker is configured
-        if self.automation_tracker:
-            # Check if this service call was made by an automation
-            # The context field contains parent_id linking to the automation
-            context = data.get("context", {})
-            parent_id = context.get("parent_id")
-
-            # If there's a parent context, this might be from an automation
-            # We'll also check the user_id to confirm it's from an automation
-            if parent_id or context.get("user_id") is None:
-                service_data = data.get("service_data", {})
-                entity_id = service_data.get("entity_id")
-
-                # Try to determine automation_id from context
-                # Note: Determining automation_id from service_call context is best-effort.
-                # The context.id may not always correspond to the automation entity_id.
-                # For accurate correlation, service calls should be linked to recent
-                # automation_triggered events by matching context.parent_id.
-                # Many service calls may be recorded with automation_id="unknown".
-                automation_id = context.get("id", "unknown")
-
-                try:
-                    await self.automation_tracker.record_service_call(
-                        automation_id=automation_id,
-                        service_name=f"{domain}.{service}",
-                        entity_id=entity_id if isinstance(entity_id, str) else None,
-                        success=True,
-                    )
-                except Exception as e:
-                    logger.debug(f"Failed to record service call: {e}")
 
         # Dispatch to optional action-verification callback (additive — runs after
         # existing reload and tracking logic above, never replaces them).
@@ -337,10 +270,6 @@ class WebSocketClient:
                 if self.entity_discovery:
                     await self.subscribe_events("call_service")
 
-                # Subscribe to automation_triggered events for automation tracking
-                if self.automation_tracker:
-                    await self.subscribe_events("automation_triggered")
-
                 logger.info("Reconnection successful")
 
                 # Restart listen loop
@@ -368,10 +297,6 @@ class WebSocketClient:
         # Also subscribe to call_service events for discovery refresh triggers
         if self.entity_discovery:
             await self.subscribe_events("call_service")
-
-        # Subscribe to automation_triggered events for automation tracking
-        if self.automation_tracker:
-            await self.subscribe_events("automation_triggered")
 
         # Start listening loop
         asyncio.create_task(self._listen_loop())
