@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
-from ha_boss.automation.health_tracker import AutomationHealthTracker
 from ha_boss.core.config import Config
 from ha_boss.core.database import Database
 from ha_boss.core.exceptions import (
@@ -21,7 +20,6 @@ from ha_boss.healing.entity_healer import EntityHealer
 from ha_boss.healing.escalation import NotificationEscalator
 from ha_boss.healing.heal_strategies import HealingManager
 from ha_boss.healing.integration_manager import IntegrationDiscovery
-from ha_boss.monitoring.automation_tracker import AutomationTracker
 from ha_boss.monitoring.health_monitor import HealthMonitor
 from ha_boss.monitoring.state_tracker import EntityState, StateTracker
 from ha_boss.monitoring.websocket_client import WebSocketClient
@@ -75,8 +73,6 @@ class HABossService:
         self.notification_managers: dict[str, NotificationManager] = {}
         self.escalation_managers: dict[str, NotificationEscalator] = {}
         self.pattern_collectors: dict[str, Any] = {}  # PatternCollector (Phase 2)
-        self.automation_trackers: dict[str, AutomationTracker] = {}  # Automation usage tracking
-        self.health_trackers: dict[str, AutomationHealthTracker] = {}
         self.cascade_orchestrators: dict[str, CascadeOrchestrator] = {}
         self.entity_healers: dict[str, EntityHealer] = {}
         self.device_healers: dict[str, DeviceHealer] = {}
@@ -347,14 +343,6 @@ class HABossService:
                 logger.warning(f"[{instance_id}] Failed to initialize pattern collector: {e}")
                 logger.info(f"[{instance_id}] Continuing without pattern collection")
 
-        # 9a. Initialize automation health tracker (depends only on database)
-        logger.info(f"[{instance_id}] Initializing automation health tracker...")
-        self.health_trackers[instance_id] = AutomationHealthTracker(
-            database=self.database,
-            consecutive_success_threshold=self.config.outcome_validation.consecutive_success_threshold,
-        )
-        logger.info(f"[{instance_id}] ✓ Automation health tracker initialized")
-
         # 9b. Initialize entity healer
         logger.info(f"[{instance_id}] Initializing entity healer...")
         if self.database is None:
@@ -434,23 +422,6 @@ class HABossService:
                     "Plan-based routing disabled, cascade continues normally."
                 )
 
-        # 9f. Initialize automation tracker for usage-based optimization
-        logger.info(f"[{instance_id}] Initializing automation tracker...")
-        ha_client_for_tracker = (
-            self.ha_clients[instance_id] if self.config.outcome_validation.enabled else None
-        )
-        config_for_tracker = self.config if self.config.outcome_validation.enabled else None
-
-        self.automation_trackers[instance_id] = AutomationTracker(
-            instance_id=instance_id,
-            database=self.database,
-            ha_client=ha_client_for_tracker,
-            config=config_for_tracker,
-            cascade_orchestrator=self.cascade_orchestrators[instance_id],
-            health_tracker=self.health_trackers[instance_id],
-        )
-        logger.info(f"[{instance_id}] ✓ Automation tracker initialized")
-
         # 9g. Initialize out-of-scope auditor (if enabled)
         if self.config.monitoring.out_of_scope_audit.enabled:
             try:
@@ -501,7 +472,6 @@ class HABossService:
             instance=instance,
             config=self.config,
             entity_discovery=self.entity_discoveries.get(instance_id),
-            automation_tracker=self.automation_trackers.get(instance_id),
             on_state_changed=lambda event: self._on_websocket_state_changed(instance_id, event),
             on_service_call=(
                 action_verifier.handle_service_call if action_verifier is not None else None
@@ -1017,14 +987,6 @@ class HABossService:
                 except Exception as e:
                     logger.error(f"[{instance_id}] Error closing HA client: {e}")
 
-            # Cleanup automation tracker validators
-            automation_tracker = self.automation_trackers.get(instance_id)
-            if automation_tracker:
-                try:
-                    await automation_tracker.cleanup()
-                except Exception as e:
-                    logger.error(f"[{instance_id}] Error cleaning up automation tracker: {e}")
-
             # Cancel any pending action verification tasks
             action_verifier = self.action_verifiers.get(instance_id)
             if action_verifier:
@@ -1034,7 +996,6 @@ class HABossService:
                     logger.error(f"[{instance_id}] Error shutting down action verifier: {e}")
 
             # Remove new components from dictionaries
-            self.health_trackers.pop(instance_id, None)
             self.cascade_orchestrators.pop(instance_id, None)
             self.entity_healers.pop(instance_id, None)
             self.device_healers.pop(instance_id, None)
