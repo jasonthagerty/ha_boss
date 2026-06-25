@@ -10,15 +10,10 @@ from typing import Any
 from ha_boss.core.config import Config
 from ha_boss.core.database import Database
 from ha_boss.core.exceptions import (
-    CircuitBreakerOpenError,
     DatabaseError,
 )
 from ha_boss.core.types import HealthIssue
-from ha_boss.healing.cascade_orchestrator import CascadeOrchestrator
-from ha_boss.healing.device_healer import DeviceHealer
-from ha_boss.healing.entity_healer import EntityHealer
 from ha_boss.healing.escalation import NotificationEscalator
-from ha_boss.healing.heal_strategies import HealingManager
 from ha_boss.healing.integration_manager import IntegrationDiscovery
 from ha_boss.monitoring.health_monitor import HealthMonitor
 from ha_boss.monitoring.state_tracker import EntityState, StateTracker
@@ -69,13 +64,9 @@ class HABossService:
         self.integration_discoveries: dict[str, IntegrationDiscovery] = {}
         self.entity_discoveries: dict[str, Any] = {}  # EntityDiscoveryService
         self.integration_classifiers: dict[str, Any] = {}  # IntegrationClassifier (cloud detect)
-        self.healing_managers: dict[str, HealingManager] = {}
         self.notification_managers: dict[str, NotificationManager] = {}
         self.escalation_managers: dict[str, NotificationEscalator] = {}
         self.pattern_collectors: dict[str, Any] = {}  # PatternCollector (Phase 2)
-        self.cascade_orchestrators: dict[str, CascadeOrchestrator] = {}
-        self.entity_healers: dict[str, EntityHealer] = {}
-        self.device_healers: dict[str, DeviceHealer] = {}
         self.out_of_scope_auditors: dict[str, Any] = {}  # OutOfScopeAuditor
         self.action_verifiers: dict[str, Any] = {}  # ActionVerifier
 
@@ -126,11 +117,6 @@ class HABossService:
     def health_monitor(self) -> Any:
         """Get the default health monitor for backward compatibility."""
         return self.health_monitors.get(self._get_default_instance_id())
-
-    @property
-    def healing_manager(self) -> Any:
-        """Get the default healing manager for backward compatibility."""
-        return self.healing_managers.get(self._get_default_instance_id())
 
     @property
     def integration_discovery(self) -> Any:
@@ -309,16 +295,6 @@ class HABossService:
         await self.health_monitors[instance_id].start()
         logger.info(f"[{instance_id}] ✓ Health monitor started")
 
-        # 7. Initialize healing manager
-        logger.info(f"[{instance_id}] Initializing healing manager...")
-        self.healing_managers[instance_id] = HealingManager(
-            config=self.config,
-            database=self.database,
-            ha_client=self.ha_clients[instance_id],
-            integration_discovery=self.integration_discoveries[instance_id],
-        )
-        logger.info(f"[{instance_id}] ✓ Healing manager initialized")
-
         # 8. Initialize escalation manager
         logger.info(f"[{instance_id}] Initializing escalation manager...")
         self.escalation_managers[instance_id] = NotificationEscalator(
@@ -342,85 +318,6 @@ class HABossService:
             except Exception as e:
                 logger.warning(f"[{instance_id}] Failed to initialize pattern collector: {e}")
                 logger.info(f"[{instance_id}] Continuing without pattern collection")
-
-        # 9b. Initialize entity healer
-        logger.info(f"[{instance_id}] Initializing entity healer...")
-        if self.database is None:
-            raise RuntimeError("Database must be initialized before creating healers")
-        self.entity_healers[instance_id] = EntityHealer(
-            database=self.database,
-            ha_client=self.ha_clients[instance_id],
-            instance_id=instance_id,
-            max_retry_attempts=self.config.healing.entity_healing_max_attempts,
-            retry_base_delay=self.config.healing.entity_healing_base_delay,
-        )
-        logger.info(f"[{instance_id}] ✓ Entity healer initialized")
-
-        # 9c. Initialize device healer
-        logger.info(f"[{instance_id}] Initializing device healer...")
-        self.device_healers[instance_id] = DeviceHealer(
-            database=self.database,
-            ha_client=self.ha_clients[instance_id],
-            instance_id=instance_id,
-            reboot_timeout_seconds=self.config.healing.device_healing_reboot_timeout,
-            state_verification_timeout=self.config.healing.device_state_verification_timeout,
-            state_verification_partial_threshold=self.config.healing.device_state_verification_partial_success_threshold,
-        )
-        logger.info(f"[{instance_id}] ✓ Device healer initialized")
-
-        # 9d. Initialize cascade orchestrator
-        logger.info(f"[{instance_id}] Initializing cascade orchestrator...")
-        self.cascade_orchestrators[instance_id] = CascadeOrchestrator(
-            database=self.database,
-            entity_healer=self.entity_healers[instance_id],
-            device_healer=self.device_healers[instance_id],
-            integration_healer=self.healing_managers[instance_id],
-            escalator=self.escalation_managers[instance_id],
-            instance_id=instance_id,
-            pattern_match_threshold=2,  # Default threshold
-            max_concurrent_healings=self.config.healing.max_concurrent_entity_healing,
-        )
-        logger.info(f"[{instance_id}] ✓ Cascade orchestrator initialized")
-
-        # 9e. Initialize healing plan components (if enabled)
-        if self.config.healing.healing_plans_enabled:
-            try:
-                from ha_boss.healing.plan_executor import PlanExecutor
-                from ha_boss.healing.plan_loader import PlanLoader
-                from ha_boss.healing.plan_matcher import PlanMatcher
-
-                logger.info(f"[{instance_id}] Initializing healing plan components...")
-
-                plan_loader = PlanLoader(
-                    database=self.database,
-                    use_builtin=self.config.healing.healing_plans_use_builtin,
-                    user_plans_directory=self.config.healing.healing_plans_directory,
-                )
-                plans = await plan_loader.load_all_plans()
-                logger.info(f"[{instance_id}] Loaded {len(plans)} healing plan(s)")
-
-                plan_matcher = PlanMatcher(plan_loader=plan_loader)
-                plan_executor = PlanExecutor(
-                    database=self.database,
-                    entity_healer=self.entity_healers[instance_id],
-                    device_healer=self.device_healers[instance_id],
-                )
-
-                # Inject into cascade orchestrator
-                self.cascade_orchestrators[instance_id].plan_matcher = plan_matcher
-                self.cascade_orchestrators[instance_id].plan_executor = plan_executor
-
-                logger.info(f"[{instance_id}] ✓ Healing plan components initialized")
-            except ImportError:
-                logger.info(
-                    f"[{instance_id}] Healing plan modules not available, "
-                    "plan-based routing disabled"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[{instance_id}] Failed to initialize healing plans: {e}. "
-                    "Plan-based routing disabled, cascade continues normally."
-                )
 
         # 9g. Initialize out-of-scope auditor (if enabled)
         if self.config.monitoring.out_of_scope_audit.enabled:
@@ -577,10 +474,7 @@ class HABossService:
 
             self.state = ServiceState.RUNNING
             logger.info("✅ HA Boss service started successfully")
-            logger.info(
-                f"Mode: {self.config.mode}, "
-                f"Healing: {'enabled' if self.config.healing.enabled else 'disabled'}"
-            )
+            logger.info(f"Mode: {self.config.mode}")
 
         except Exception as e:
             self.state = ServiceState.ERROR
@@ -779,7 +673,6 @@ class HABossService:
         # Get instance components
         pattern_collector = self.pattern_collectors.get(instance_id)
         integration_discovery = self.integration_discoveries.get(instance_id)
-        healing_manager = self.healing_managers.get(instance_id)
         escalation_manager = self.escalation_managers.get(instance_id)
 
         # Record unavailable event for pattern analysis (Phase 2)
@@ -805,120 +698,15 @@ class HABossService:
             except Exception as e:
                 logger.debug(f"[{instance_id}] Failed to record unavailable event: {e}")
 
-        # Attempt auto-healing if enabled
-        if self.config.healing.enabled and healing_manager:
+        # Monitor-and-notify: alert on detection without reloading anything
+        if escalation_manager and issue.issue_type in ("unavailable", "stale"):
             try:
-                logger.info(f"[{instance_id}] Attempting auto-heal for {issue.entity_id}...")
-                self.healings_attempted[instance_id] = (
-                    self.healings_attempted.get(instance_id, 0) + 1
-                )
-
-                success = await healing_manager.heal(issue)
-
-                # Record healing attempt for pattern analysis (Phase 2)
-                if pattern_collector:
-                    try:
-                        # Get integration info
-                        integration_id = None
-                        integration_domain = None
-                        if integration_discovery:
-                            integration_id = integration_discovery.get_integration_for_entity(
-                                issue.entity_id
-                            )
-                            if integration_id:
-                                integration_domain = integration_discovery.get_domain(
-                                    integration_id
-                                )
-
-                        if success:
-                            await pattern_collector.record_healing_attempt(
-                                entity_id=issue.entity_id,
-                                integration_id=integration_id,
-                                integration_domain=integration_domain,
-                                success=True,
-                                timestamp=datetime.now(UTC),
-                                details={"issue_type": issue.issue_type},
-                            )
-                        else:
-                            await pattern_collector.record_healing_attempt(
-                                entity_id=issue.entity_id,
-                                integration_id=integration_id,
-                                integration_domain=integration_domain,
-                                success=False,
-                                timestamp=datetime.now(UTC),
-                                details={
-                                    "issue_type": issue.issue_type,
-                                    "max_attempts": self.config.healing.max_attempts,
-                                },
-                            )
-                    except Exception as e:
-                        logger.debug(f"[{instance_id}] Failed to record healing attempt: {e}")
-
-                if success:
-                    logger.info(f"[{instance_id}] ✓ Successfully healed {issue.entity_id}")
-                    self.healings_succeeded[instance_id] = (
-                        self.healings_succeeded.get(instance_id, 0) + 1
-                    )
-
-                else:
-                    logger.warning(f"[{instance_id}] ✗ Healing failed for {issue.entity_id}")
-                    self.healings_failed[instance_id] = self.healings_failed.get(instance_id, 0) + 1
-
-                    # Escalate to notifications
-                    if escalation_manager:
-                        await escalation_manager.notify_healing_failure(
-                            health_issue=issue,
-                            error=Exception(
-                                f"Healing failed after {self.config.healing.max_attempts} attempts"
-                            ),
-                            attempts=self.config.healing.max_attempts,
-                        )
-
-            except CircuitBreakerOpenError:
-                logger.warning(
-                    f"[{instance_id}] Circuit breaker open, skipping heal attempt for {issue.entity_id}"
-                )
-                # Escalate circuit breaker trip
-                if escalation_manager and integration_discovery:
-                    # Get integration name for notification
-                    entry_id = integration_discovery.get_integration_for_entity(issue.entity_id)
-                    integration_name = issue.entity_id  # Default to entity_id
-                    if entry_id:
-                        details = integration_discovery.get_integration_details(entry_id)
-                        if details:
-                            integration_name = (
-                                details.get("title") or details.get("domain") or entry_id
-                            )
-
-                    # Calculate reset time
-                    from datetime import timedelta
-
-                    reset_time = datetime.now(UTC) + timedelta(
-                        seconds=self.config.healing.circuit_breaker_reset_seconds
-                    )
-
-                    await escalation_manager.notify_circuit_breaker_open(
-                        integration_name=integration_name,
-                        failure_count=self.config.healing.circuit_breaker_threshold,
-                        reset_time=reset_time,
-                    )
-
+                await escalation_manager.notify_issue_detected(issue)
             except Exception as e:
                 logger.error(
-                    f"[{instance_id}] Error during healing attempt for {issue.entity_id}: {e}",
-                    exc_info=True,
+                    f"[{instance_id}] Failed to send issue-detected notification for "
+                    f"{issue.entity_id}: {e}"
                 )
-        else:
-            logger.info(f"[{instance_id}] Auto-healing disabled, issue logged only")
-            # Monitor-and-notify mode: alert on detection without reloading anything
-            if escalation_manager and issue.issue_type in ("unavailable", "stale"):
-                try:
-                    await escalation_manager.notify_issue_detected(issue)
-                except Exception as e:
-                    logger.error(
-                        f"[{instance_id}] Failed to send issue-detected notification for "
-                        f"{issue.entity_id}: {e}"
-                    )
 
     async def stop(self) -> None:
         """Gracefully stop the HA Boss service."""
@@ -996,9 +784,6 @@ class HABossService:
                     logger.error(f"[{instance_id}] Error shutting down action verifier: {e}")
 
             # Remove new components from dictionaries
-            self.cascade_orchestrators.pop(instance_id, None)
-            self.entity_healers.pop(instance_id, None)
-            self.device_healers.pop(instance_id, None)
             self.out_of_scope_auditors.pop(instance_id, None)
             self.action_verifiers.pop(instance_id, None)
 
@@ -1083,7 +868,7 @@ class HABossService:
             "mode": self.config.mode,
             "uptime_seconds": uptime_seconds,
             "start_time": self.start_time.isoformat() if self.start_time else None,
-            "healing_enabled": self.config.healing.enabled,
+            "healing_enabled": False,
             "instance_count": len(self.ha_clients),
             "instances": instances_status,
             "statistics": {

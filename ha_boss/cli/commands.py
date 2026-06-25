@@ -341,7 +341,6 @@ def status(
             table.add_row("HA URL", "Not configured")
 
         table.add_row("Mode", config.mode)
-        table.add_row("Healing Enabled", "✓" if config.healing.enabled else "✗")
         table.add_row("Database", str(config.database.path))
 
         console.print("\n", table)
@@ -435,128 +434,6 @@ async def _show_db_stats(config: Config) -> None:
         console.print(f"[yellow]Warning:[/yellow] Could not read database: {e}", style="dim")
 
 
-@app.command()
-def heal(
-    entity_id: str = typer.Argument(..., help="Entity ID to heal (e.g., sensor.temperature)"),
-    config_path: Path | None = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to configuration file",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Simulate healing without actually executing",
-    ),
-) -> None:
-    """Manually trigger healing for a specific entity.
-
-    This will:
-    1. Look up the integration for the entity
-    2. Attempt to reload the integration
-    3. Report the result
-
-    Example:
-        haboss heal sensor.temperature
-        haboss heal light.living_room --dry-run
-    """
-    console.print(
-        Panel.fit(
-            f"[bold cyan]Manual Healing[/bold cyan]\n{entity_id}",
-            subtitle="Triggering integration reload",
-        )
-    )
-
-    try:
-        config = load_config(config_path)
-        if dry_run:
-            config.mode = "dry_run"
-            console.print("\n[yellow]Dry-run mode enabled[/yellow]\n")
-
-        asyncio.run(_perform_healing(config, entity_id))
-
-    except Exception as e:
-        handle_error(e)
-
-
-async def _perform_healing(config: Config, entity_id: str) -> None:
-    """Perform healing for an entity.
-
-    Args:
-        config: HA Boss configuration
-        entity_id: Entity ID to heal
-    """
-    from ha_boss.core.database import Database
-    from ha_boss.core.types import HealthIssue
-    from ha_boss.healing.heal_strategies import HealingManager
-    from ha_boss.healing.integration_manager import IntegrationDiscovery
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        # Initialize components
-        progress.add_task("Connecting to Home Assistant...", total=None)
-
-        async with await create_ha_client(config) as ha_client:
-            async with Database(str(config.database.path)) as db:
-                await db.init_db()
-
-                # Discover integrations
-                task = progress.add_task("Discovering integrations...", total=None)
-                integration_discovery = IntegrationDiscovery(ha_client, db, config)
-                await integration_discovery.discover_all()
-                progress.remove_task(task)
-
-                # Create healing manager
-                healing_manager = HealingManager(
-                    config,
-                    db,
-                    ha_client,
-                    integration_discovery,
-                )
-
-                # Check if entity can be healed
-                can_heal, reason = await healing_manager.can_heal(entity_id)
-                if not can_heal:
-                    console.print(f"\n[yellow]Cannot heal entity:[/yellow] {reason}")
-                    return
-
-                # Create health issue for the entity
-                health_issue = HealthIssue(
-                    entity_id=entity_id,
-                    issue_type="manual",
-                    detected_at=datetime.now(UTC),
-                    details={"trigger": "manual_cli"},
-                )
-
-                # Attempt healing
-                task = progress.add_task(f"Healing {entity_id}...", total=None)
-                try:
-                    success = await healing_manager.heal(health_issue)
-                    progress.remove_task(task)
-
-                    if success:
-                        console.print(f"\n[green]✓ Successfully healed {entity_id}[/green]")
-
-                        # Get integration details
-                        integration_id = integration_discovery.get_integration_for_entity(entity_id)
-                        if integration_id:
-                            details = integration_discovery.get_integration_details(integration_id)
-                            if details:
-                                title = details.get("title", integration_id)
-                                console.print(f"[dim]Reloaded integration: {title}[/dim]")
-                    else:
-                        console.print(f"\n[red]✗ Failed to heal {entity_id}[/red]")
-
-                except Exception as e:
-                    progress.remove_task(task)
-                    console.print(f"\n[red]✗ Healing failed:[/red] {e}")
-
-
-# Config subcommands
 config_app = typer.Typer(name="config", help="Configuration management commands")
 
 
@@ -612,8 +489,6 @@ def validate_config(
 
         table.add_row("Mode", config.mode)
         table.add_row("Monitoring Grace Period", f"{config.monitoring.grace_period_seconds}s")
-        table.add_row("Healing Enabled", "Yes" if config.healing.enabled else "No")
-        table.add_row("Max Heal Attempts", str(config.healing.max_attempts))
         table.add_row("Database Path", str(config.database.path))
         table.add_row("Log Level", config.logging.level)
 

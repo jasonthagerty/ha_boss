@@ -89,7 +89,6 @@ class TestHABossServiceStart:
             ) as mock_entity_discovery,
             patch("ha_boss.service.main.StateTracker") as mock_state_tracker,
             patch("ha_boss.service.main.HealthMonitor") as mock_health_monitor,
-            patch("ha_boss.service.main.HealingManager"),
             patch("ha_boss.service.main.NotificationEscalator"),
             patch("ha_boss.service.main.NotificationManager"),
             patch("ha_boss.service.main.WebSocketClient") as mock_websocket_client,
@@ -156,14 +155,12 @@ class TestHABossServiceStart:
             assert "default" in service.websocket_clients
             assert "default" in service.state_trackers
             assert "default" in service.health_monitors
-            assert "default" in service.healing_managers
 
             # Verify backward-compatible properties work
             assert service.ha_client is not None
             assert service.websocket_client is not None
             assert service.state_tracker is not None
             assert service.health_monitor is not None
-            assert service.healing_manager is not None
 
             # Verify initializations were called
             mock_db.init_db.assert_called_once()
@@ -291,86 +288,34 @@ class TestHABossServiceCallbacks:
         mock_health_monitor.check_entity_now.assert_called_once_with("sensor.test")
 
     @pytest.mark.asyncio
-    async def test_on_health_issue_triggers_healing(self, service: HABossService) -> None:
-        """Test that health issues trigger healing."""
-        # Set up mocks for default instance
-        service.config.healing.enabled = True
-        service.healings_attempted["default"] = 0
-        service.healings_succeeded["default"] = 0
-        service.healings_failed["default"] = 0
-
-        mock_healing_manager = AsyncMock()
-        mock_healing_manager.heal = AsyncMock(return_value=True)
-        service.healing_managers["default"] = mock_healing_manager
-
+    async def test_on_health_issue_notifies_on_detection(self, service: HABossService) -> None:
+        """A detected issue triggers an issue-detected notification."""
+        service.config.notifications.on_issue_detected = True
         mock_escalation = AsyncMock()
         service.escalation_managers["default"] = mock_escalation
 
-        # Create health issue
         issue = HealthIssue(
             entity_id="sensor.test",
             issue_type="unavailable",
             detected_at=datetime.now(UTC),
         )
-
         await service._on_health_issue("default", issue)
-
-        # Verify healing was attempted
-        mock_healing_manager.heal.assert_called_once_with(issue)
-        assert service.healings_attempted["default"] == 1
-        assert service.healings_succeeded["default"] == 1
-
-    @pytest.mark.asyncio
-    async def test_on_health_issue_escalates_on_failure(self, service: HABossService) -> None:
-        """Test that healing failures are escalated."""
-        # Set up mocks for default instance
-        service.config.healing.enabled = True
-        service.healings_attempted["default"] = 0
-        service.healings_succeeded["default"] = 0
-        service.healings_failed["default"] = 0
-
-        mock_healing_manager = AsyncMock()
-        mock_healing_manager.heal = AsyncMock(return_value=False)
-        service.healing_managers["default"] = mock_healing_manager
-
-        mock_escalation = AsyncMock()
-        mock_escalation.notify_healing_failure = AsyncMock()
-        service.escalation_managers["default"] = mock_escalation
-
-        # Create health issue
-        issue = HealthIssue(
-            entity_id="sensor.test",
-            issue_type="unavailable",
-            detected_at=datetime.now(UTC),
-        )
-
-        await service._on_health_issue("default", issue)
-
-        # Verify escalation was called
-        mock_escalation.notify_healing_failure.assert_called_once()
-        assert service.healings_attempted["default"] == 1
-        assert service.healings_succeeded["default"] == 0
-        assert service.healings_failed["default"] == 1
+        mock_escalation.notify_issue_detected.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_on_health_issue_skips_recovery_events(self, service: HABossService) -> None:
-        """Test that recovery events don't trigger healing."""
-        # Set up mocks for default instance
-        mock_healing_manager = AsyncMock()
-        mock_healing_manager.heal_entity = AsyncMock()
-        service.healing_managers["default"] = mock_healing_manager
+        """Recovery events do not send an issue-detected notification."""
+        service.config.notifications.on_issue_detected = True
+        mock_escalation = AsyncMock()
+        service.escalation_managers["default"] = mock_escalation
 
-        # Create recovery issue
         issue = HealthIssue(
             entity_id="sensor.test",
             issue_type="recovered",
             detected_at=datetime.now(UTC),
         )
-
         await service._on_health_issue("default", issue)
-
-        # Verify healing was NOT called
-        mock_healing_manager.heal_entity.assert_not_called()
+        mock_escalation.notify_issue_detected.assert_not_called()
 
 
 class TestHABossServiceStatus:
