@@ -3,67 +3,49 @@
 [![CI Status](https://github.com/jasonthagerty/ha_boss/workflows/CI/badge.svg)](https://github.com/jasonthagerty/ha_boss/actions)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen)](https://github.com/jasonthagerty/ha_boss)
 
-A standalone Python service that monitors Home Assistant instances, automatically heals integration failures, and provides AI-powered automation analysis and optimization. HA Boss acts as an intelligent watchdog for your smart home, detecting issues before they become problems and fixing them automatically.
+A small, headless watchdog for Home Assistant. HA Boss watches the entities your
+automations actually depend on and **notifies you when something is stuck,
+offline, or didn't do what it was told** — nothing more. It runs as a single
+container, has no web UI, and makes no changes to your Home Assistant.
 
-## ✨ Key Features
+## What it does
 
-- **🔍 Real-time Monitoring** - WebSocket connection for instant state updates
-- **🏠 Multi-Instance Support** - Manage multiple Home Assistant instances from one deployment
-- **🎯 Auto-Discovery** - Automatically finds entities from automations/scenes/scripts
-- **🔧 Auto-Healing** - Automatically reloads failed integrations with circuit breakers
-- **📣 Proactive Alerts** - Notify on stuck/offline entities even with healing disabled, with optional mobile push
-- **✅ Action Verification** - Warns if a commanded entity (turn on/off, garage, lock…) doesn't reach the intended state within a grace window
-- **🗂️ Out-of-Scope Audit** - Periodic digest of unavailable entities not used by any automation/scene/script
-- **🛡️ Safety First** - Dry-run mode, graceful degradation, automatic reconnection
-- **📊 Pattern Analysis** - Tracks reliability metrics and failure patterns
-- **🤖 AI Intelligence** - Local LLM (Ollama) + Claude API for automation analysis and optimization
-- **🔌 MCP Server** - Exposes capabilities to AI agents via Model Context Protocol
-- **🐳 Docker-First** - Production-ready with multi-stage builds and health checks
-- **💻 Rich CLI** - Beautiful terminal UI for management and analysis
+- **🔍 Real-time monitoring** — one WebSocket connection for instant state updates.
+- **🎯 Auto-discovery** — automatically scopes monitoring to the entities referenced
+  in your automations/scenes/scripts (refreshes on reload and on a timer).
+- **📣 Monitor-and-notify** — alerts when a monitored entity goes `unavailable`/
+  `unknown` or stops updating (stale), after a grace period. Sends a Home Assistant
+  persistent notification and, optionally, a mobile push.
+- **☁️ Cloud-aware** — internet-dependent integrations (manifest `iot_class` of
+  `cloud_polling`/`cloud_push`, e.g. PlayStation Network, Plex, Life360) get a
+  longer grace and no mobile push, so external blips don't page you.
+- **🔌 Expected-unavailable** — entities that report `unavailable` when simply off
+  (e.g. a TV) can be marked so they aren't flagged (`monitoring.unavailable_ok`).
+- **✅ Action verification** — optionally warns if a commanded entity (turn on/off,
+  cover, lock…) doesn't reach the intended state within a grace window.
+- **🗂️ Out-of-scope audit** — optional periodic digest of unavailable entities that
+  aren't used by any automation/scene/script.
+- **🐳 Docker-first** — single container, SQLite, process-based healthcheck.
 
-## 🚀 Quick Start
+> HA Boss is intentionally read-only: it does **not** auto-heal, reload
+> integrations, or modify your Home Assistant config.
 
-### Docker (Recommended - Production)
-
-Uses pre-built images from GitHub Container Registry:
+## Quick start (Docker)
 
 ```bash
-# Clone and configure
 git clone https://github.com/jasonthagerty/ha_boss.git
 cd ha_boss
-cp .env.example .env
-
-# Create data directory with correct permissions
+cp .env.example .env          # set HA_URL and HA_TOKEN
 mkdir -p data config
 sudo chown -R 1000:1000 data
 
-# Edit .env with your Home Assistant URL and token
-# Then start the service (pulls latest images)
-docker-compose up -d
-
-# Check status
-docker-compose exec haboss haboss status
-```
-
-### Docker (Local Development)
-
-Build from source for development:
-
-```bash
-# Create data directory with correct permissions
-mkdir -p data config
-sudo chown -R 1000:1000 data
-
-# Use dev overlay to build locally
+# Build + run locally
 docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-
-# Or build specific service
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml build haboss
+docker-compose logs -f haboss
 ```
 
-### Local Development (Python)
+## Local development
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -72,222 +54,55 @@ uv pip install -e ".[dev]"
 haboss init && haboss start --foreground
 ```
 
-## 🔌 MCP Server (Model Context Protocol)
-
-**NEW:** HA Boss includes an optional MCP server that exposes 17 tools to AI agents like Claude Desktop.
+## CLI
 
 ```bash
-# Start with MCP server enabled
-docker-compose --profile mcp up -d
+haboss start --foreground   # run the service
+haboss status               # show service + monitoring status
+haboss config validate      # validate configuration
+haboss db cleanup           # prune old data
 ```
 
-**Available Tools:** Monitoring (4), Healing (3), Pattern Analysis (3), Service Management (2), Automations (5)
+## Configuration
 
-**Claude Desktop Integration:**
-```json
-{
-  "mcpServers": {
-    "ha-boss": {
-      "command": "docker",
-      "args": ["exec", "-i", "ha-boss-mcp", "python", "-m", "ha_boss_mcp.server"]
-    }
-  }
-}
-```
+See [`config/config.yaml.example`](config/config.yaml.example). The essentials:
 
-See [ha_boss_mcp/README.md](ha_boss_mcp/README.md) for complete documentation.
-
-## 🎮 Common Commands
-
-```bash
-# Monitoring & Healing
-haboss start --foreground          # Run service
-haboss status                      # Health status
-haboss heal sensor.temperature     # Manual heal
-
-# Pattern Analysis
-haboss patterns reliability        # Integration reliability
-haboss patterns failures           # Failure timeline
-haboss patterns weekly-summary     # AI weekly report
-
-# Automation Analysis
-haboss automation analyze bedroom_lights
-```
-
-## 📚 Documentation
-
-- **[Installation](https://github.com/jasonthagerty/ha_boss/wiki/Installation)** - Setup and configuration
-- **[Multi-Instance](https://github.com/jasonthagerty/ha_boss/wiki/Multi-Instance)** - Managing multiple HA instances
-- **[Auto-Discovery](https://github.com/jasonthagerty/ha_boss/wiki/Auto-Discovery)** - Automatic entity detection
-- **[CLI Reference](https://github.com/jasonthagerty/ha_boss/wiki/CLI-Commands)** - All commands
-- **[Configuration](https://github.com/jasonthagerty/ha_boss/wiki/Configuration)** - Settings explained
-- **[REST API](https://github.com/jasonthagerty/ha_boss/wiki/REST-API)** - API endpoints reference
-- **[Architecture](https://github.com/jasonthagerty/ha_boss/wiki/Architecture)** - Technical design
-- **[AI Features](https://github.com/jasonthagerty/ha_boss/wiki/AI-Features)** - LLM integration
-- **[MCP Server](https://github.com/jasonthagerty/ha_boss/wiki/MCP-Server)** - Model Context Protocol
-- **[Development](https://github.com/jasonthagerty/ha_boss/wiki/Development)** - Contributing guide
-
-## 🎯 Project Status
-
-**All phases complete and production-ready!**
-
-- ✅ **Phase 1** - Real-time monitoring, auto-healing, Docker deployment
-- ✅ **Phase 2** - Reliability tracking, CLI reports, database schema
-- ✅ **Phase 3** - Local LLM, Claude integration, automation analysis and optimization
-- ✅ **MCP Server** - Model Context Protocol interface for AI agents
-
-**Test Coverage:** 81% (528 tests) | **Docker Images:** Multi-arch (amd64, arm64)
-
-> **Note:** HA Boss focuses on automation optimization based on real-world monitoring data. For natural language automation generation, Home Assistant is developing a native feature which will provide better integration with the core platform.
-
-## 🏗️ Architecture
-
-```
-┌────────────────────────────────────┐
-│      HA Boss Service + MCP         │
-├────────────────────────────────────┤
-│  WebSocket Monitor ──▶ State      │
-│  Health Monitor ──▶ Healing Mgr    │
-│  Pattern Collector ──▶ AI Analyzer │
-│  MCP Server ──▶ 17 AI Agent Tools  │
-└────────────────────────────────────┘
-         │              │
-         │ WebSocket    │ SQLite
-         ▼              ▼
-   ┌─────────┐    ┌──────────┐
-   │  Home   │    │ Pattern  │
-   │Assistant│    │ Database │
-   └─────────┘    └──────────┘
-```
-
-## 🔐 Security
-
-### Authentication
-
-**Optional API Key Authentication:**
 ```yaml
-api:
-  auth_enabled: true
-  api_keys:
-    - "your-secret-api-key-here"
-```
-
-When enabled, all API requests require the `X-API-Key` header:
-```bash
-curl -H "X-API-Key: your-secret-api-key-here" http://localhost:8000/api/status
-```
-
-**Default**: Authentication is disabled. Only enable on trusted networks or with HTTPS.
-
-### Multi-Instance Security Model
-
-HA Boss uses a **trust-based security model** for multi-instance deployments:
-
-- **Shared API Key Pool** - All configured API keys grant access to all instances
-- **No Per-Instance Authorization** - Any authenticated user can access any configured instance
-- **Instance Isolation** - Handled at the deployment level (see below)
-
-**Recommended Deployment Patterns:**
-
-**Single-Tenant (One User/Household):**
-```yaml
-# Monitor multiple properties with shared access
 home_assistant:
-  instances:
-    - instance_id: "home"
-      url: "http://home.local:8123"
-    - instance_id: "cabin"
-      url: "http://cabin.local:8123"
+  url: "${HA_URL}"
+  token: "${HA_TOKEN}"
 
-api:
-  api_keys: ["shared-family-key"]  # All family members access all instances
-```
-
-**Multi-Tenant (Managed Service Provider):**
-
-For complete isolation between customers, deploy separate HA Boss containers:
-
-```bash
-# Customer A - separate container
-docker run -e HA_URL=http://customer-a.local:8123 \
-           -e HA_TOKEN=customer-a-token \
-           -e API_KEYS=customer-a-api-key \
-           ghcr.io/jasonthagerty/ha-boss:latest
-
-# Customer B - separate container
-docker run -e HA_URL=http://customer-b.local:8123 \
-           -e HA_TOKEN=customer-b-token \
-           -e API_KEYS=customer-b-api-key \
-           ghcr.io/jasonthagerty/ha-boss:latest
-```
-
-**Benefits of Separate Deployments:**
-- ✅ Complete data isolation between tenants
-- ✅ Independent scaling and resource allocation
-- ✅ No shared API keys or access concerns
-- ✅ Independent updates and rollbacks
-- ✅ Simplified security model
-
-> **Note:** Instance-level authorization (per-instance API keys) may be added in a future release if user demand emerges. See [Issue #144](https://github.com/jasonthagerty/ha_boss/issues/144) for discussion.
-
-### Other Security Features
-
-- **Token Storage** - Home Assistant tokens stored in `.env` (never committed to git)
-- **Non-Root Containers** - Docker runs as non-root users (haboss:1000, mcpuser:1001)
-- **Offline Operation** - Works fully offline with local LLM (Ollama)
-- **Optional Cloud API** - Claude API only used when explicitly configured
-- **CORS Protection** - Configurable allowed origins for browser requests
-- **HTTPS Support** - Optional `require_https` setting for API endpoints
-
-## 📦 Docker Images
-
-Published to GitHub Container Registry with multi-arch support:
-- `ghcr.io/jasonthagerty/ha-boss:latest` - Main service
-- `ghcr.io/jasonthagerty/ha-boss-mcp:latest` - MCP server (optional)
-
-**Supported Architectures:**
-- `amd64` - Intel/AMD 64-bit (NUCs, x86_64 servers)
-- `arm64` - ARM 64-bit (Raspberry Pi 4/5, Raspberry Pi 3 in 64-bit mode)
-
-> **Note:** armv7 (32-bit ARM) is not supported due to dependency compilation issues. Raspberry Pi 3/4 users should use a 64-bit OS.
-
-Images are automatically built and published on every push to main.
-
-> **Future:** HA Boss will be available as a Home Assistant addon for one-click installation from the addon store.
-
-## 📝 Example Configuration
-
-**Monitor critical sensors:**
-```yaml
 monitoring:
-  include:
-    - "sensor.temperature_*"
-    - "binary_sensor.door_*"
+  grace_period_seconds: 300
+  unavailable_ok: []          # entities where 'unavailable' is normal (e.g. a TV)
+  cloud_handling:
+    enabled: true             # gentler handling for cloud integrations
+  action_verification:
+    enabled: false
+  out_of_scope_audit:
+    enabled: false
+
+notifications:
+  on_issue_detected: true     # send alerts in monitor-and-notify mode
+  mobile_push_services: []    # e.g. ["notify.jasons_iphone"]
 ```
 
-**Conservative healing:**
-```yaml
-monitoring:
-  grace_period_seconds: 600
-healing:
-  max_attempts: 2
-  cooldown_seconds: 600
+## Architecture
+
+```
+WebSocket events ─▶ StateTracker (scoped by auto-discovery)
+                       │
+                       ▼
+                  HealthMonitor ─▶ NotificationEscalator ─▶ HA persistent + mobile push
+                       ▲
+            IntegrationClassifier (cloud vs local, via HA manifests)
 ```
 
-## 🤝 Contributing
+Packages: `monitoring/` (state tracking, health, websocket, action verification,
+out-of-scope audit), `discovery/` (auto-discovery + cloud classification),
+`notifications/`, `core/` (config, db, HA client), `service/` (orchestration),
+`cli/`.
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) and [Development Wiki](https://github.com/jasonthagerty/ha_boss/wiki/Development).
+## License
 
-## 📜 License
-
-[MIT License](LICENSE)
-
-## 📞 Support
-
-- **Issues:** [GitHub Issues](https://github.com/jasonthagerty/ha_boss/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/jasonthagerty/ha_boss/discussions)
-- **Wiki:** [Documentation](https://github.com/jasonthagerty/ha_boss/wiki)
-
----
-
-**Made with ❤️ for the Home Assistant community**
+[MIT](LICENSE) — made for the Home Assistant community.

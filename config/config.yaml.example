@@ -106,50 +106,6 @@ monitoring:
     suppress_mobile_push: true
     grace_period_seconds: 900   # longer grace for cloud entities (null = use default)
 
-healing:
-  # Enable auto-healing
-  enabled: true
-
-  # Maximum healing attempts per integration
-  max_attempts: 3
-
-  # Cooldown between healing attempts (seconds)
-  cooldown_seconds: 300  # 5 minutes
-
-  # Circuit breaker threshold (stop trying after N total failures)
-  circuit_breaker_threshold: 10
-
-  # Circuit breaker reset time (seconds)
-  # After this time with no failures, reset counter
-  circuit_breaker_reset_seconds: 3600  # 1 hour
-
-  # Entity-level healing configuration
-  entity_healing_max_attempts: 3  # Maximum retry attempts for entity-level healing
-  entity_healing_base_delay: 1.0  # Base delay in seconds for exponential backoff
-
-  # Device-level healing configuration
-  device_healing_reboot_timeout: 30.0  # Timeout in seconds for device reboot operations
-
-  # Entity state verification after healing
-  device_state_verification_timeout: 5.0  # seconds to wait for entities to settle
-  device_state_verification_partial_success_threshold: 0.5  # 50% recovery threshold
-
-  # Healing Plans (YAML-based healing strategies)
-  healing_plans_enabled: true        # Enable YAML-based healing plans
-  healing_plans_use_builtin: true    # Load built-in plans (zigbee, zwave, wifi, etc.)
-  # healing_plans_directory: null    # Optional: path to directory with custom YAML plans
-
-  # Common integration timing:
-  # - Z-Wave/Zigbee: 7-10 seconds (mesh healing)
-  # - WiFi devices: 3-5 seconds
-  # - Fast integrations (MQTT): 2-3 seconds
-
-  # Example scenarios for different deployment types:
-  # - Z-Wave network: timeout=10.0, threshold=0.5 (50% immediate, rest after mesh heal)
-  # - WiFi devices: timeout=5.0, threshold=0.8 (expect 80% within 5 seconds)
-  # - Mixed network: timeout=7.0, threshold=0.6 (balanced approach)
-  # - Fast devices: timeout=3.0, threshold=0.9 (MQTT, local integrations)
-
 notifications:
   # Send notifications when auto-healing fails
   on_healing_failure: true
@@ -163,16 +119,8 @@ notifications:
   # Example: ["notify.jasons_iphone", "notify.melissas_iphone"]
   mobile_push_services: []
 
-  # Send weekly summary reports
-  weekly_summary: true
-
   # Home Assistant notification service
   ha_service: "persistent_notification.create"
-
-  # AI-enhanced notifications (Phase 3)
-  # Use LLM to generate natural language explanations for failures
-  # Requires Ollama or Claude API configured in intelligence section
-  ai_enhanced: true
 
   # Optional: Email notifications
   # email:
@@ -232,50 +180,3 @@ rest:
 
   # Base delay for exponential backoff (seconds)
   retry_base_delay_seconds: 1.0
-
-# Intelligence layer configuration (Phase 2 & 3)
-intelligence:
-  # Enable pattern collection for reliability analysis (Phase 2)
-  # Tracks healing success rates, failure patterns, and integration health
-  pattern_collection_enabled: true
-
-  # Anomaly detection (Phase 3)
-  anomaly_detection_enabled: true  # Auto-detect unusual patterns
-  anomaly_sensitivity_threshold: 2.0  # Standard deviations (higher = less sensitive)
-  anomaly_scan_hours: 24  # Hours of data to scan
-
-  # Local LLM via Ollama (Phase 3)
-  # Ollama provides privacy-first AI features running locally
-  # Install: https://ollama.ai or run via Docker
-  ollama_enabled: true
-  ollama_url: "http://localhost:11434"
-  ollama_model: "llama3.1:8b"  # Recommended: llama3.1:8b or mistral
-  ollama_timeout_seconds: 30
-
-  # Claude API for complex tasks (Phase 3, optional)
-  # Used for automation generation and deep analysis
-  # Get API key at: https://console.anthropic.com
-  claude_enabled: false  # Enable when you have an API key
-  claude_api_key: "${CLAUDE_API_KEY}"  # Set in .env file
-  claude_model: "claude-3-5-sonnet-20241022"
-
-# Outcome validation configuration (Phase 2)
-# Validates that automations achieve their intended outcomes
-outcome_validation:
-  # Enable automatic outcome validation for automations
-  enabled: true
-
-  # Delay before validating outcomes (seconds)
-  # Allows states to settle before checking if automation succeeded
-  validation_delay_seconds: 5.0
-
-  # Enable AI analysis of reported automation failures
-  # Uses LLM to analyze failure patterns and suggest fixes
-  # Requires Ollama or Claude configured in intelligence section
-  analyze_failures: true
-
-  # Consecutive success threshold for validation gating
-  # Number of consecutive successful executions required before marking
-  # an automation as "validated healthy" in reliability scoring
-  # Range: 1-100, recommended: 3-5
-  consecutive_success_threshold: 3
