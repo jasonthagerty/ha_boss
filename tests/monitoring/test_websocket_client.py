@@ -164,7 +164,9 @@ async def test_subscribe_events_failure(ws_client):
 
     # Mock subscription failure
     mock_ws.recv = AsyncMock(
-        return_value=json.dumps({"id": 1, "success": False, "error": "Unknown event type"})
+        return_value=json.dumps(
+            {"id": 1, "type": "result", "success": False, "error": "Unknown event type"}
+        )
     )
     mock_ws.send = AsyncMock()
 
@@ -172,6 +174,37 @@ async def test_subscribe_events_failure(ws_client):
         await ws_client.subscribe_events("invalid_event")
 
     assert "Failed to subscribe" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_subscribe_events_skips_racing_event(ws_client):
+    """A racing event before the subscription result must not break subscription.
+
+    HA delivers events for an already-active subscription with that subscription's
+    id; such a message can arrive before this subscribe's own result.
+    """
+    mock_ws = AsyncMock()
+    ws_client._ws = mock_ws
+    handled: list = []
+    ws_client.on_state_changed = AsyncMock(side_effect=lambda data: handled.append(data))
+
+    # First recv: a state_changed event from a prior subscription (id=1).
+    # Second recv: our actual subscription result (id=2, the second _next_id()).
+    racing_event = {
+        "id": 1,
+        "type": "event",
+        "event": {"event_type": "state_changed", "data": {"entity_id": "sensor.x"}},
+    }
+    our_result = {"id": 2, "type": "result", "success": True}
+    responses = [json.dumps(racing_event), json.dumps(our_result)]
+    mock_ws.recv = AsyncMock(side_effect=responses)
+    mock_ws.send = AsyncMock()
+
+    ws_client._next_id()  # consume id 1 (as if state_changed was subscribed first)
+    await ws_client.subscribe_events("call_service")  # uses id 2
+
+    # The racing event was dispatched, not mistaken for the result.
+    assert handled == [{"entity_id": "sensor.x"}]
 
 
 @pytest.mark.asyncio
