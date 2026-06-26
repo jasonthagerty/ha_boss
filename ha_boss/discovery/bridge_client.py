@@ -1,7 +1,7 @@
 """Client for HA Boss Bridge API with auto-detection."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 
@@ -137,7 +137,7 @@ class BridgeClient:
                     len(automations),
                     self.instance.instance_id,
                 )
-                return automations
+                return cast(list[dict[str, Any]], automations)
 
         except aiohttp.ClientError as e:
             raise HomeAssistantConnectionError(
@@ -179,7 +179,7 @@ class BridgeClient:
                     len(scenes),
                     self.instance.instance_id,
                 )
-                return scenes
+                return cast(list[dict[str, Any]], scenes)
 
         except aiohttp.ClientError as e:
             raise HomeAssistantConnectionError(f"Failed to fetch scenes from bridge: {e}") from e
@@ -219,7 +219,7 @@ class BridgeClient:
                     len(scripts),
                     self.instance.instance_id,
                 )
-                return scripts
+                return cast(list[dict[str, Any]], scripts)
 
         except aiohttp.ClientError as e:
             raise HomeAssistantConnectionError(f"Failed to fetch scripts from bridge: {e}") from e

@@ -12,11 +12,16 @@ Changes:
 
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ha_boss.core.database import DatabaseVersion
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
+    from sqlalchemy.ext.asyncio import AsyncConnection
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +96,7 @@ async def migrate_v2_to_v3(session: AsyncSession) -> None:
         raise RuntimeError(f"Migration failed: {e}") from e
 
 
-async def _migrate_table(connection, table_name: str) -> None:
+async def _migrate_table(connection: "AsyncConnection", table_name: str) -> None:
     """Migrate a single table to add instance_id.
 
     Uses SQLite's table recreation pattern since ALTER TABLE is limited.
@@ -103,7 +108,7 @@ async def _migrate_table(connection, table_name: str) -> None:
     logger.debug("Migrating table: %s", table_name)
 
     # Check if table exists (must use run_sync for inspection on async connection)
-    def get_table_names(sync_conn):
+    def get_table_names(sync_conn: "Connection") -> list[str]:
         return inspect(sync_conn).get_table_names()
 
     existing_tables = await connection.run_sync(get_table_names)
@@ -142,7 +147,7 @@ async def _migrate_table(connection, table_name: str) -> None:
         await _migrate_discovery_refreshes_table(connection)
 
 
-async def _migrate_entities_table(connection) -> None:
+async def _migrate_entities_table(connection: "AsyncConnection") -> None:
     """Migrate entities table: entity_id (PK) → id (PK) + instance_id + entity_id."""
     await connection.execute(text("""
         CREATE TABLE entities_new (
@@ -200,7 +205,7 @@ async def _migrate_entities_table(connection) -> None:
     await connection.execute(text("ALTER TABLE entities_new RENAME TO entities"))
 
 
-async def _migrate_health_events_table(connection) -> None:
+async def _migrate_health_events_table(connection: "AsyncConnection") -> None:
     """Migrate health_events table."""
     await connection.execute(text("""
         CREATE TABLE health_events_new (
@@ -244,7 +249,7 @@ async def _migrate_health_events_table(connection) -> None:
     await connection.execute(text("ALTER TABLE health_events_new RENAME TO health_events"))
 
 
-async def _migrate_healing_actions_table(connection) -> None:
+async def _migrate_healing_actions_table(connection: "AsyncConnection") -> None:
     """Migrate healing_actions table."""
     await connection.execute(text("""
         CREATE TABLE healing_actions_new (
@@ -294,7 +299,7 @@ async def _migrate_healing_actions_table(connection) -> None:
     await connection.execute(text("ALTER TABLE healing_actions_new RENAME TO healing_actions"))
 
 
-async def _migrate_integrations_table(connection) -> None:
+async def _migrate_integrations_table(connection: "AsyncConnection") -> None:
     """Migrate integrations table: entry_id (PK) → id (PK) + instance_id + entry_id."""
     await connection.execute(text("""
         CREATE TABLE integrations_new (
@@ -347,7 +352,7 @@ async def _migrate_integrations_table(connection) -> None:
     await connection.execute(text("ALTER TABLE integrations_new RENAME TO integrations"))
 
 
-async def _migrate_state_history_table(connection) -> None:
+async def _migrate_state_history_table(connection: "AsyncConnection") -> None:
     """Migrate state_history table."""
     await connection.execute(text("""
         CREATE TABLE state_history_new (
@@ -387,7 +392,7 @@ async def _migrate_state_history_table(connection) -> None:
     await connection.execute(text("ALTER TABLE state_history_new RENAME TO state_history"))
 
 
-async def _migrate_integration_reliability_table(connection) -> None:
+async def _migrate_integration_reliability_table(connection: "AsyncConnection") -> None:
     """Migrate integration_reliability table."""
     await connection.execute(text("""
         CREATE TABLE integration_reliability_new (
@@ -443,7 +448,7 @@ async def _migrate_integration_reliability_table(connection) -> None:
     )
 
 
-async def _migrate_integration_metrics_table(connection) -> None:
+async def _migrate_integration_metrics_table(connection: "AsyncConnection") -> None:
     """Migrate integration_metrics table."""
     await connection.execute(text("""
         CREATE TABLE integration_metrics_new (
@@ -497,7 +502,7 @@ async def _migrate_integration_metrics_table(connection) -> None:
     )
 
 
-async def _migrate_automations_table(connection) -> None:
+async def _migrate_automations_table(connection: "AsyncConnection") -> None:
     """Migrate automations table: entity_id (PK) → id (PK) + instance_id + entity_id."""
     await connection.execute(text("""
         CREATE TABLE automations_new (
@@ -548,7 +553,7 @@ async def _migrate_automations_table(connection) -> None:
     await connection.execute(text("ALTER TABLE automations_new RENAME TO automations"))
 
 
-async def _migrate_scenes_table(connection) -> None:
+async def _migrate_scenes_table(connection: "AsyncConnection") -> None:
     """Migrate scenes table."""
     await connection.execute(text("""
         CREATE TABLE scenes_new (
@@ -592,7 +597,7 @@ async def _migrate_scenes_table(connection) -> None:
     await connection.execute(text("ALTER TABLE scenes_new RENAME TO scenes"))
 
 
-async def _migrate_scripts_table(connection) -> None:
+async def _migrate_scripts_table(connection: "AsyncConnection") -> None:
     """Migrate scripts table."""
     await connection.execute(text("""
         CREATE TABLE scripts_new (
@@ -637,7 +642,7 @@ async def _migrate_scripts_table(connection) -> None:
     await connection.execute(text("ALTER TABLE scripts_new RENAME TO scripts"))
 
 
-async def _migrate_automation_entities_table(connection) -> None:
+async def _migrate_automation_entities_table(connection: "AsyncConnection") -> None:
     """Migrate automation_entities table."""
     await connection.execute(text("""
         CREATE TABLE automation_entities_new (
@@ -700,7 +705,7 @@ async def _migrate_automation_entities_table(connection) -> None:
     )
 
 
-async def _migrate_scene_entities_table(connection) -> None:
+async def _migrate_scene_entities_table(connection: "AsyncConnection") -> None:
     """Migrate scene_entities table."""
     await connection.execute(text("""
         CREATE TABLE scene_entities_new (
@@ -756,7 +761,7 @@ async def _migrate_scene_entities_table(connection) -> None:
     await connection.execute(text("ALTER TABLE scene_entities_new RENAME TO scene_entities"))
 
 
-async def _migrate_script_entities_table(connection) -> None:
+async def _migrate_script_entities_table(connection: "AsyncConnection") -> None:
     """Migrate script_entities table."""
     await connection.execute(text("""
         CREATE TABLE script_entities_new (
@@ -813,7 +818,7 @@ async def _migrate_script_entities_table(connection) -> None:
     await connection.execute(text("ALTER TABLE script_entities_new RENAME TO script_entities"))
 
 
-async def _migrate_discovery_refreshes_table(connection) -> None:
+async def _migrate_discovery_refreshes_table(connection: "AsyncConnection") -> None:
     """Migrate discovery_refreshes table."""
     await connection.execute(text("""
         CREATE TABLE discovery_refreshes_new (

@@ -509,7 +509,7 @@ class HomeAssistantClient:
                 result = await response.json()
                 # Add the ID to the result
                 result["id"] = automation_id
-                return result
+                return cast(dict[str, Any], result)
             elif response.status == 400:
                 error_text = await response.text()
                 raise HomeAssistantAPIError(f"Invalid automation configuration: {error_text}")
