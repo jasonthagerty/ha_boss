@@ -315,10 +315,12 @@ class ActionVerifier:
                 f"state {expected!r} (actual={actual!r}) after {self._av_cfg.delay_seconds}s"
             )
 
+            friendly_name = (state_data.get("attributes") or {}).get("friendly_name")
             context = NotificationContext(
                 notification_type=NotificationType.ACTION_VERIFICATION_FAILED,
                 severity=NotificationSeverity.WARNING,
                 entity_id=entity_id,
+                friendly_name=friendly_name,
                 extra={
                     "service": f"{domain}.{service}",
                     "expected_state": expected,

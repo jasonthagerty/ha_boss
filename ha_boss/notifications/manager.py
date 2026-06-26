@@ -13,6 +13,10 @@ from ha_boss.notifications.templates import (
 
 logger = logging.getLogger(__name__)
 
+# Prefix for the mobile "Acknowledge" action; the notification_id is appended so
+# the action handler knows which notification to clear.
+_ACK_ACTION_PREFIX = "HABOSS_ACK::"
+
 
 class NotificationChannel(StrEnum):
     """Notification delivery channels."""
@@ -239,14 +243,17 @@ class NotificationManager:
         message: str,
         context: NotificationContext,
     ) -> None:
-        """Send notification as a mobile push via notify.send_message.
+        """Send notification as an actionable mobile push.
 
-        Sends to each configured notify entity (e.g. notify.jason_s_iphone).
-        Deduplicates per notification_id so a persistent issue pushes once.
+        Calls each configured mobile-app notify service (e.g.
+        ``notify.mobile_app_jason_s_iphone``) with a ``tag`` (so the push can be
+        cleared later) and an "Acknowledge" action that the companion app shows
+        on long-press. Deduplicates per notification_id so a persistent issue
+        pushes once.
 
         Args:
             title: Notification title
-            message: Notification message
+            message: Notification message (markdown; stripped to plain text here)
             context: Notification context
         """
         if self.ha_client is None:
@@ -268,13 +275,21 @@ class NotificationManager:
             logger.info(f"[DRY RUN] Would send mobile push to {services}: {title}")
             return
 
+        plain_message = self._strip_markdown(message)
+        data = {
+            "tag": notification_id,
+            "actions": [
+                {"action": f"{_ACK_ACTION_PREFIX}{notification_id}", "title": "Acknowledge"}
+            ],
+        }
+
         sent_any = False
         for service in services:
             try:
                 await self.ha_client.call_service(
                     "notify",
-                    "send_message",
-                    {"entity_id": service, "title": title, "message": message},
+                    self._notify_service_name(service),
+                    {"title": title, "message": plain_message, "data": data},
                 )
                 sent_any = True
             except Exception as e:
@@ -283,6 +298,54 @@ class NotificationManager:
         if sent_any:
             self._sent_mobile_notifications[notification_id] = context
             logger.info(f"Sent mobile push: {notification_id}")
+
+    @staticmethod
+    def _notify_service_name(configured: str) -> str:
+        """Map a configured value to a notify service name.
+
+        Accepts either ``notify.mobile_app_x`` or ``mobile_app_x`` and returns
+        the service part (``mobile_app_x``) for a legacy ``notify.<service>`` call,
+        which (unlike ``notify.send_message``) supports the ``data`` field needed
+        for actionable notifications.
+        """
+        return configured.split(".", 1)[-1]
+
+    @staticmethod
+    def _strip_markdown(text: str) -> str:
+        """Reduce markdown to plain text for mobile pushes (no literal ** or `)."""
+        return text.replace("**", "").replace("`", "")
+
+    async def _clear_mobile(self, notification_id: str) -> None:
+        """Clear a previously-sent mobile push by its tag on all services."""
+        if self.ha_client is None:
+            return
+        for service in self.config.notifications.mobile_push_services:
+            try:
+                await self.ha_client.call_service(
+                    "notify",
+                    self._notify_service_name(service),
+                    {"message": "clear_notification", "data": {"tag": notification_id}},
+                )
+            except Exception as e:
+                logger.debug(f"Failed to clear mobile push {notification_id} on {service}: {e}")
+
+    async def handle_notification_action(self, action: str) -> None:
+        """Handle a mobile_app_notification_action action string.
+
+        For our "Acknowledge" action, dismiss the matching HA persistent
+        notification and clear the mobile push. Non-HA-Boss actions are ignored.
+
+        Args:
+            action: The ``action`` field from a mobile_app_notification_action event.
+        """
+        if not action.startswith(_ACK_ACTION_PREFIX):
+            return
+        notification_id = action[len(_ACK_ACTION_PREFIX) :]
+        logger.info(f"Acknowledging notification from mobile: {notification_id}")
+        # dismiss() clears the HA persistent notification and re-arms the mobile
+        # dedup; _clear_mobile removes the push from the device.
+        await self.dismiss(notification_id)
+        await self._clear_mobile(notification_id)
 
     def notification_id_for(self, context: NotificationContext) -> str:
         """Return the notification ID that ``notify(context)`` would use.

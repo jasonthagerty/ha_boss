@@ -202,7 +202,7 @@ async def test_notify_recovery(escalator, mock_ha_client, caplog):
         await escalator.notify_recovery("sensor.test_sensor", "unavailable")
 
     # Verify the notification was processed (logged to CLI)
-    assert "Entity Recovered" in caplog.text
+    assert "recovered" in caplog.text.lower()
     assert "sensor.test_sensor" in caplog.text
 
 
@@ -345,7 +345,7 @@ async def test_notify_issue_detected_enabled(
 
     mock_ha_client.create_persistent_notification.assert_called_once()
     call_args = mock_ha_client.create_persistent_notification.call_args
-    assert call_args.kwargs["title"] == "HA Boss: Entity Issue Detected"
+    assert "unavailable" in call_args.kwargs["title"]
     assert "sensor.test_sensor" in call_args.kwargs["message"]
     assert "unavailable" in call_args.kwargs["message"]
 

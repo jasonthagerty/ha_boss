@@ -27,12 +27,14 @@ class HealthIssue:
         detected_at: datetime,
         details: dict[str, Any] | None = None,
         is_cloud: bool = False,
+        friendly_name: str | None = None,
     ):
         self.entity_id = entity_id
         self.issue_type = issue_type
         self.detected_at = detected_at
         self.details = details or {}
         self.is_cloud = is_cloud
+        self.friendly_name = friendly_name
 
     def __repr__(self) -> str:
         return (

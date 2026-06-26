@@ -237,6 +237,31 @@ async def test_handle_state_changed_event(ws_client):
 
 
 @pytest.mark.asyncio
+async def test_handle_notification_action_event(ws_client):
+    """mobile_app_notification_action events route to on_notification_action."""
+    received = None
+
+    async def on_action(data):
+        nonlocal received
+        received = data
+
+    ws_client.on_notification_action = on_action
+
+    event_message = {
+        "type": "event",
+        "event": {
+            "event_type": "mobile_app_notification_action",
+            "data": {"action": "HABOSS_ACK::haboss_issue_detected_sensor_x"},
+        },
+    }
+
+    await ws_client._handle_message(event_message)
+
+    assert received is not None
+    assert received["action"] == "HABOSS_ACK::haboss_issue_detected_sensor_x"
+
+
+@pytest.mark.asyncio
 async def test_handle_pong_message(ws_client):
     """Test handling pong message."""
     # Pong messages should be silently ignored
