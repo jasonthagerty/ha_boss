@@ -88,7 +88,7 @@ class AutoDiscoveryService:
 
     async def discover_all_instances(
         self, trigger_type: str = "manual", trigger_source: str | None = None
-    ) -> dict[str, dict[str, int]]:
+    ) -> dict[str, dict[str, Any]]:
         """Discover entities across all configured instances.
 
         Args:
@@ -103,7 +103,7 @@ class AutoDiscoveryService:
             len(self.config.home_assistant.instances),
         )
 
-        results = {}
+        results: dict[str, dict[str, Any]] = {}
 
         # Discover each instance in parallel
         tasks = [
@@ -117,7 +117,7 @@ class AutoDiscoveryService:
         for instance, result in zip(
             self.config.home_assistant.instances, instance_results, strict=True
         ):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.error(
                     "Discovery failed for instance %s: %s",
                     instance.instance_id,

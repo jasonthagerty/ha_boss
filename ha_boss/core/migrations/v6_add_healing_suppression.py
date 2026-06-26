@@ -58,10 +58,10 @@ async def migrate_v5_to_v6(session: AsyncSession) -> None:
         from ha_boss.core.database import DatabaseVersion
 
         target_version = 6
-        result = await session.execute(
+        version_result = await session.execute(
             select(DatabaseVersion).where(DatabaseVersion.version == target_version)
         )
-        existing_version = result.scalar_one_or_none()
+        existing_version = version_result.scalar_one_or_none()
 
         if existing_version is None:
             new_version = DatabaseVersion(

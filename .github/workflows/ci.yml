@@ -35,7 +35,6 @@ jobs:
 
     - name: Run mypy (type check)
       run: mypy ha_boss
-      continue-on-error: true
 
     - name: Run pytest
       run: |

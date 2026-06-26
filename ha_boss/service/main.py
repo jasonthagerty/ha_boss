@@ -143,6 +143,7 @@ class HABossService:
             HomeAssistantAuthError: Authentication failed
         """
         logger.info(f"[{instance_id}] Initializing instance...")
+        assert self.database is not None  # set in start() before instances are initialized
 
         # Initialize statistics for this instance
         self.health_checks_performed[instance_id] = 0
