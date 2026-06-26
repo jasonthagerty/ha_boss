@@ -53,6 +53,7 @@ class NotificationContext:
     notification_type: NotificationType
     severity: NotificationSeverity
     entity_id: str | None = None
+    friendly_name: str | None = None
     integration_name: str | None = None
     integration_id: str | None = None
     issue_type: str | None = None
@@ -63,6 +64,40 @@ class NotificationContext:
     reset_time: datetime | None = None
     stats: dict[str, Any] | None = None
     extra: dict[str, Any] | None = None
+
+
+_SEVERITY_EMOJI: dict[NotificationSeverity, str] = {
+    NotificationSeverity.INFO: "ℹ️",
+    NotificationSeverity.WARNING: "⚠️",
+    NotificationSeverity.ERROR: "🛑",
+    NotificationSeverity.CRITICAL: "🚨",
+}
+
+# Human-readable phrasing for the common issue types.
+_ISSUE_PHRASING: dict[str, str] = {
+    "unavailable": "is unavailable",
+    "unknown": "is in an unknown state",
+    "stale": "stopped updating",
+}
+
+
+def display_name(context: NotificationContext) -> str:
+    """Return a human-friendly name for the entity in a notification.
+
+    Prefers the entity's ``friendly_name``; otherwise derives a readable name
+    from the entity_id (e.g. ``sensor.back_patio_motion`` -> "Back Patio Motion").
+    """
+    if context.friendly_name:
+        return context.friendly_name
+    if context.entity_id:
+        object_id = context.entity_id.split(".", 1)[-1]
+        return object_id.replace("_", " ").title()
+    return "Entity"
+
+
+def severity_emoji(severity: NotificationSeverity) -> str:
+    """Return the emoji for a severity level."""
+    return _SEVERITY_EMOJI.get(severity, "")
 
 
 class NotificationTemplate:
@@ -250,15 +285,12 @@ class RecoveryTemplate(NotificationTemplate):
         Returns:
             Tuple of (title, message)
         """
-        title = "HA Boss: Entity Recovered"
+        name = display_name(context)
+        title = f"✅ {name} recovered"
 
         lines = [
-            f"**Entity:** `{context.entity_id}`",
-            f"**Previous Issue:** {context.issue_type or 'Unknown'}",
-            "",
-            "The entity has recovered and is now reporting normally.",
-            "",
-            "No further action needed.",
+            f"**{name}** (`{context.entity_id}`)",
+            "Back to normal — no action needed.",
         ]
 
         message = "\n".join(lines)
@@ -278,22 +310,23 @@ class IssueDetectedTemplate(NotificationTemplate):
         Returns:
             Tuple of (title, message)
         """
-        title = "HA Boss: Entity Issue Detected"
+        name = display_name(context)
+        issue = context.issue_type or "unavailable"
+        phrasing = _ISSUE_PHRASING.get(issue, f"has an issue ({issue})")
+        title = f"{severity_emoji(context.severity)} {name} {phrasing}".strip()
 
-        lines = [
-            f"**Entity:** `{context.entity_id}`",
-            f"**Issue:** {context.issue_type or 'Unknown'}",
-        ]
+        lines = [f"**{name}** (`{context.entity_id}`)"]
 
         if context.detected_at:
             time_ago = IssueDetectedTemplate.format_time_ago(context.detected_at)
-            lines.append(f"**Detected:** {time_ago}")
+            lines.append(f"Status: **{issue}** since {time_ago}.")
+        else:
+            lines.append(f"Status: **{issue}**.")
 
         lines.extend(
             [
                 "",
-                "Auto-healing is disabled, so no automatic action was taken.",
-                "Please check the entity or its integration.",
+                "Long-press this notification to acknowledge it.",
             ]
         )
 
@@ -533,7 +566,7 @@ class OutOfScopeAuditTemplate(NotificationTemplate):
         Returns:
             Tuple of (title, message)
         """
-        title = "HA Boss: Out-of-Scope Audit"
+        title = "🗂️ HA Boss: Out-of-Scope Audit"
         stats = context.stats or {}
 
         new_failures: list[dict[str, Any]] = stats.get("new_failures", [])
@@ -606,23 +639,21 @@ class ActionVerificationFailedTemplate(NotificationTemplate):
         Returns:
             Tuple of (title, message)
         """
-        title = "HA Boss: Action Did Not Take Effect"
-
+        name = display_name(context)
         extra = context.extra or {}
         service = extra.get("service", "unknown service")
         expected_state = extra.get("expected_state", "unknown")
         actual_state = extra.get("actual_state", "unknown")
         delay_seconds = extra.get("delay_seconds", 0)
 
+        title = f"{severity_emoji(context.severity)} {name} didn't respond".strip()
+
         lines = [
-            f"**Entity:** `{context.entity_id}`",
-            f"**Service Called:** `{service}`",
-            f"**Expected State:** `{expected_state}`",
-            f"**Actual State:** `{actual_state}`",
-            f"**Check Delay:** {delay_seconds}s",
+            f"**{name}** (`{context.entity_id}`)",
+            f"`{service}` expected **{expected_state}** but it's still **{actual_state}** "
+            f"after {delay_seconds}s.",
             "",
-            "The entity did not reach the expected state after the service call.",
-            "Please check the device or integration for issues.",
+            "Long-press this notification to acknowledge it.",
         ]
 
         message = "\n".join(lines)

@@ -503,11 +503,20 @@ class TestMobilePush:
         manager = NotificationManager(_mobile_config([]), mock_ha_client)
         assert manager._channels[NotificationChannel.MOBILE] is False
 
+    @staticmethod
+    def _mobile_pushes(mock_ha_client: AsyncMock) -> list:
+        """Mobile push send calls (notify.<service> with an actions payload)."""
+        return [
+            c
+            for c in mock_ha_client.call_service.call_args_list
+            if c.args[0] == "notify" and "actions" in (c.args[2].get("data") or {})
+        ]
+
     @pytest.mark.asyncio
     async def test_warning_pushes_to_each_service(self, mock_ha_client: AsyncMock) -> None:
-        """A WARNING notification pushes to every configured notify entity."""
+        """A WARNING notification pushes to every configured mobile-app service."""
         manager = NotificationManager(
-            _mobile_config(["notify.jason_s_iphone", "notify.melissas_iphone"]), mock_ha_client
+            _mobile_config(["notify.mobile_app_jason", "notify.mobile_app_mel"]), mock_ha_client
         )
         context = NotificationContext(
             notification_type=NotificationType.ISSUE_DETECTED,
@@ -518,22 +527,22 @@ class TestMobilePush:
 
         await manager.notify(context)
 
-        pushes = [
-            c
-            for c in mock_ha_client.call_service.call_args_list
-            if c.args[:2] == ("notify", "send_message")
-        ]
+        pushes = self._mobile_pushes(mock_ha_client)
         assert len(pushes) == 2
-        assert {c.args[2]["entity_id"] for c in pushes} == {
-            "notify.jason_s_iphone",
-            "notify.melissas_iphone",
-        }
+        # The "notify." prefix is stripped to call the legacy service.
+        assert {c.args[1] for c in pushes} == {"mobile_app_jason", "mobile_app_mel"}
         assert all("back_patio_motion" in c.args[2]["message"] for c in pushes)
+        # Actionable: an Acknowledge action + a tag are attached.
+        for c in pushes:
+            data = c.args[2]["data"]
+            assert data["tag"]
+            assert data["actions"][0]["title"] == "Acknowledge"
+            assert data["actions"][0]["action"].startswith("HABOSS_ACK::")
 
     @pytest.mark.asyncio
     async def test_mobile_push_deduplicated(self, mock_ha_client: AsyncMock) -> None:
         """Repeated detections of the same issue push only once."""
-        manager = NotificationManager(_mobile_config(["notify.jason_s_iphone"]), mock_ha_client)
+        manager = NotificationManager(_mobile_config(["notify.mobile_app_jason"]), mock_ha_client)
         context = NotificationContext(
             notification_type=NotificationType.ISSUE_DETECTED,
             severity=NotificationSeverity.WARNING,
@@ -545,16 +554,12 @@ class TestMobilePush:
         mock_ha_client.call_service.reset_mock()
         await manager.notify(context)
 
-        assert not [
-            c
-            for c in mock_ha_client.call_service.call_args_list
-            if c.args[:2] == ("notify", "send_message")
-        ]
+        assert not self._mobile_pushes(mock_ha_client)
 
     @pytest.mark.asyncio
     async def test_info_severity_does_not_push(self, mock_ha_client: AsyncMock) -> None:
         """INFO-level notifications (e.g. recovery) do not push to mobile."""
-        manager = NotificationManager(_mobile_config(["notify.jason_s_iphone"]), mock_ha_client)
+        manager = NotificationManager(_mobile_config(["notify.mobile_app_jason"]), mock_ha_client)
         context = NotificationContext(
             notification_type=NotificationType.RECOVERY,
             severity=NotificationSeverity.INFO,
@@ -563,8 +568,43 @@ class TestMobilePush:
 
         await manager.notify(context)
 
-        assert not [
+        assert not self._mobile_pushes(mock_ha_client)
+
+    @pytest.mark.asyncio
+    async def test_acknowledge_action_dismisses_and_clears(self, mock_ha_client: AsyncMock) -> None:
+        """Handling an Acknowledge action dismisses the HA notif and clears the push."""
+        manager = NotificationManager(_mobile_config(["notify.mobile_app_jason"]), mock_ha_client)
+        context = NotificationContext(
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
+            entity_id="binary_sensor.back_patio_motion",
+            issue_type="unavailable",
+        )
+        await manager.notify(context)
+        notification_id = manager.notification_id_for(context)
+        mock_ha_client.call_service.reset_mock()
+        mock_ha_client.call_service.return_value = None
+
+        await manager.handle_notification_action(f"HABOSS_ACK::{notification_id}")
+
+        # Dismissed the HA persistent notification
+        dismisses = [
             c
             for c in mock_ha_client.call_service.call_args_list
-            if c.args[:2] == ("notify", "send_message")
+            if c.args[:2] == ("persistent_notification", "dismiss")
         ]
+        assert dismisses and dismisses[0].args[2]["notification_id"] == notification_id
+        # Cleared the mobile push by tag
+        clears = [
+            c
+            for c in mock_ha_client.call_service.call_args_list
+            if c.args[0] == "notify" and c.args[2].get("message") == "clear_notification"
+        ]
+        assert clears and clears[0].args[2]["data"]["tag"] == notification_id
+
+    @pytest.mark.asyncio
+    async def test_unknown_action_ignored(self, mock_ha_client: AsyncMock) -> None:
+        """A non-HA-Boss action string is ignored."""
+        manager = NotificationManager(_mobile_config(["notify.mobile_app_jason"]), mock_ha_client)
+        await manager.handle_notification_action("SOME_OTHER_APP_ACTION")
+        mock_ha_client.call_service.assert_not_called()

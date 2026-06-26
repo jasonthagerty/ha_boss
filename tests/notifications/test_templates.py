@@ -203,10 +203,9 @@ class TestRecoveryTemplate:
 
         title, message = RecoveryTemplate.render(context)
 
-        assert title == "HA Boss: Entity Recovered"
+        assert "recovered" in title.lower()
+        assert "Temperature" in title
         assert "sensor.temperature" in message
-        assert "unavailable" in message
-        assert "recovered" in message.lower()
 
 
 class TestIssueDetectedTemplate:
@@ -224,12 +223,12 @@ class TestIssueDetectedTemplate:
 
         title, message = IssueDetectedTemplate.render(context)
 
-        assert title == "HA Boss: Entity Issue Detected"
+        # Friendly derived name + state in the title
+        assert "Back Patio Motion" in title
+        assert "unavailable" in title
         assert "binary_sensor.back_patio_motion" in message
-        assert "unavailable" in message
         assert "5 minutes ago" in message
-        # Must make clear no automatic action was taken
-        assert "no automatic action" in message.lower()
+        assert "acknowledge" in message.lower()
 
     def test_render_minimal(self) -> None:
         """Test rendering without optional detected_at."""
@@ -241,9 +240,9 @@ class TestIssueDetectedTemplate:
 
         title, message = IssueDetectedTemplate.render(context)
 
-        assert title == "HA Boss: Entity Issue Detected"
         assert "sensor.test" in message
-        assert "Unknown" in message
+        # issue_type defaults to unavailable
+        assert "unavailable" in title.lower()
 
 
 class TestCircuitBreakerTemplate:
@@ -417,7 +416,7 @@ class TestTemplateRegistry:
 
         title, message = TemplateRegistry.render(context)
 
-        assert title == "HA Boss: Entity Recovered"
+        assert "recovered" in title.lower()
 
     def test_render_issue_detected(self) -> None:
         """Test registry renders issue detected correctly."""
@@ -430,7 +429,7 @@ class TestTemplateRegistry:
 
         title, message = TemplateRegistry.render(context)
 
-        assert title == "HA Boss: Entity Issue Detected"
+        assert title  # pretty title with friendly name + state
         assert "sensor.test" in message
 
     def test_render_circuit_breaker(self) -> None:
@@ -484,7 +483,7 @@ class TestTemplateRegistry:
 
         title, message = TemplateRegistry.render(context)
 
-        assert title == "HA Boss: Out-of-Scope Audit"
+        assert "Out-of-Scope Audit" in title
         assert "light.garage" in message
         assert "hue" in message
         assert "2 chronic" in message
@@ -518,7 +517,7 @@ class TestOutOfScopeAuditTemplate:
 
         title, message = OutOfScopeAuditTemplate.render(context)
 
-        assert title == "HA Boss: Out-of-Scope Audit"
+        assert "Out-of-Scope Audit" in title
         assert "sensor.garage_temp" in message
         assert "light.porch" in message
         assert "zigbee2mqtt" in message
@@ -595,7 +594,7 @@ class TestOutOfScopeAuditTemplate:
 
         title, message = OutOfScopeAuditTemplate.render(context)
 
-        assert title == "HA Boss: Out-of-Scope Audit"
+        assert "Out-of-Scope Audit" in title
         # Should not crash; returns a sensible default
         assert message
 
@@ -624,10 +623,11 @@ class TestActionVerificationFailedTemplate:
         )
 
     def test_title(self) -> None:
-        """Template title is 'HA Boss: Action Did Not Take Effect'."""
+        """Template title carries the friendly name and a 'didn't respond' phrasing."""
         context = self._make_context()
         title, _ = ActionVerificationFailedTemplate.render(context)
-        assert title == "HA Boss: Action Did Not Take Effect"
+        assert "Bedroom" in title
+        assert "respond" in title.lower()
 
     def test_body_contains_entity_id(self) -> None:
         """Rendered body contains the target entity ID."""
@@ -663,7 +663,7 @@ class TestActionVerificationFailedTemplate:
             extra=None,
         )
         title, message = ActionVerificationFailedTemplate.render(context)
-        assert title == "HA Boss: Action Did Not Take Effect"
+        assert "Bedroom" in title
         assert message  # Should not crash
 
     def test_registered_in_template_registry(self) -> None:
@@ -680,5 +680,5 @@ class TestActionVerificationFailedTemplate:
             },
         )
         title, message = TemplateRegistry.render(context)
-        assert title == "HA Boss: Action Did Not Take Effect"
+        assert title  # pretty title
         assert "light.bedroom" in message

@@ -114,9 +114,10 @@ notifications:
   # is disabled — get told about stuck/offline entities without any reloads.
   on_issue_detected: false
 
-  # Mobile push: also send WARNING+ notifications to these notify entities via
-  # notify.send_message (e.g. the HA companion app). Empty = mobile disabled.
-  # Example: ["notify.jasons_iphone", "notify.melissas_iphone"]
+  # Mobile push: also send WARNING+ notifications to the HA companion app, with an
+  # "Acknowledge" action on long-press. Use the mobile_app notify SERVICES (which
+  # support action buttons), not the plain notify entities. Empty = mobile disabled.
+  # Example: ["notify.mobile_app_jasons_iphone", "notify.mobile_app_melissas_iphone"]
   mobile_push_services: []
 
   # Home Assistant notification service

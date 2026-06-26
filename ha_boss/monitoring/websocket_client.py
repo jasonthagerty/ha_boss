@@ -35,6 +35,7 @@ class WebSocketClient:
         entity_discovery: "EntityDiscoveryService | None" = None,
         on_state_changed: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
         on_service_call: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
+        on_notification_action: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         """Initialize WebSocket client.
 
@@ -46,6 +47,10 @@ class WebSocketClient:
             on_service_call: Optional async callback invoked for every call_service event
                 with the raw event data dict.  Called in addition to (not instead of)
                 the existing reload-trigger and automation-tracking logic.
+            on_notification_action: Optional async callback for
+                mobile_app_notification_action events (companion-app action taps),
+                receiving the event data dict. When set, the client also subscribes
+                to those events.
         """
         # Build WebSocket URL from HTTP URL
         ws_url = instance.url.replace("http://", "ws://").replace("https://", "wss://")
@@ -63,6 +68,7 @@ class WebSocketClient:
         # Callbacks
         self.on_state_changed = on_state_changed
         self.on_service_call = on_service_call
+        self.on_notification_action = on_notification_action
 
         # State
         self._ws: Any = None  # WebSocket connection
@@ -181,6 +187,13 @@ class WebSocketClient:
                 # Handle automation/scene/script reload events and track service calls
                 await self._handle_service_call(event.get("data", {}))
 
+            elif event_type == "mobile_app_notification_action" and self.on_notification_action:
+                # Companion-app notification action tap (e.g. "Acknowledge")
+                try:
+                    await self.on_notification_action(event.get("data", {}))
+                except Exception as e:
+                    logger.error(f"Error in on_notification_action callback: {e}", exc_info=True)
+
         elif msg_type == "pong":
             # Response to ping, ignore
             pass
@@ -282,6 +295,10 @@ class WebSocketClient:
                 if self.entity_discovery:
                     await self.subscribe_events("call_service")
 
+                # Subscribe to companion-app notification action taps (acknowledge)
+                if self.on_notification_action:
+                    await self.subscribe_events("mobile_app_notification_action")
+
                 logger.info("Reconnection successful")
 
                 # Restart listen loop
@@ -309,6 +326,10 @@ class WebSocketClient:
         # Also subscribe to call_service events for discovery refresh triggers
         if self.entity_discovery:
             await self.subscribe_events("call_service")
+
+        # Subscribe to companion-app notification action taps (acknowledge)
+        if self.on_notification_action:
+            await self.subscribe_events("mobile_app_notification_action")
 
         # Start listening loop
         asyncio.create_task(self._listen_loop())

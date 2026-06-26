@@ -243,6 +243,7 @@ class HealthMonitor:
                 "grace_period_seconds": self.config.monitoring.grace_period_seconds,
             },
             is_cloud=self._is_cloud(entity_id),
+            friendly_name=entity_state.attributes.get("friendly_name"),
         )
 
         # Persist to database
@@ -362,6 +363,7 @@ class HealthMonitor:
                 "last_updated": entity_state.last_updated.isoformat(),
             },
             is_cloud=self._is_cloud(entity_id),
+            friendly_name=entity_state.attributes.get("friendly_name"),
         )
 
 

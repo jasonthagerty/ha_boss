@@ -344,6 +344,13 @@ class HABossService:
         # 10. Connect WebSocket
         logger.info(f"[{instance_id}] Connecting to Home Assistant WebSocket...")
         action_verifier = self.action_verifiers.get(instance_id)
+        # Only handle notification actions when mobile push is configured (the
+        # acknowledge action arrives via the companion app).
+        on_notification_action = (
+            (lambda data: self._on_notification_action(instance_id, data))
+            if self.config.notifications.mobile_push_services
+            else None
+        )
         self.websocket_clients[instance_id] = WebSocketClient(
             instance=instance,
             config=self.config,
@@ -352,6 +359,7 @@ class HABossService:
             on_service_call=(
                 action_verifier.handle_service_call if action_verifier is not None else None
             ),
+            on_notification_action=on_notification_action,
         )
         await self.websocket_clients[instance_id].start()
 
@@ -562,6 +570,24 @@ class HABossService:
             logger.error(
                 f"[{instance_id}] Error handling WebSocket state change: {e}", exc_info=True
             )
+
+    async def _on_notification_action(self, instance_id: str, data: dict[str, Any]) -> None:
+        """Handle a mobile_app_notification_action event (e.g. acknowledge tap).
+
+        Args:
+            instance_id: Home Assistant instance identifier
+            data: Event data; its ``action`` field identifies the tapped action.
+        """
+        action = data.get("action", "")
+        manager = self.notification_managers.get(instance_id)
+        if manager and action:
+            try:
+                await manager.handle_notification_action(action)
+            except Exception as e:
+                logger.error(
+                    f"[{instance_id}] Error handling notification action {action!r}: {e}",
+                    exc_info=True,
+                )
 
     async def _on_state_updated(
         self, instance_id: str, new_state: EntityState, old_state: EntityState | None

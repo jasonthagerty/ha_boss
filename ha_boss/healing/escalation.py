@@ -96,6 +96,7 @@ class NotificationEscalator:
             notification_type=NotificationType.ISSUE_DETECTED,
             severity=NotificationSeverity.WARNING,
             entity_id=health_issue.entity_id,
+            friendly_name=health_issue.friendly_name,
             issue_type=health_issue.issue_type,
             detected_at=health_issue.detected_at,
         )
