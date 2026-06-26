@@ -140,10 +140,22 @@ class WebSocketClient:
 
         await self._ws.send(json.dumps(subscribe_msg))
 
-        # Wait for subscription confirmation
-        response = json.loads(await self._ws.recv())
-        if not response.get("success"):
-            raise HomeAssistantConnectionError(f"Failed to subscribe to {event_type}: {response}")
+        # Wait for the subscription confirmation, matched by message id.
+        # An already-active subscription can deliver events before this one's
+        # result arrives (events carry the originating subscribe command's id),
+        # so loop until we see our own result and dispatch anything else instead
+        # of mistaking it for the confirmation.
+        while True:
+            response = json.loads(await self._ws.recv())
+            if response.get("type") == "result" and response.get("id") == message_id:
+                if not response.get("success"):
+                    raise HomeAssistantConnectionError(
+                        f"Failed to subscribe to {event_type}: {response}"
+                    )
+                break
+            # Not our result (e.g. an event from a prior subscription) — handle it
+            # so it isn't dropped while we set up the remaining subscriptions.
+            await self._handle_message(response)
 
         logger.info(f"Subscribed to {event_type} events")
 
