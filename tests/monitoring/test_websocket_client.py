@@ -1,6 +1,7 @@
 """Tests for Home Assistant WebSocket client."""
 
 import json
+from datetime import UTC, datetime as real_dt, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -374,8 +375,6 @@ async def test_reconnect_runs_indefinitely(ws_client):
 @pytest.mark.asyncio
 async def test_reconnect_fires_connection_lost_callback(ws_client):
     """on_connect_lost fires exactly once after reconnect_notify_after_seconds elapses."""
-    from datetime import UTC, datetime as real_dt, timedelta
-
     ws_client._running = True
     ws_client.config.websocket.reconnect_notify_after_seconds = 60
 
