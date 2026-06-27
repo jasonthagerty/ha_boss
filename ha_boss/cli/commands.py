@@ -396,9 +396,7 @@ async def _show_db_stats(config: Config) -> None:
 
                 cutoff_7d = datetime.now(UTC) - timedelta(days=7)
 
-                total_events = await session.scalar(
-                    select(func.count()).select_from(HealthEvent)
-                )
+                total_events = await session.scalar(select(func.count()).select_from(HealthEvent))
                 issues_7d = await session.scalar(
                     select(func.count())
                     .select_from(HealthEvent)
