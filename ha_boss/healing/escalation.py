@@ -143,6 +143,23 @@ class NotificationEscalator:
         await self.notification_manager.notify(context)
         logger.info(f"Sent recovery notification for {entity_id}")
 
+    async def notify_connection_error(self, error: str | None = None) -> None:
+        """Send notification about a persistent WebSocket connection failure.
+
+        Fired when the WebSocket has been disconnected for longer than
+        config.websocket.reconnect_notify_after_seconds.
+
+        Args:
+            error: Optional description of the connection error.
+        """
+        context = NotificationContext(
+            notification_type=NotificationType.CONNECTION_ERROR,
+            severity=NotificationSeverity.ERROR,
+            error=error,
+        )
+        await self.notification_manager.notify(context)
+        logger.info("Sent connection-error notification")
+
     async def dismiss_issue_detected(self, entity_id: str) -> None:
         """Clear a prior issue-detected notification without sending a recovery alert.
 

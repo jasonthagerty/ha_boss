@@ -1,128 +1,106 @@
 # HA Boss Configuration
-# Copy to config.yaml and customize for your setup
+# Monitor-and-notify watchdog for Home Assistant.
+# Scopes itself to entities referenced in your automations/scenes/scripts
+# and notifies you when one goes unavailable, unknown, or stale.
+# No healing, no AI, no REST API — just monitoring and alerts.
 
 home_assistant:
-  # Home Assistant instance URL (uses HA_URL environment variable)
+  # Home Assistant URL (set HA_URL env var, or replace the placeholder)
   url: "${HA_URL}"
 
-  # Long-lived access token (uses HA_TOKEN environment variable)
-  # Create at: http://your-ha/profile -> Long-Lived Access Tokens
+  # Long-lived access token (set HA_TOKEN env var, or replace the placeholder)
+  # Create one at: http://your-ha/profile -> Long-Lived Access Tokens
   token: "${HA_TOKEN}"
 
 monitoring:
-  # Entities to monitor (glob patterns, empty list = all entities)
-  include: []
+  # Grace period before an unavailable/unknown entity triggers an alert (seconds)
+  grace_period_seconds: 300  # 5 minutes
 
-  # Entities to exclude from monitoring
+  # Entities whose state has not changed in this long are flagged as stale (seconds)
+  stale_threshold_seconds: 3600  # 1 hour
+
+  # Patterns always excluded from monitoring (fnmatch syntax)
   exclude:
     - "sensor.time*"
     - "sensor.date*"
     - "sensor.uptime*"
     - "sun.sun"
 
-  # Grace period before considering entity truly unavailable (seconds)
-  grace_period_seconds: 300  # 5 minutes
+  # Entities for which "unavailable" is their normal powered-off state (e.g. TVs).
+  # Matching entities are never flagged, and a turn_off that leaves them unavailable
+  # is treated as success by the action verifier.
+  unavailable_ok: []
+  # Example:
+  #   - "media_player.lg_webos_tv_*"
 
-  # Threshold for stale entities (no update in X seconds)
-  stale_threshold_seconds: 3600  # 1 hour
+  # Auto-discovery: scope monitoring to entities used in automations/scenes/scripts.
+  # Leave include: [] empty (discovery handles scoping automatically).
+  include: []
+  auto_discovery:
+    enabled: true
+    refresh_interval_seconds: 3600  # Re-scan every hour
 
-  # Periodic REST API snapshot interval (seconds)
-  # Used to validate WebSocket cache
-  snapshot_interval_seconds: 300  # 5 minutes
+  # Cloud integration handling: entities backed by internet APIs (PSN, Plex, Life360)
+  # get a longer grace period and no mobile push, since you can't fix their outages.
+  cloud_handling:
+    enabled: true
+    grace_period_seconds: 900   # 15 minutes for cloud entities
+    suppress_mobile_push: true  # HA persistent + CLI still fire
 
-healing:
-  # Enable auto-healing
-  enabled: true
+  # Action verification: warn if a service call doesn't take effect within delay_seconds.
+  # Useful for catching unresponsive lights/switches.
+  action_verification:
+    enabled: false
+    delay_seconds: 30
 
-  # Maximum healing attempts per integration
-  max_attempts: 3
-
-  # Cooldown between healing attempts (seconds)
-  cooldown_seconds: 300  # 5 minutes
-
-  # Circuit breaker threshold (stop trying after N total failures)
-  circuit_breaker_threshold: 10
-
-  # Circuit breaker reset time (seconds)
-  # After this time with no failures, reset counter
-  circuit_breaker_reset_seconds: 3600  # 1 hour
+  # Out-of-scope audit: periodic digest of unavailable entities outside your monitored set.
+  # Surfaces broken integrations (Plex, PSN, OctoPrint) without spamming alerts for them.
+  out_of_scope_audit:
+    enabled: false
+    interval_seconds: 86400   # Once per day
 
 notifications:
-  # Send notifications when auto-healing fails
-  on_healing_failure: true
+  # Send an alert when a monitored entity goes unavailable/unknown/stale.
+  # This is the core function of HA Boss — leave it enabled.
+  on_issue_detected: true
 
-  # Send weekly summary reports
-  weekly_summary: true
-
-  # Home Assistant notification service
+  # Home Assistant notification service (persistent notifications in the UI)
   ha_service: "persistent_notification.create"
 
-  # Optional: Email notifications
-  # email:
-  #   enabled: false
-  #   smtp_server: "smtp.gmail.com"
-  #   smtp_port: 587
-  #   username: "your-email@gmail.com"
-  #   password: "${EMAIL_PASSWORD}"
-  #   from: "haboss@example.com"
-  #   to: "your-email@gmail.com"
+  # Mobile push via the HA Companion app. Add your notify service(s) here.
+  # Must use the mobile_app variant (e.g. notify.mobile_app_your_phone) to
+  # support actionable "Acknowledge" button on long-press.
+  mobile_push_services: []
+  # Example:
+  #   - "notify.mobile_app_jason_s_iphone"
 
-# Operational mode
-# - production: Full auto-healing enabled
-# - dry_run: Log actions but don't execute
-# - testing: Use test HA instance
+# Operational mode: production | dry_run | testing
+# - production: sends real notifications
+# - dry_run:    logs what would be sent, no real notifications
 mode: "production"
 
-# Logging configuration
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  format: "json"  # json or text
-  file: "data/ha_boss.log"
+  level: "INFO"   # DEBUG | INFO | WARNING | ERROR | CRITICAL
+  format: "text"  # text | json
+  file: "/data/ha_boss.log"
   max_size_mb: 10
   backup_count: 5
 
-# Database configuration
 database:
-  # SQLite database path
-  path: "data/ha_boss.db"
-
-  # Enable SQL query logging (debug only)
+  path: "/data/ha_boss.db"
   echo: false
-
-  # History retention (days)
-  # Older records are automatically purged
   retention_days: 30
 
-# WebSocket configuration
 websocket:
-  # Reconnect delay (seconds)
   reconnect_delay_seconds: 5
-
-  # Heartbeat interval (seconds)
-  # Send ping every N seconds to keep connection alive
   heartbeat_interval_seconds: 30
-
-  # Connection timeout (seconds)
   timeout_seconds: 10
+  # Maximum per-attempt delay during reconnect backoff (seconds)
+  max_reconnect_delay_seconds: 300
+  # Send a CONNECTION_ERROR notification after being disconnected this long (seconds)
+  reconnect_notify_after_seconds: 1800  # 30 minutes
 
-# REST API configuration
 rest:
-  # Request timeout (seconds)
   timeout_seconds: 10
-
-  # Retry attempts for failed requests
   retry_attempts: 3
-
-  # Base delay for exponential backoff (seconds)
   retry_base_delay_seconds: 1.0
-
-# REST API server configuration
-api:
-  enabled: true
-  host: "0.0.0.0"
-  port: 8000
-  cors_enabled: true
-  cors_origins:
-    - "*"
-  auth_enabled: false
-  api_keys: []

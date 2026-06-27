@@ -349,20 +349,70 @@ async def test_reconnect_logic(ws_client):
 
 
 @pytest.mark.asyncio
-async def test_reconnect_exhaustion(ws_client):
-    """Test reconnection failure after max retries."""
+async def test_reconnect_runs_indefinitely(ws_client):
+    """Reconnect loop runs until _running is cleared externally, not a retry cap."""
     ws_client._running = True
-    ws_client.max_retries = 2
+    attempt_count = [0]
 
-    # Always fail
-    ws_client.connect = AsyncMock(side_effect=HomeAssistantConnectionError("Failed"))
+    async def fail_then_stop():
+        attempt_count[0] += 1
+        if attempt_count[0] >= 5:
+            ws_client._running = False
+        raise HomeAssistantConnectionError("Failed")
+
+    ws_client.connect = fail_then_stop
     ws_client.subscribe_events = AsyncMock()
 
-    with patch("asyncio.sleep"):  # Speed up test
+    with patch("asyncio.sleep"):
         await ws_client._reconnect()
 
-    # Should stop running after exhausting retries
+    # Loop ran until we explicitly stopped it — did not self-terminate
+    assert attempt_count[0] == 5
     assert not ws_client._running
+
+
+@pytest.mark.asyncio
+async def test_reconnect_fires_connection_lost_callback(ws_client):
+    """on_connect_lost fires exactly once after reconnect_notify_after_seconds elapses."""
+    from datetime import UTC, datetime as real_dt, timedelta
+
+    ws_client._running = True
+    ws_client.config.websocket.reconnect_notify_after_seconds = 60
+
+    lost_calls: list[int] = []
+
+    async def on_lost() -> None:
+        lost_calls.append(1)
+
+    ws_client.on_connect_lost = on_lost
+
+    attempt_n = [0]
+
+    async def fail_then_stop() -> None:
+        attempt_n[0] += 1
+        if attempt_n[0] >= 3:
+            ws_client._running = False
+        raise HomeAssistantConnectionError("oops")
+
+    ws_client.connect = fail_then_stop
+    ws_client.subscribe_events = AsyncMock()
+
+    t0 = real_dt(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    call_idx = [0]
+
+    def fake_now(tz=None) -> real_dt:
+        call_idx[0] += 1
+        if call_idx[0] == 1:
+            return t0  # _reconnect_started_at assignment
+        # subsequent calls: always past the 60s threshold
+        return t0 + timedelta(seconds=90 * call_idx[0])
+
+    with patch("ha_boss.monitoring.websocket_client.datetime") as mock_dt:
+        mock_dt.now.side_effect = fake_now
+        with patch("asyncio.sleep"):
+            await ws_client._reconnect()
+
+    assert lost_calls == [1], "on_connect_lost should fire exactly once"
 
 
 @pytest.mark.asyncio
