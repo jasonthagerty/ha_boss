@@ -1,7 +1,8 @@
 """Tests for Home Assistant WebSocket client."""
 
 import json
-from datetime import UTC, datetime as real_dt, timedelta
+from datetime import UTC, timedelta
+from datetime import datetime as real_dt
 from unittest.mock import AsyncMock, patch
 
 import pytest
