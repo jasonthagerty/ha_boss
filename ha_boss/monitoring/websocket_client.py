@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import websockets
@@ -36,6 +37,7 @@ class WebSocketClient:
         on_state_changed: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
         on_service_call: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
         on_notification_action: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
+        on_connect_lost: Callable[[], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         """Initialize WebSocket client.
 
@@ -51,6 +53,9 @@ class WebSocketClient:
                 mobile_app_notification_action events (companion-app action taps),
                 receiving the event data dict. When set, the client also subscribes
                 to those events.
+            on_connect_lost: Optional async callback fired once when the connection has
+                been lost for longer than config.websocket.reconnect_notify_after_seconds.
+                Cleared on successful reconnect.
         """
         # Build WebSocket URL from HTTP URL
         ws_url = instance.url.replace("http://", "ws://").replace("https://", "wss://")
@@ -69,12 +74,16 @@ class WebSocketClient:
         self.on_state_changed = on_state_changed
         self.on_service_call = on_service_call
         self.on_notification_action = on_notification_action
+        self.on_connect_lost = on_connect_lost
 
         # State
         self._ws: Any = None  # WebSocket connection
         self._message_id = 0
         self._running = False
         self._reconnect_task: asyncio.Task[None] | None = None
+        # Reconnect tracking for lost-connection notification
+        self._reconnect_started_at: datetime | None = None
+        self._reconnect_notified: bool = False
 
     def _next_id(self) -> int:
         """Get next message ID for requests."""
@@ -276,41 +285,63 @@ class WebSocketClient:
                     self._reconnect_task = asyncio.create_task(self._reconnect())
 
     async def _reconnect(self) -> None:
-        """Reconnect with exponential backoff."""
-        attempt = 0
-        while self._running and attempt < self.max_retries:
-            attempt += 1
-            delay = self.retry_base_delay * (2 ** (attempt - 1))
+        """Reconnect with infinite exponential backoff (capped at max_reconnect_delay_seconds).
 
-            logger.info(
-                f"Attempting to reconnect (attempt {attempt}/{self.max_retries}) " f"in {delay}s..."
+        Runs until the connection is re-established or stop() sets _running=False.
+        Fires on_connect_lost once after reconnect_notify_after_seconds of continuous
+        disconnection so the user is alerted to a persistent outage.
+        """
+        attempt = 0
+        self._reconnect_started_at = datetime.now(UTC)
+        self._reconnect_notified = False
+
+        while self._running:
+            attempt += 1
+            delay = min(
+                self.retry_base_delay * (2 ** (attempt - 1)),
+                self.config.websocket.max_reconnect_delay_seconds,
             )
+            logger.info(f"Attempting to reconnect (attempt {attempt}) in {delay:.0f}s...")
             await asyncio.sleep(delay)
+
+            if not self._running:
+                break
+
+            # Fire lost-connection notification once after threshold has elapsed
+            if (
+                not self._reconnect_notified
+                and self.on_connect_lost is not None
+                and self._reconnect_started_at is not None
+            ):
+                elapsed = (datetime.now(UTC) - self._reconnect_started_at).total_seconds()
+                if elapsed >= self.config.websocket.reconnect_notify_after_seconds:
+                    try:
+                        await self.on_connect_lost()
+                    except Exception as e:
+                        logger.error(f"Error in on_connect_lost callback: {e}", exc_info=True)
+                    self._reconnect_notified = True
 
             try:
                 await self.connect()
-                await self.subscribe_events()  # Subscribe to state_changed
-
-                # Also subscribe to call_service events for discovery refresh triggers
-                if self.entity_discovery:
-                    await self.subscribe_events("call_service")
-
-                # Subscribe to companion-app notification action taps (acknowledge)
-                if self.on_notification_action:
-                    await self.subscribe_events("mobile_app_notification_action")
-
+                await self._resubscribe()
                 logger.info("Reconnection successful")
-
-                # Restart listen loop
+                self._reconnect_started_at = None
+                self._reconnect_notified = False
                 asyncio.create_task(self._listen_loop())
                 return
 
             except Exception as e:
                 logger.error(f"Reconnection attempt {attempt} failed: {e}")
 
-        if self._running:
-            logger.error("Failed to reconnect after all retry attempts")
-            self._running = False
+    async def _resubscribe(self) -> None:
+        """Re-subscribe to all required event types after (re)connect."""
+        await self.subscribe_events()  # state_changed (always)
+        # call_service: needed for discovery refresh triggers and action verification
+        if self.entity_discovery or self.on_service_call:
+            await self.subscribe_events("call_service")
+        # companion-app notification action taps (acknowledge)
+        if self.on_notification_action:
+            await self.subscribe_events("mobile_app_notification_action")
 
     async def start(self) -> None:
         """Start WebSocket client and begin listening for events.
@@ -321,15 +352,7 @@ class WebSocketClient:
         self._running = True
 
         await self.connect()
-        await self.subscribe_events()  # Subscribe to state_changed
-
-        # Also subscribe to call_service events for discovery refresh triggers
-        if self.entity_discovery:
-            await self.subscribe_events("call_service")
-
-        # Subscribe to companion-app notification action taps (acknowledge)
-        if self.on_notification_action:
-            await self.subscribe_events("mobile_app_notification_action")
+        await self._resubscribe()
 
         # Start listening loop
         asyncio.create_task(self._listen_loop())

@@ -137,28 +137,32 @@ def init(
         console.print("[dim]Use --force to overwrite[/dim]")
     else:
         config_template = """# HA Boss Configuration
+# Monitor-and-notify watchdog for Home Assistant.
 
 home_assistant:
-  url: ${HA_URL}  # e.g., http://homeassistant.local:8123
-  token: ${HA_TOKEN}  # Long-lived access token from HA
+  url: ${HA_URL}   # e.g., http://homeassistant.local:8123
+  token: ${HA_TOKEN}  # Long-lived access token from HA profile
 
 monitoring:
-  grace_period_seconds: 300  # Wait before marking entity as unavailable
-  stale_threshold_seconds: 3600  # Threshold for stale entities
+  grace_period_seconds: 300   # Wait before alerting on unavailable entity (5 min)
+  stale_threshold_seconds: 3600  # Alert if no state update within this window (1 hr)
   exclude:
     - "sensor.time*"
     - "sensor.date*"
+    - "sensor.uptime*"
     - "sun.sun"
-
-healing:
-  enabled: true
-  max_attempts: 3
-  cooldown_seconds: 300
-  circuit_breaker_threshold: 10
+  # Entities where "unavailable" is normal (e.g. a TV that's off). Never alerted.
+  unavailable_ok: []
 
 notifications:
-  on_healing_failure: true
-  weekly_summary: true
+  on_issue_detected: true  # Core feature — alert when a monitored entity goes bad
+  ha_service: "persistent_notification.create"
+  # Add your HA Companion app notify service(s) for mobile push:
+  mobile_push_services: []
+  # - "notify.mobile_app_your_phone"
+
+# production = real notifications; dry_run = log only
+mode: production
 
 logging:
   level: INFO
@@ -167,16 +171,6 @@ logging:
 database:
   path: data/ha_boss.db
   retention_days: 30
-
-intelligence:
-  pattern_collection_enabled: true  # Enable pattern collection for reliability analysis
-
-api:
-  enabled: true  # Enable REST API server for health checks
-  host: 0.0.0.0
-  port: 8000
-
-mode: production  # production, dry_run, or testing
 """
         config_file.write_text(config_template)
         console.print(f"\n[green]✓[/green] Created configuration: {config_file}")
@@ -248,9 +242,9 @@ def start(
 
     This command starts the main monitoring loop that:
     - Connects to Home Assistant via WebSocket
-    - Monitors entity health in real-time
-    - Automatically heals failed integrations
-    - Sends notifications when manual intervention is needed
+    - Scopes monitoring to entities referenced in your automations/scenes/scripts
+    - Detects unavailable, unknown, and stale entities
+    - Sends notifications via HA persistent notifications and optional mobile push
     """
     console.print(
         Panel.fit(
@@ -395,38 +389,38 @@ async def _show_db_stats(config: Config) -> None:
     """
     try:
         async with Database(str(config.database.path)) as db:
-            # Get statistics from database
             async with db.async_session() as session:
                 from sqlalchemy import func, select
 
-                from ha_boss.core.database import Entity, HealingAction, HealthEvent
+                from ha_boss.core.database import HealthEvent
 
-                # Count records
-                entity_count = await session.scalar(select(func.count()).select_from(Entity))
-                health_count = await session.scalar(select(func.count()).select_from(HealthEvent))
-                healing_count = await session.scalar(
-                    select(func.count()).select_from(HealingAction)
-                )
+                cutoff_7d = datetime.now(UTC) - timedelta(days=7)
 
-                # Count successful healings
-                successful_healings = await session.scalar(
+                total_events = await session.scalar(select(func.count()).select_from(HealthEvent))
+                issues_7d = await session.scalar(
                     select(func.count())
-                    .select_from(HealingAction)
-                    .where(HealingAction.success == True)  # noqa: E712
+                    .select_from(HealthEvent)
+                    .where(
+                        HealthEvent.timestamp >= cutoff_7d,
+                        HealthEvent.event_type != "recovered",
+                    )
+                )
+                recoveries_7d = await session.scalar(
+                    select(func.count())
+                    .select_from(HealthEvent)
+                    .where(
+                        HealthEvent.timestamp >= cutoff_7d,
+                        HealthEvent.event_type == "recovered",
+                    )
                 )
 
                 table = Table(show_header=False)
                 table.add_column("Metric", style="cyan")
-                table.add_column("Count", justify="right")
+                table.add_column("Value", justify="right")
 
-                table.add_row("Tracked Entities", str(entity_count or 0))
-                table.add_row("Health Events", str(health_count or 0))
-                table.add_row("Healing Attempts", str(healing_count or 0))
-                table.add_row("Successful Healings", str(successful_healings or 0))
-
-                if healing_count and healing_count > 0:
-                    success_rate = (successful_healings or 0) / healing_count * 100
-                    table.add_row("Success Rate", f"{success_rate:.1f}%")
+                table.add_row("Issues Detected (7d)", str(issues_7d or 0))
+                table.add_row("Recoveries (7d)", str(recoveries_7d or 0))
+                table.add_row("Total Health Events", str(total_events or 0))
 
                 console.print("\n", table)
 

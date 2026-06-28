@@ -388,7 +388,7 @@ class NotificationsConfig(BaseSettings):
         description="Notify when healing fails",
     )
     on_issue_detected: bool = Field(
-        default=False,
+        default=True,
         description=(
             "Notify when an issue is detected even if auto-healing is disabled "
             "(monitor-and-notify mode)"
@@ -477,6 +477,19 @@ class WebSocketConfig(BaseSettings):
         default=10,
         description="Connection timeout",
         ge=5,
+    )
+    max_reconnect_delay_seconds: int = Field(
+        default=300,
+        description="Maximum delay between reconnect attempts (exponential backoff cap)",
+        ge=5,
+    )
+    reconnect_notify_after_seconds: int = Field(
+        default=1800,
+        description=(
+            "Fire the on_connect_lost notification callback after being disconnected "
+            "for this many seconds (default: 30 minutes)"
+        ),
+        ge=60,
     )
 
 

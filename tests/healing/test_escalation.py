@@ -351,9 +351,17 @@ async def test_notify_issue_detected_enabled(
 
 
 @pytest.mark.asyncio
-async def test_notify_issue_detected_disabled(escalator, sample_health_issue, mock_ha_client):
-    """Test issue-detected notification is suppressed when flag is off (default)."""
-    # Default mock_config leaves on_issue_detected at its default (False)
+async def test_notify_issue_detected_disabled(mock_ha_client, sample_health_issue):
+    """Test issue-detected notification is suppressed when flag is explicitly off."""
+    config = Config(
+        home_assistant=HomeAssistantConfig(
+            url="http://homeassistant.local:8123",
+            token="test_token",
+        ),
+        notifications=NotificationsConfig(on_issue_detected=False),
+        mode="production",
+    )
+    escalator = NotificationEscalator(config, mock_ha_client)
     await escalator.notify_issue_detected(sample_health_issue)
 
     mock_ha_client.create_persistent_notification.assert_not_called()
@@ -390,3 +398,23 @@ async def test_dismiss_issue_detected_clears_without_recovery_notification(
     assert dismissed_ids == ["haboss_issue_detected_sensor_test_sensor"]
     # ...and no RECOVERY (or any) notification is created.
     mock_ha_client.create_persistent_notification.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_connection_error_sends_ha_notification(escalator, mock_ha_client):
+    """notify_connection_error sends a persistent notification to HA."""
+    await escalator.notify_connection_error("Lost connection after 30 minutes")
+
+    mock_ha_client.create_persistent_notification.assert_called_once()
+    call_kwargs = mock_ha_client.create_persistent_notification.call_args
+    # Title should signal a connection error
+    title = call_kwargs.kwargs.get("title") or call_kwargs.args[1]
+    assert "Connection" in title or "connection" in title
+
+
+@pytest.mark.asyncio
+async def test_notify_connection_error_no_error_message(escalator, mock_ha_client):
+    """notify_connection_error works without an explicit error string."""
+    await escalator.notify_connection_error()
+
+    mock_ha_client.create_persistent_notification.assert_called_once()

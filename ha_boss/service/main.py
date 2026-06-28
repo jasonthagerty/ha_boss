@@ -360,6 +360,7 @@ class HABossService:
                 action_verifier.handle_service_call if action_verifier is not None else None
             ),
             on_notification_action=on_notification_action,
+            on_connect_lost=lambda: self._on_connect_lost(instance_id),
         )
         await self.websocket_clients[instance_id].start()
 
@@ -570,6 +571,28 @@ class HABossService:
             logger.error(
                 f"[{instance_id}] Error handling WebSocket state change: {e}", exc_info=True
             )
+
+    async def _on_connect_lost(self, instance_id: str) -> None:
+        """Called once when the WebSocket has been disconnected for an extended period.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+        """
+        threshold_min = self.config.websocket.reconnect_notify_after_seconds // 60
+        error_msg = (
+            f"Connection to Home Assistant [{instance_id}] has been lost for "
+            f"over {threshold_min} minutes — still retrying."
+        )
+        logger.error(f"[{instance_id}] {error_msg}")
+        escalation_manager = self.escalation_managers.get(instance_id)
+        if escalation_manager:
+            try:
+                await escalation_manager.notify_connection_error(error_msg)
+            except Exception as e:
+                logger.error(
+                    f"[{instance_id}] Failed to send connection-lost notification: {e}",
+                    exc_info=True,
+                )
 
     async def _on_notification_action(self, instance_id: str, data: dict[str, Any]) -> None:
         """Handle a mobile_app_notification_action event (e.g. acknowledge tap).
