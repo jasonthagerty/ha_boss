@@ -44,7 +44,7 @@ def _make_config(
                 delay_seconds=delay_seconds if delay_seconds > 0 else 1,
             ),
         ),
-        notifications=NotificationsConfig(on_healing_failure=False),
+        notifications=NotificationsConfig(on_issue_detected=True),
         mode="production",
     )
 

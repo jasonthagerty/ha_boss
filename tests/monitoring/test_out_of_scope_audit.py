@@ -45,7 +45,7 @@ def _make_config(
                 group_by_integration=group_by_integration,
             ),
         ),
-        notifications=NotificationsConfig(on_healing_failure=False),
+        notifications=NotificationsConfig(on_issue_detected=True),
         mode="production",
     )
 

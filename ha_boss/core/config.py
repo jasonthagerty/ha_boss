@@ -383,16 +383,9 @@ class MonitoringConfig(BaseSettings):
 class NotificationsConfig(BaseSettings):
     """Notification configuration."""
 
-    on_healing_failure: bool = Field(
-        default=True,
-        description="Notify when healing fails",
-    )
     on_issue_detected: bool = Field(
         default=True,
-        description=(
-            "Notify when an issue is detected even if auto-healing is disabled "
-            "(monitor-and-notify mode)"
-        ),
+        description="Notify when a monitored entity goes unavailable, unknown, or stale",
     )
     mobile_push_services: list[str] = Field(
         default_factory=list,
@@ -401,17 +394,9 @@ class NotificationsConfig(BaseSettings):
             "alerts to via notify.send_message; empty = mobile push disabled"
         ),
     )
-    weekly_summary: bool = Field(
-        default=True,
-        description="Send weekly summary reports",
-    )
     ha_service: str = Field(
         default="persistent_notification.create",
         description="Home Assistant notification service",
-    )
-    ai_enhanced: bool = Field(
-        default=True,
-        description="Enable AI-enhanced notifications with LLM analysis",
     )
 
 

@@ -290,11 +290,13 @@ class HABossService:
         await self.health_monitors[instance_id].start()
         logger.info(f"[{instance_id}] ✓ Health monitor started")
 
-        # 8. Initialize escalation manager
+        # 8. Initialize escalation manager (shares the notification manager so
+        #    mobile Ack dedup state is consistent between escalation and the
+        #    action handler that processes companion app acknowledgements)
         logger.info(f"[{instance_id}] Initializing escalation manager...")
         self.escalation_managers[instance_id] = NotificationEscalator(
             config=self.config,
-            ha_client=self.ha_clients[instance_id],
+            notification_manager=self.notification_managers[instance_id],
         )
         logger.info(f"[{instance_id}] ✓ Escalation manager initialized")
 
@@ -476,6 +478,22 @@ class HABossService:
                 task.set_name(f"periodic_out_of_scope_audit_{instance_id}")
                 self._tasks.append(task)
 
+            # Periodic integration classifier refresh (same cadence as entity discovery)
+            classifier = self.integration_classifiers.get(instance_id)
+            refresh_interval = self.config.monitoring.auto_discovery.refresh_interval_seconds
+            if classifier is not None and refresh_interval > 0:
+                task = asyncio.create_task(
+                    self._periodic_classifier_refresh(instance_id, refresh_interval)
+                )
+                task.set_name(f"periodic_classifier_refresh_{instance_id}")
+                self._tasks.append(task)
+
+        # Periodic DB cleanup (once per day, enforces retention_days)
+        if self.config.database.retention_days > 0:
+            task = asyncio.create_task(self._periodic_db_cleanup())
+            task.set_name("periodic_db_cleanup")
+            self._tasks.append(task)
+
         # Note: HealthMonitor runs its own internal monitoring loop (per instance)
         # No need for separate periodic health check task here
 
@@ -552,6 +570,67 @@ class HABossService:
                 break
             except Exception as e:
                 logger.error(f"[{instance_id}] Error in out-of-scope audit: {e}", exc_info=True)
+
+    async def _periodic_classifier_refresh(self, instance_id: str, interval: float) -> None:
+        """Periodically re-classify entities so newly-added cloud integrations are detected.
+
+        Sleeps first so the first run happens after one full interval — startup
+        already runs a full classification pass.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+            interval: Seconds between refreshes
+        """
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+
+            classifier = self.integration_classifiers.get(instance_id)
+            if classifier is None:
+                break
+
+            try:
+                await classifier.refresh()
+                logger.debug(f"[{instance_id}] Integration classifier refreshed")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[{instance_id}] Error refreshing integration classifier: {e}")
+
+    async def _periodic_db_cleanup(self) -> None:
+        """Purge health-event records older than database.retention_days once per day.
+
+        Sleeps first so startup is not burdened; cleanup is not time-critical.
+        """
+        _ONE_DAY = 86400
+
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(_ONE_DAY)
+            except asyncio.CancelledError:
+                break
+
+            if self.database is None or self._shutdown_event.is_set():
+                break
+
+            try:
+                result = await self.database.cleanup_old_records(
+                    self.config.database.retention_days
+                )
+                deleted = sum(result.values())
+                if deleted:
+                    logger.info(
+                        f"DB cleanup: removed {deleted} records older than "
+                        f"{self.config.database.retention_days}d ({result})"
+                    )
+                else:
+                    logger.debug("DB cleanup: no records to prune")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error during DB cleanup: {e}", exc_info=True)
 
     async def _on_websocket_state_changed(self, instance_id: str, event: dict[str, Any]) -> None:
         """Handle state_changed events from WebSocket.

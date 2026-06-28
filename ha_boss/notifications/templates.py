@@ -9,13 +9,7 @@ from typing import Any
 class NotificationType(StrEnum):
     """Types of notifications that can be sent."""
 
-    HEALING_FAILURE = "healing_failure"
-    HEALING_SUCCESS = "healing_success"
-    CIRCUIT_BREAKER = "circuit_breaker"
     CONNECTION_ERROR = "connection_error"
-    WEEKLY_SUMMARY = "weekly_summary"
-    RECOVERY = "recovery"
-    ANOMALY_DETECTED = "anomaly_detected"
     ISSUE_DETECTED = "issue_detected"
     OUT_OF_SCOPE_AUDIT = "out_of_scope_audit"
     ACTION_VERIFICATION_FAILED = "action_verification_failed"
@@ -174,129 +168,6 @@ class NotificationTemplate:
         raise NotImplementedError("Subclasses must implement render()")
 
 
-class HealingFailureTemplate(NotificationTemplate):
-    """Template for healing failure notifications."""
-
-    @staticmethod
-    def render(context: NotificationContext) -> tuple[str, str]:
-        """Render healing failure notification.
-
-        Args:
-            context: Notification context
-
-        Returns:
-            Tuple of (title, message)
-        """
-        title = "HA Boss: Healing Failed"
-
-        lines = [
-            f"**Entity:** `{context.entity_id}`",
-            f"**Issue:** {context.issue_type or 'Unknown'}",
-        ]
-
-        if context.detected_at:
-            time_ago = HealingFailureTemplate.format_time_ago(context.detected_at)
-            lines.append(f"**Detected:** {time_ago}")
-
-        if context.attempts:
-            lines.append(f"**Attempts:** {context.attempts}")
-
-        lines.append("")
-
-        # Add error details
-        if context.error:
-            if isinstance(context.error, Exception):
-                lines.append(f"**Error:** {type(context.error).__name__}: {context.error}")
-            else:
-                lines.append(f"**Error:** {context.error}")
-
-        # Check for AI-enhanced content
-        if context.extra and "ai_analysis" in context.extra:
-            ai_data = context.extra["ai_analysis"]
-            lines.append("")
-            lines.append("**AI Analysis:**")
-            if ai_data.get("analysis"):
-                lines.append(ai_data["analysis"])
-
-            if ai_data.get("suggestions"):
-                lines.append("")
-                lines.append("**Suggested Actions:**")
-                lines.append(ai_data["suggestions"])
-        else:
-            # Standard action required message
-            lines.extend(
-                [
-                    "",
-                    "**Action Required:**",
-                    "Please investigate and fix the integration manually.",
-                ]
-            )
-
-        lines.extend(
-            [
-                "",
-                "HA Boss will retry automatically when conditions allow.",
-            ]
-        )
-
-        message = "\n".join(lines)
-        return title, message
-
-
-class HealingSuccessTemplate(NotificationTemplate):
-    """Template for healing success notifications."""
-
-    @staticmethod
-    def render(context: NotificationContext) -> tuple[str, str]:
-        """Render healing success notification.
-
-        Args:
-            context: Notification context
-
-        Returns:
-            Tuple of (title, message)
-        """
-        title = "HA Boss: Healing Successful"
-
-        lines = [
-            f"**Entity:** `{context.entity_id}`",
-            f"**Integration:** {context.integration_name or context.integration_id or 'Unknown'}",
-            "",
-            "Successfully healed the integration.",
-        ]
-
-        if context.attempts:
-            lines.append(f"Attempts: {context.attempts}")
-
-        message = "\n".join(lines)
-        return title, message
-
-
-class RecoveryTemplate(NotificationTemplate):
-    """Template for entity recovery notifications."""
-
-    @staticmethod
-    def render(context: NotificationContext) -> tuple[str, str]:
-        """Render recovery notification.
-
-        Args:
-            context: Notification context
-
-        Returns:
-            Tuple of (title, message)
-        """
-        name = display_name(context)
-        title = f"✅ {name} recovered"
-
-        lines = [
-            f"**{name}** (`{context.entity_id}`)",
-            "Back to normal — no action needed.",
-        ]
-
-        message = "\n".join(lines)
-        return title, message
-
-
 class IssueDetectedTemplate(NotificationTemplate):
     """Template for issue-detected notifications (monitor-and-notify mode)."""
 
@@ -327,76 +198,6 @@ class IssueDetectedTemplate(NotificationTemplate):
             [
                 "",
                 "Long-press this notification to acknowledge it.",
-            ]
-        )
-
-        message = "\n".join(lines)
-        return title, message
-
-
-class CircuitBreakerTemplate(NotificationTemplate):
-    """Template for circuit breaker notifications."""
-
-    @staticmethod
-    def render(context: NotificationContext) -> tuple[str, str]:
-        """Render circuit breaker notification.
-
-        Args:
-            context: Notification context
-
-        Returns:
-            Tuple of (title, message)
-        """
-        title = "HA Boss: Circuit Breaker Opened"
-
-        lines = [
-            f"**Integration:** {context.integration_name or context.integration_id or 'Unknown'}",
-            f"**Consecutive Failures:** {context.failure_count or 0}",
-        ]
-
-        if context.reset_time:
-            reset_in = CircuitBreakerTemplate.format_time_until(context.reset_time)
-            lines.append(f"**Reset In:** {reset_in}")
-            reset_at = context.reset_time.strftime("%H:%M:%S")
-        else:
-            reset_at = "unknown"
-
-        lines.extend(
-            [
-                "",
-                "Auto-healing has been temporarily disabled for this integration",
-                "due to repeated failures.",
-            ]
-        )
-
-        # Check for AI-enhanced content
-        if context.extra and "ai_analysis" in context.extra:
-            ai_data = context.extra["ai_analysis"]
-            lines.append("")
-            lines.append("**AI Analysis:**")
-            if ai_data.get("analysis"):
-                lines.append(ai_data["analysis"])
-
-            if ai_data.get("suggestions"):
-                lines.append("")
-                lines.append("**Suggested Actions:**")
-                lines.append(ai_data["suggestions"])
-        else:
-            # Standard action required message
-            lines.extend(
-                [
-                    "",
-                    "**Action Required:**",
-                    "1. Check Home Assistant logs for error details",
-                    "2. Fix the integration configuration",
-                    "3. Manually reload the integration",
-                ]
-            )
-
-        lines.extend(
-            [
-                "",
-                f"Automatic healing will resume at {reset_at}.",
             ]
         )
 
@@ -435,110 +236,6 @@ class ConnectionErrorTemplate(NotificationTemplate):
                 "- Invalid access token",
                 "",
                 "HA Boss will continue attempting to reconnect.",
-            ]
-        )
-
-        message = "\n".join(lines)
-        return title, message
-
-
-class WeeklySummaryTemplate(NotificationTemplate):
-    """Template for weekly summary notifications."""
-
-    @staticmethod
-    def render(context: NotificationContext) -> tuple[str, str]:
-        """Render weekly summary notification.
-
-        Args:
-            context: Notification context
-
-        Returns:
-            Tuple of (title, message)
-        """
-        title = "HA Boss: Weekly Summary"
-
-        stats = context.stats or {}
-
-        lines = [
-            "**Weekly Healing Summary**",
-            "",
-            f"**Total Attempts:** {stats.get('total_attempts', 0)}",
-            f"**Successful:** {stats.get('successful', 0)}",
-            f"**Failed:** {stats.get('failed', 0)}",
-            f"**Success Rate:** {stats.get('success_rate', 0):.1f}%",
-            f"**Avg Duration:** {stats.get('avg_duration_seconds', 0):.2f}s",
-            "",
-        ]
-
-        # Add top issues if available
-        if "top_issues" in stats:
-            lines.append("**Most Common Issues:**")
-            for entity_id, count in stats["top_issues"][:5]:
-                lines.append(f"- `{entity_id}`: {count} times")
-            lines.append("")
-
-        lines.append("Keep up the good work maintaining your Home Assistant instance!")
-
-        message = "\n".join(lines)
-        return title, message
-
-
-class AnomalyDetectedTemplate(NotificationTemplate):
-    """Template for anomaly detection notifications."""
-
-    @staticmethod
-    def render(context: NotificationContext) -> tuple[str, str]:
-        """Render anomaly detection notification.
-
-        Args:
-            context: Notification context with anomaly details in extra
-
-        Returns:
-            Tuple of (title, message)
-        """
-        title = "HA Boss: Anomaly Detected"
-
-        # Get anomaly data from extra
-        anomaly_data = context.extra or {}
-
-        lines = [
-            f"**Type:** {anomaly_data.get('anomaly_type', 'Unknown')}",
-            f"**Integration:** {context.integration_name or anomaly_data.get('integration_domain', 'Unknown')}",
-            f"**Severity:** {anomaly_data.get('severity_label', 'Unknown')}",
-        ]
-
-        # Add description
-        if anomaly_data.get("description"):
-            lines.extend(["", anomaly_data["description"]])
-
-        # Add AI explanation if available
-        if anomaly_data.get("ai_explanation"):
-            lines.extend(
-                [
-                    "",
-                    "**AI Analysis:**",
-                    anomaly_data["ai_explanation"],
-                ]
-            )
-
-        # Add additional details
-        details = anomaly_data.get("details", {})
-        if details:
-            lines.append("")
-            lines.append("**Details:**")
-            if "failure_count" in details:
-                lines.append(f"- Recent failures: {details['failure_count']}")
-            if "rate_increase" in details:
-                lines.append(f"- Rate increase: {details['rate_increase']:.1f}x")
-            if "correlation" in details:
-                lines.append(f"- Correlation: {details['correlation']:.0%}")
-            if "concentration" in details:
-                lines.append(f"- Time concentration: {details['concentration']:.0%}")
-
-        lines.extend(
-            [
-                "",
-                "Please investigate the integration for potential issues.",
             ]
         )
 
@@ -664,13 +361,7 @@ class TemplateRegistry:
     """Registry for mapping notification types to templates."""
 
     _templates: dict[NotificationType, type[NotificationTemplate]] = {
-        NotificationType.HEALING_FAILURE: HealingFailureTemplate,
-        NotificationType.HEALING_SUCCESS: HealingSuccessTemplate,
-        NotificationType.RECOVERY: RecoveryTemplate,
-        NotificationType.CIRCUIT_BREAKER: CircuitBreakerTemplate,
         NotificationType.CONNECTION_ERROR: ConnectionErrorTemplate,
-        NotificationType.WEEKLY_SUMMARY: WeeklySummaryTemplate,
-        NotificationType.ANOMALY_DETECTED: AnomalyDetectedTemplate,
         NotificationType.ISSUE_DETECTED: IssueDetectedTemplate,
         NotificationType.OUT_OF_SCOPE_AUDIT: OutOfScopeAuditTemplate,
         NotificationType.ACTION_VERIFICATION_FAILED: ActionVerificationFailedTemplate,

@@ -24,8 +24,7 @@ def mock_config() -> Config:
     config = MagicMock(spec=Config)
     config.is_dry_run = False
     config.notifications = MagicMock()
-    config.notifications.on_healing_failure = True
-    config.notifications.weekly_summary = True
+    config.notifications.on_issue_detected = True
     config.notifications.mobile_push_services = []
     return config
 
@@ -96,8 +95,8 @@ class TestNotificationManager:
     ) -> None:
         """Test sending notification to Home Assistant."""
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
-            severity=NotificationSeverity.ERROR,
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
             entity_id="sensor.test",
             issue_type="unavailable",
         )
@@ -107,7 +106,7 @@ class TestNotificationManager:
         mock_ha_client.create_persistent_notification.assert_called_once()
         call_args = mock_ha_client.create_persistent_notification.call_args
         assert "sensor.test" in call_args.kwargs["message"]
-        assert call_args.kwargs["title"] == "HA Boss: Healing Failed"
+        assert "unavailable" in call_args.kwargs["title"]
 
     @pytest.mark.asyncio
     async def test_notify_to_cli(
@@ -115,17 +114,17 @@ class TestNotificationManager:
     ) -> None:
         """Test sending notification to CLI."""
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
-            severity=NotificationSeverity.ERROR,
+            notification_type=NotificationType.ISSUE_DETECTED,
+            severity=NotificationSeverity.WARNING,
             entity_id="sensor.test",
             issue_type="unavailable",
         )
 
-        with caplog.at_level(logging.ERROR):
+        with caplog.at_level(logging.WARNING):
             await notification_manager.notify(context, channels=[NotificationChannel.CLI])
 
         assert "sensor.test" in caplog.text
-        assert "Healing Failed" in caplog.text
+        assert "unavailable" in caplog.text
 
     @pytest.mark.asyncio
     async def test_notify_severity_routing(
@@ -134,7 +133,7 @@ class TestNotificationManager:
         """Test automatic channel routing based on severity."""
         # ERROR should go to both HA and CLI
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.test",
         )
@@ -150,7 +149,7 @@ class TestNotificationManager:
     ) -> None:
         """Test that INFO severity only goes to CLI by default."""
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_SUCCESS,
+            notification_type=NotificationType.ISSUE_DETECTED,
             severity=NotificationSeverity.INFO,
             entity_id="sensor.test",
         )
@@ -166,7 +165,7 @@ class TestNotificationManager:
     ) -> None:
         """Test that duplicate notifications are not sent."""
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.test",
         )
@@ -189,7 +188,7 @@ class TestNotificationManager:
         manager = NotificationManager(mock_config, mock_ha_client)
 
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.test",
         )
@@ -210,7 +209,7 @@ class TestNotificationManager:
         notification_manager.disable_channel(NotificationChannel.HOME_ASSISTANT)
 
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.test",
         )
@@ -227,7 +226,7 @@ class TestNotificationManager:
         """Test that template rendering errors are handled gracefully."""
         # Create invalid context that will cause template error
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
         )
 
@@ -249,7 +248,7 @@ class TestNotificationManager:
         mock_ha_client.create_persistent_notification.side_effect = Exception("Send error")
 
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.test",
         )
@@ -302,13 +301,13 @@ class TestNotificationManager:
         """Test that dismissing removes notification from tracking."""
         # Send a notification first
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.test",
         )
         await notification_manager.notify(context, channels=[NotificationChannel.HOME_ASSISTANT])
 
-        notification_id = "haboss_healing_failure_sensor_test"
+        notification_id = "haboss_connection_error_sensor_test"
         assert notification_id in notification_manager._sent_notifications
 
         # Dismiss it
@@ -340,42 +339,42 @@ class TestNotificationManager:
     ) -> None:
         """Test notification ID generation with entity ID."""
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.temperature",
         )
 
         notification_id = notification_manager._generate_notification_id(context)
 
-        assert notification_id == "haboss_healing_failure_sensor_temperature"
+        assert notification_id == "haboss_connection_error_sensor_temperature"
 
     def test_generate_notification_id_with_integration_id(
         self, notification_manager: NotificationManager
     ) -> None:
         """Test notification ID generation with integration ID."""
         context = NotificationContext(
-            notification_type=NotificationType.CIRCUIT_BREAKER,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.WARNING,
             integration_id="abc-123-def",
         )
 
         notification_id = notification_manager._generate_notification_id(context)
 
-        assert notification_id == "haboss_circuit_breaker_abc_123_def"
+        assert notification_id == "haboss_connection_error_abc_123_def"
 
     def test_generate_notification_id_with_integration_name(
         self, notification_manager: NotificationManager
     ) -> None:
         """Test notification ID generation with integration name."""
         context = NotificationContext(
-            notification_type=NotificationType.CIRCUIT_BREAKER,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.WARNING,
             integration_name="Z-Wave JS",
         )
 
         notification_id = notification_manager._generate_notification_id(context)
 
-        assert notification_id == "haboss_circuit_breaker_z-wave_js"
+        assert notification_id == "haboss_connection_error_z-wave_js"
 
     def test_get_channels_for_severity_info(
         self, notification_manager: NotificationManager
@@ -435,7 +434,7 @@ class TestNotificationManager:
     def test_get_sent_notifications(self, notification_manager: NotificationManager) -> None:
         """Test getting sent notifications."""
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.test",
         )
@@ -451,7 +450,7 @@ class TestNotificationManager:
     def test_clear_sent_notifications(self, notification_manager: NotificationManager) -> None:
         """Test clearing sent notifications."""
         context = NotificationContext(
-            notification_type=NotificationType.HEALING_FAILURE,
+            notification_type=NotificationType.CONNECTION_ERROR,
             severity=NotificationSeverity.ERROR,
             entity_id="sensor.test",
         )
@@ -561,7 +560,7 @@ class TestMobilePush:
         """INFO-level notifications (e.g. recovery) do not push to mobile."""
         manager = NotificationManager(_mobile_config(["notify.mobile_app_jason"]), mock_ha_client)
         context = NotificationContext(
-            notification_type=NotificationType.RECOVERY,
+            notification_type=NotificationType.ISSUE_DETECTED,
             severity=NotificationSeverity.INFO,
             entity_id="binary_sensor.back_patio_motion",
         )

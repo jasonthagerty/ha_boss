@@ -35,7 +35,7 @@ def integration_config() -> Config:
             "circuit_breaker_threshold": 5,
             "circuit_breaker_reset_seconds": 60,
         },
-        notifications={"on_healing_failure": True, "weekly_summary": False},
+        notifications={"on_issue_detected": True},
         database={"path": ":memory:", "retention_days": 30},
         mode="testing",
     )

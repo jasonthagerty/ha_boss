@@ -21,10 +21,10 @@ healthcheck).
 - ❌ MCP server
 - ❌ Automation analysis + usage tracking
 
-> Vestigial only: `HealingConfig`, `IntelligenceConfig`, `OutcomeValidationConfig`
-> remain in `core/config.py` because `core/config_service.py` still maps their
-> runtime settings, but **no runtime code reads them**. Their DB tables are left
-> in place (unused). Don't build on them.
+> `core/config_service.py` was removed in Phase 6. `HealingConfig`,
+> `IntelligenceConfig`, and `OutcomeValidationConfig` no longer exist in
+> `core/config.py`. DB tables they referenced are left in place (unused). Don't
+> build on them.
 
 ## Architecture (current packages under `ha_boss/`)
 
