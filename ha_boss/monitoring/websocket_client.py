@@ -308,7 +308,11 @@ class WebSocketClient:
                 break
 
             # Fire lost-connection notification once after threshold has elapsed
-            if not self._reconnect_notified and self.on_connect_lost is not None:
+            if (
+                not self._reconnect_notified
+                and self.on_connect_lost is not None
+                and self._reconnect_started_at is not None
+            ):
                 elapsed = (datetime.now(UTC) - self._reconnect_started_at).total_seconds()
                 if elapsed >= self.config.websocket.reconnect_notify_after_seconds:
                     try:
