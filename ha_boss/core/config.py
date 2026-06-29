@@ -390,14 +390,26 @@ class NotificationsConfig(BaseSettings):
     mobile_push_services: list[str] = Field(
         default_factory=list,
         description=(
-            "notify entity_ids (e.g. 'notify.jason_s_iphone') to also send mobile push "
-            "alerts to via notify.send_message; empty = mobile push disabled"
+            "notify services (e.g. 'notify.mobile_app_your_phone') to also send mobile "
+            "push alerts to; empty = mobile push disabled. May be supplied via a "
+            "${ENV_VAR} placeholder so the value can live in .env"
         ),
     )
     ha_service: str = Field(
         default="persistent_notification.create",
         description="Home Assistant notification service",
     )
+
+    @field_validator("mobile_push_services", mode="after")
+    @classmethod
+    def _drop_unset_push_services(cls, services: list[str]) -> list[str]:
+        """Drop empty and unsubstituted ``${ENV_VAR}`` placeholder entries.
+
+        Lets the config template carry ``${HABOSS_MOBILE_PUSH_SERVICE}``; when the
+        env var is unset (placeholder left intact) or empty, the entry is removed,
+        leaving mobile push disabled instead of calling a bogus ``notify.`` service.
+        """
+        return [s for s in services if s and not (s.startswith("${") and s.endswith("}"))]
 
 
 class LoggingConfig(BaseSettings):

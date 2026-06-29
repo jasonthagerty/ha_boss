@@ -157,9 +157,10 @@ monitoring:
 notifications:
   on_issue_detected: true  # Core feature — alert when a monitored entity goes bad
   ha_service: "persistent_notification.create"
-  # Add your HA Companion app notify service(s) for mobile push:
-  mobile_push_services: []
-  # - "notify.mobile_app_your_phone"
+  # Mobile push: set HABOSS_MOBILE_PUSH_SERVICE in your .env (e.g.
+  # notify.mobile_app_your_phone); unset = mobile push disabled.
+  mobile_push_services:
+    - "${HABOSS_MOBILE_PUSH_SERVICE}"
 
 # production = real notifications; dry_run = log only
 mode: production

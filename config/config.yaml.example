@@ -116,9 +116,11 @@ notifications:
 
   # Mobile push: also send WARNING+ notifications to the HA companion app, with an
   # "Acknowledge" action on long-press. Use the mobile_app notify SERVICES (which
-  # support action buttons), not the plain notify entities. Empty = mobile disabled.
-  # Example: ["notify.mobile_app_jasons_iphone", "notify.mobile_app_melissas_iphone"]
-  mobile_push_services: []
+  # support action buttons), not the plain notify entities. Unset = mobile disabled.
+  # The value is read from the .env (HABOSS_MOBILE_PUSH_SERVICE=notify.mobile_app_x)
+  # so it survives config rewrites; add more entries below to push to extra devices.
+  mobile_push_services:
+    - "${HABOSS_MOBILE_PUSH_SERVICE}"
 
   # Home Assistant notification service
   ha_service: "persistent_notification.create"
