@@ -146,6 +146,42 @@ def test_load_config_env_substitution(tmp_path):
         assert config.home_assistant.instances[0].token == "env_token"
 
 
+def _mobile_push_config(tmp_path):
+    """Write a config whose mobile_push_services references ${HABOSS_MOBILE_PUSH_SERVICE}."""
+    config_file = tmp_path / "config.yaml"
+    config_data = {
+        "home_assistant": {"url": "http://test:8123", "token": "tok"},
+        "notifications": {"mobile_push_services": ["${HABOSS_MOBILE_PUSH_SERVICE}"]},
+    }
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f)
+    return config_file
+
+
+def test_mobile_push_service_from_env(tmp_path):
+    """A set env var is substituted into mobile_push_services."""
+    config_file = _mobile_push_config(tmp_path)
+    with patch.dict(os.environ, {"HABOSS_MOBILE_PUSH_SERVICE": "notify.mobile_app_phone"}):
+        config = load_config(config_file)
+    assert config.notifications.mobile_push_services == ["notify.mobile_app_phone"]
+
+
+def test_mobile_push_service_unset_placeholder_dropped(tmp_path, monkeypatch):
+    """An unset env var leaves the ${...} placeholder, which is dropped -> mobile off."""
+    monkeypatch.delenv("HABOSS_MOBILE_PUSH_SERVICE", raising=False)
+    config_file = _mobile_push_config(tmp_path)
+    config = load_config(config_file)
+    assert config.notifications.mobile_push_services == []
+
+
+def test_mobile_push_service_empty_env_dropped(tmp_path):
+    """An empty env value is dropped too -> mobile off, no bogus notify. call."""
+    config_file = _mobile_push_config(tmp_path)
+    with patch.dict(os.environ, {"HABOSS_MOBILE_PUSH_SERVICE": ""}):
+        config = load_config(config_file)
+    assert config.notifications.mobile_push_services == []
+
+
 def test_load_config_file_not_found():
     """Test error when config file doesn't exist."""
     with pytest.raises(ConfigurationError, match="not found"):

@@ -67,12 +67,13 @@ notifications:
   # Home Assistant notification service (persistent notifications in the UI)
   ha_service: "persistent_notification.create"
 
-  # Mobile push via the HA Companion app. Add your notify service(s) here.
-  # Must use the mobile_app variant (e.g. notify.mobile_app_your_phone) to
-  # support actionable "Acknowledge" button on long-press.
-  mobile_push_services: []
-  # Example:
-  #   - "notify.mobile_app_jason_s_iphone"
+  # Mobile push via the HA Companion app. Must use the mobile_app variant
+  # (e.g. notify.mobile_app_your_phone) to support the actionable "Acknowledge"
+  # button on long-press. The actual service is read from the deployment-local
+  # .env (HABOSS_MOBILE_PUSH_SERVICE=notify.mobile_app_your_phone) so a config
+  # rewrite can't wipe it; if the env var is unset, mobile push is disabled.
+  mobile_push_services:
+    - "${HABOSS_MOBILE_PUSH_SERVICE}"
 
 # Operational mode: production | dry_run | testing
 # - production: sends real notifications

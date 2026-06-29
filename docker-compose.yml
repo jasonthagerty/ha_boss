@@ -13,6 +13,9 @@ services:
       # - HA_TOKEN=${HA_TOKEN:?HA_TOKEN is required}
       - CONFIG_PATH=/app/config/config.yaml
       - TZ=${TZ:-UTC}
+      # Mobile push target, substituted into config.yaml's mobile_push_services.
+      # Set in .env; empty = mobile push disabled.
+      - HABOSS_MOBILE_PUSH_SERVICE=${HABOSS_MOBILE_PUSH_SERVICE:-}
 
     # Volume mounts for persistence
     volumes:
