@@ -333,13 +333,14 @@ class HomeAssistantClient:
             list[dict[str, Any]] | None, await self._request("POST", endpoint, data=service_data)
         )
 
-    async def get_services(self) -> dict[str, Any]:
+    async def get_services(self) -> list[dict[str, Any]]:
         """Get all available services.
 
         Returns:
-            Dictionary of services by domain
+            List of ``{"domain": ..., "services": {name: ...}}`` entries,
+            one per service domain (the shape ``/api/services`` returns).
         """
-        return cast(dict[str, Any], await self._request("GET", "/api/services"))
+        return cast(list[dict[str, Any]], await self._request("GET", "/api/services"))
 
     async def get_history(
         self,

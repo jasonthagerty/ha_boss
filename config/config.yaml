@@ -29,9 +29,8 @@ monitoring:
   # Entities for which "unavailable" is their normal powered-off state (e.g. TVs).
   # Matching entities are never flagged, and a turn_off that leaves them unavailable
   # is treated as success by the action verifier.
-  unavailable_ok: []
-  # Example:
-  #   - "media_player.lg_webos_tv_*"
+  unavailable_ok:
+    - "media_player.lg_webos_tv_oled65c8pua"
 
   # Auto-discovery: scope monitoring to entities used in automations/scenes/scripts.
   # Leave include: [] empty (discovery handles scoping automatically).
@@ -50,13 +49,13 @@ monitoring:
   # Action verification: warn if a service call doesn't take effect within delay_seconds.
   # Useful for catching unresponsive lights/switches.
   action_verification:
-    enabled: false
+    enabled: true
     delay_seconds: 30
 
   # Out-of-scope audit: periodic digest of unavailable entities outside your monitored set.
   # Surfaces broken integrations (Plex, PSN, OctoPrint) without spamming alerts for them.
   out_of_scope_audit:
-    enabled: false
+    enabled: true
     interval_seconds: 86400   # Once per day
 
 notifications:
@@ -74,6 +73,15 @@ notifications:
   # rewrite can't wipe it; if the env var is unset, mobile push is disabled.
   mobile_push_services:
     - "${HABOSS_MOBILE_PUSH_SERVICE}"
+
+# Dead-man's switch: HA Boss stamps this input_datetime helper every
+# interval_seconds; a Home Assistant automation alerts when the stamp goes
+# stale, so HA itself notices a dead/hung HA Boss. Requires the helper to
+# exist in HA (input_datetime.ha_boss_heartbeat).
+heartbeat:
+  enabled: true
+  entity_id: "input_datetime.ha_boss_heartbeat"
+  interval_seconds: 300  # 5 minutes; HA-side automation alerts after 15 min stale
 
 # Operational mode: production | dry_run | testing
 # - production: sends real notifications

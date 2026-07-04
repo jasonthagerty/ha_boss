@@ -135,6 +135,16 @@ notifications:
   #   from: "haboss@example.com"
   #   to: "your-email@gmail.com"
 
+# Dead-man's switch: when enabled, HA Boss stamps the input_datetime helper
+# below every interval_seconds. Pair it with a Home Assistant automation that
+# alerts when the stamp goes stale (e.g. no beat for 3x the interval), so HA
+# itself notices a dead/hung HA Boss. Create the helper in HA first
+# (Settings -> Devices & Services -> Helpers -> Date and/or time).
+heartbeat:
+  enabled: false
+  entity_id: "input_datetime.ha_boss_heartbeat"
+  interval_seconds: 300
+
 # Operational mode
 # - production: Full auto-healing enabled
 # - dry_run: Log actions but don't execute

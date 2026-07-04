@@ -173,6 +173,21 @@ class HABossService:
         )
         logger.info(f"[{instance_id}] ✓ Notification manager initialized")
 
+        # 2b. Startup self-check: validate our own alerting pipeline against the
+        # live instance (mobile push configured? notify services exist? heartbeat
+        # target present?). Non-fatal — problems are notified, not raised.
+        try:
+            from ha_boss.monitoring.self_check import run_self_check
+
+            await run_self_check(
+                config=self.config,
+                ha_client=self.ha_clients[instance_id],
+                notification_manager=self.notification_managers[instance_id],
+                instance_id=instance_id,
+            )
+        except Exception as e:
+            logger.warning(f"[{instance_id}] Startup self-check failed to run: {e}")
+
         # 3. Discover integrations
         logger.info(f"[{instance_id}] Discovering integrations...")
         self.integration_discoveries[instance_id] = IntegrationDiscovery(
@@ -488,6 +503,17 @@ class HABossService:
                 task.set_name(f"periodic_classifier_refresh_{instance_id}")
                 self._tasks.append(task)
 
+            # Dead-man's-switch heartbeat (if enabled)
+            if self.config.heartbeat.enabled:
+                task = asyncio.create_task(self._periodic_heartbeat(instance_id))
+                task.set_name(f"periodic_heartbeat_{instance_id}")
+                self._tasks.append(task)
+
+            # Daily re-run of the notification-pipeline self-check
+            task = asyncio.create_task(self._periodic_self_check(instance_id))
+            task.set_name(f"periodic_self_check_{instance_id}")
+            self._tasks.append(task)
+
         # Periodic DB cleanup (once per day, enforces retention_days)
         if self.config.database.retention_days > 0:
             task = asyncio.create_task(self._periodic_db_cleanup())
@@ -631,6 +657,73 @@ class HABossService:
                 break
             except Exception as e:
                 logger.error(f"Error during DB cleanup: {e}", exc_info=True)
+
+    async def _periodic_heartbeat(self, instance_id: str) -> None:
+        """Stamp the heartbeat helper in HA so the dead-man's-switch automation
+        can alert when HA Boss stops beating.
+
+        Beats immediately (so a restart clears staleness fast), then every
+        ``heartbeat.interval_seconds``. Failures are logged and retried on the
+        next beat.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+        """
+        from ha_boss.monitoring.heartbeat import send_heartbeat
+
+        heartbeat = self.config.heartbeat
+
+        while not self._shutdown_event.is_set():
+            try:
+                ha_client = self.ha_clients.get(instance_id)
+                if ha_client:
+                    await send_heartbeat(ha_client, heartbeat.entity_id)
+                    logger.debug(f"[{instance_id}] Heartbeat sent to {heartbeat.entity_id}")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"[{instance_id}] Heartbeat failed: {e}")
+
+            try:
+                await asyncio.sleep(heartbeat.interval_seconds)
+            except asyncio.CancelledError:
+                break
+
+    async def _periodic_self_check(self, instance_id: str) -> None:
+        """Re-run the notification-pipeline self-check once a day.
+
+        Sleeps first: the startup self-check already ran during initialization.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+        """
+        from ha_boss.monitoring.self_check import run_self_check
+
+        _ONE_DAY = 86400
+
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(_ONE_DAY)
+            except asyncio.CancelledError:
+                break
+
+            if self._shutdown_event.is_set():
+                break
+
+            try:
+                ha_client = self.ha_clients.get(instance_id)
+                notification_manager = self.notification_managers.get(instance_id)
+                if ha_client and notification_manager:
+                    await run_self_check(
+                        config=self.config,
+                        ha_client=ha_client,
+                        notification_manager=notification_manager,
+                        instance_id=instance_id,
+                    )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[{instance_id}] Error in periodic self-check: {e}", exc_info=True)
 
     async def _on_websocket_state_changed(self, instance_id: str, event: dict[str, Any]) -> None:
         """Handle state_changed events from WebSocket.
