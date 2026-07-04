@@ -182,6 +182,29 @@ def test_mobile_push_service_empty_env_dropped(tmp_path):
     assert config.notifications.mobile_push_services == []
 
 
+def test_heartbeat_defaults():
+    """Heartbeat is off by default with sensible target/interval."""
+    config = Config(home_assistant={"url": "http://test:8123", "token": "tok"})
+    assert config.heartbeat.enabled is False
+    assert config.heartbeat.entity_id == "input_datetime.ha_boss_heartbeat"
+    assert config.heartbeat.interval_seconds == 300
+
+
+def test_heartbeat_from_yaml(tmp_path):
+    """Heartbeat section loads from config.yaml."""
+    config_file = tmp_path / "config.yaml"
+    config_data = {
+        "home_assistant": {"url": "http://test:8123", "token": "tok"},
+        "heartbeat": {"enabled": True, "interval_seconds": 60},
+    }
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f)
+
+    config = load_config(config_file)
+    assert config.heartbeat.enabled is True
+    assert config.heartbeat.interval_seconds == 60
+
+
 def test_load_config_file_not_found():
     """Test error when config file doesn't exist."""
     with pytest.raises(ConfigurationError, match="not found"):

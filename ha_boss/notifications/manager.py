@@ -67,6 +67,26 @@ class NotificationManager:
             ),
         }
 
+        # State the channel map loudly: a silently-disabled channel (e.g. mobile
+        # push emptied by a config rewrite) has historically gone unnoticed until
+        # an alert was missed.
+        mobile_state = (
+            f"on ({', '.join(config.notifications.mobile_push_services)})"
+            if self._channels[NotificationChannel.MOBILE]
+            else "OFF"
+        )
+        ha_state = "on" if self._channels[NotificationChannel.HOME_ASSISTANT] else "OFF"
+        logger.info(f"Notification channels: HA={ha_state}, CLI=on, MOBILE={mobile_state}")
+        if (
+            not self._channels[NotificationChannel.MOBILE]
+            and config.notifications.on_issue_detected
+        ):
+            logger.warning(
+                "Mobile push is DISABLED (no mobile_push_services configured) — issue "
+                "alerts will only appear as HA persistent notifications. If unintended, "
+                "set HABOSS_MOBILE_PUSH_SERVICE in .env and restart."
+            )
+
     def enable_channel(self, channel: NotificationChannel) -> None:
         """Enable a notification channel.
 

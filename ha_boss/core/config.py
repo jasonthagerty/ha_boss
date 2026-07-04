@@ -510,6 +510,30 @@ class RESTConfig(BaseSettings):
     )
 
 
+class HeartbeatConfig(BaseSettings):
+    """Dead-man's-switch heartbeat configuration.
+
+    When enabled, HA Boss periodically stamps an ``input_datetime`` helper in
+    Home Assistant. A Home Assistant automation alerts when the stamp goes
+    stale, so HA itself watches the watchdog — catching a dead container,
+    crash loop, or hung process that HA Boss cannot report on its own.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Send a periodic heartbeat timestamp to Home Assistant",
+    )
+    entity_id: str = Field(
+        default="input_datetime.ha_boss_heartbeat",
+        description="input_datetime helper to stamp with each heartbeat",
+    )
+    interval_seconds: int = Field(
+        default=300,
+        description="Seconds between heartbeats",
+        ge=30,
+    )
+
+
 class Config(BaseSettings):
     """Main HA Boss configuration."""
 
@@ -528,6 +552,7 @@ class Config(BaseSettings):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     websocket: WebSocketConfig = Field(default_factory=WebSocketConfig)
     rest: RESTConfig = Field(default_factory=RESTConfig)
+    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
     mode: Literal["production", "dry_run", "testing"] = Field(
         default="production",

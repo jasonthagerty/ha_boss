@@ -13,6 +13,7 @@ class NotificationType(StrEnum):
     ISSUE_DETECTED = "issue_detected"
     OUT_OF_SCOPE_AUDIT = "out_of_scope_audit"
     ACTION_VERIFICATION_FAILED = "action_verification_failed"
+    SELF_CHECK = "self_check"
 
 
 class NotificationSeverity(StrEnum):
@@ -357,6 +358,37 @@ class ActionVerificationFailedTemplate(NotificationTemplate):
         return title, message
 
 
+class SelfCheckTemplate(NotificationTemplate):
+    """Template for self-check notifications.
+
+    Fired when the startup/periodic self-check finds problems in HA Boss's own
+    alerting pipeline (e.g. mobile push unconfigured, notify service missing).
+    """
+
+    @staticmethod
+    def render(context: NotificationContext) -> tuple[str, str]:
+        """Render self-check notification.
+
+        Expects ``context.extra["problems"]`` to be a list of human-readable
+        problem descriptions.
+
+        Args:
+            context: Notification context
+
+        Returns:
+            Tuple of (title, message)
+        """
+        title = f"{severity_emoji(context.severity)} HA Boss self-check warning".strip()
+
+        problems = (context.extra or {}).get("problems", [])
+        lines = ["**HA Boss's own alerting pipeline needs attention:**", ""]
+        lines.extend(f"- {problem}" for problem in problems)
+        lines.extend(["", "Until this is fixed, some alerts may not reach you."])
+
+        message = "\n".join(lines)
+        return title, message
+
+
 class TemplateRegistry:
     """Registry for mapping notification types to templates."""
 
@@ -365,6 +397,7 @@ class TemplateRegistry:
         NotificationType.ISSUE_DETECTED: IssueDetectedTemplate,
         NotificationType.OUT_OF_SCOPE_AUDIT: OutOfScopeAuditTemplate,
         NotificationType.ACTION_VERIFICATION_FAILED: ActionVerificationFailedTemplate,
+        NotificationType.SELF_CHECK: SelfCheckTemplate,
     }
 
     @classmethod

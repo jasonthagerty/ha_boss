@@ -162,6 +162,13 @@ notifications:
   mobile_push_services:
     - "${HABOSS_MOBILE_PUSH_SERVICE}"
 
+# Dead-man's switch: stamp an input_datetime helper in HA so an HA automation
+# can alert if HA Boss stops beating. Create the helper in HA before enabling.
+heartbeat:
+  enabled: false
+  entity_id: "input_datetime.ha_boss_heartbeat"
+  interval_seconds: 300
+
 # production = real notifications; dry_run = log only
 mode: production
 
