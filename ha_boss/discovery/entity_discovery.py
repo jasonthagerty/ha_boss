@@ -55,8 +55,8 @@ class EntityExtractor:
             "action": [],
         }
 
-        # Extract from triggers
-        triggers = attrs.get("trigger", [])
+        # Extract from triggers (modern configs use plural "triggers", legacy "trigger")
+        triggers = attrs.get("triggers", attrs.get("trigger", []))
         if isinstance(triggers, dict):
             triggers = [triggers]
         elif not isinstance(triggers, list):
@@ -66,13 +66,13 @@ class EntityExtractor:
             if not isinstance(trigger, dict):
                 continue
             entity_ids = EntityExtractor._extract_entity_ids_recursive(trigger)
-            platform = trigger.get("platform", "unknown")
+            platform = trigger.get("platform") or trigger.get("trigger") or "unknown"
             for entity_id in entity_ids:
                 context = {"platform": platform, "config": trigger}
                 result["trigger"].append((entity_id, context))
 
-        # Extract from conditions
-        conditions = attrs.get("condition", [])
+        # Extract from conditions (modern "conditions", legacy "condition")
+        conditions = attrs.get("conditions", attrs.get("condition", []))
         if isinstance(conditions, dict):
             conditions = [conditions]
         elif not isinstance(conditions, list):
@@ -87,8 +87,9 @@ class EntityExtractor:
                 context = {"condition_type": condition_type, "config": condition}
                 result["condition"].append((entity_id, context))
 
-        # Extract from actions
-        actions = attrs.get("action", [])
+        # Extract from actions (modern "actions", legacy "action"; steps name their
+        # service under "action" in modern configs, "service" in legacy ones)
+        actions = attrs.get("actions", attrs.get("action", []))
         if isinstance(actions, dict):
             actions = [actions]
         elif not isinstance(actions, list):
@@ -98,7 +99,7 @@ class EntityExtractor:
             if not isinstance(action, dict):
                 continue
             entity_ids = EntityExtractor._extract_entity_ids_recursive(action)
-            service = action.get("service", "unknown")
+            service = action.get("service") or action.get("action") or "unknown"
             for entity_id in entity_ids:
                 context = {"service": service, "step": idx, "config": action}
                 result["action"].append((entity_id, context))
@@ -354,8 +355,23 @@ class EntityDiscoveryService:
         attrs = auto_state.get("attributes", {})
         state = auto_state.get("state", "off")
 
+        # State attributes don't carry triggers/conditions/actions — fetch the real
+        # config via the REST config API using the automation's config id. Fall back
+        # to attributes (empty extraction) if the config can't be fetched.
+        config: dict[str, Any] = attrs
+        config_id = attrs.get("id")
+        if config_id:
+            try:
+                config = await self.ha_client.get_automation_config(str(config_id))
+            except Exception as e:
+                logger.warning(f"Could not fetch config for {entity_id} (id={config_id}): {e}")
+        else:
+            logger.warning(
+                f"{entity_id} has no 'id' attribute; cannot fetch config for entity extraction"
+            )
+
         # Extract entity references
-        entity_refs = EntityExtractor.extract_from_automation(attrs)
+        entity_refs = EntityExtractor.extract_from_automation(config)
 
         instance_id = self.ha_client.instance_id
 
@@ -369,14 +385,18 @@ class EntityDiscoveryService:
             )
             existing = result.scalar_one_or_none()
 
+            trigger_config = config.get("triggers", config.get("trigger"))
+            condition_config = config.get("conditions", config.get("condition"))
+            action_config = config.get("actions", config.get("action"))
+
             if existing:
                 # Update existing record
                 existing.friendly_name = attrs.get("friendly_name")
                 existing.state = state
                 existing.mode = attrs.get("mode")
-                existing.trigger_config = attrs.get("trigger")
-                existing.condition_config = attrs.get("condition")
-                existing.action_config = attrs.get("action")
+                existing.trigger_config = trigger_config
+                existing.condition_config = condition_config
+                existing.action_config = action_config
                 existing.last_seen = datetime.now(UTC)
             else:
                 # Insert new record
@@ -386,9 +406,9 @@ class EntityDiscoveryService:
                     friendly_name=attrs.get("friendly_name"),
                     state=state,
                     mode=attrs.get("mode"),
-                    trigger_config=attrs.get("trigger"),
-                    condition_config=attrs.get("condition"),
-                    action_config=attrs.get("action"),
+                    trigger_config=trigger_config,
+                    condition_config=condition_config,
+                    action_config=action_config,
                     discovered_at=datetime.now(UTC),
                     last_seen=datetime.now(UTC),
                 )
@@ -529,6 +549,20 @@ class EntityDiscoveryService:
 
         logger.debug(f"Processing {len(scripts)} scripts")
 
+        # A script's config-store object_id is its registry unique_id, which can
+        # differ from the entity_id suffix after a registry rename. Build the map
+        # once per refresh so renamed scripts still resolve to their config.
+        object_id_map: dict[str, str] = {}
+        try:
+            registry = await self.ha_client.get_entity_registry()
+            object_id_map = {
+                entry["entity_id"]: entry["unique_id"]
+                for entry in registry
+                if entry.get("entity_id", "").startswith("script.") and entry.get("unique_id")
+            }
+        except Exception as e:
+            logger.warning(f"Could not fetch entity registry for script object_ids: {e}")
+
         # Clear existing script relationships
         async with self.database.async_session() as session:
             await session.execute(delete(ScriptEntity))
@@ -536,15 +570,19 @@ class EntityDiscoveryService:
 
         # Process each script
         for script_state in scripts:
-            await self._process_script(script_state)
+            await self._process_script(script_state, object_id_map)
 
         return len(scripts)
 
-    async def _process_script(self, script_state: dict[str, Any]) -> None:
+    async def _process_script(
+        self, script_state: dict[str, Any], object_id_map: dict[str, str] | None = None
+    ) -> None:
         """Process a single script and store in database.
 
         Args:
             script_state: Script state from Home Assistant
+            object_id_map: entity_id → config-store object_id (registry unique_id);
+                falls back to the entity_id suffix when absent
         """
         entity_id = script_state.get("entity_id", "")
         if not entity_id:
@@ -552,8 +590,21 @@ class EntityDiscoveryService:
 
         attrs = script_state.get("attributes", {})
 
+        # State attributes don't carry the sequence — fetch the real config via the
+        # REST config API using the script's object id. Fall back to attributes
+        # (empty extraction) if the config can't be fetched.
+        config: dict[str, Any] = attrs
+        object_id = (object_id_map or {}).get(entity_id) or (
+            entity_id.split(".", 1)[1] if "." in entity_id else ""
+        )
+        if object_id:
+            try:
+                config = await self.ha_client.get_script_config(object_id)
+            except Exception as e:
+                logger.warning(f"Could not fetch config for {entity_id}: {e}")
+
         # Extract entity references
-        entity_refs = EntityExtractor.extract_from_script(attrs)
+        entity_refs = EntityExtractor.extract_from_script(config)
 
         instance_id = self.ha_client.instance_id
 
@@ -571,7 +622,7 @@ class EntityDiscoveryService:
                 # Update existing record
                 existing.friendly_name = attrs.get("friendly_name")
                 existing.mode = attrs.get("mode")
-                existing.sequence_config = attrs.get("sequence")
+                existing.sequence_config = config.get("sequence")
                 existing.last_seen = datetime.now(UTC)
             else:
                 # Insert new record
@@ -580,7 +631,7 @@ class EntityDiscoveryService:
                     entity_id=entity_id,
                     friendly_name=attrs.get("friendly_name"),
                     mode=attrs.get("mode"),
-                    sequence_config=attrs.get("sequence"),
+                    sequence_config=config.get("sequence"),
                     discovered_at=datetime.now(UTC),
                     last_seen=datetime.now(UTC),
                 )

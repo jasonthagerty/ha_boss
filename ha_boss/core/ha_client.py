@@ -173,6 +173,38 @@ class HomeAssistantClient:
         """
         return cast(list[dict[str, Any]], await self._request("GET", "/api/states"))
 
+    async def get_automation_config(self, automation_id: str) -> dict[str, Any]:
+        """Get an automation's full configuration by its config id.
+
+        Automation state attributes do not include triggers/conditions/actions;
+        this endpoint returns the stored configuration (modern plural keys:
+        ``triggers``/``conditions``/``actions``).
+
+        Args:
+            automation_id: The automation's ``id`` attribute (config id, not entity_id)
+
+        Returns:
+            Full automation configuration dictionary
+        """
+        return cast(
+            dict[str, Any],
+            await self._request("GET", f"/api/config/automation/config/{automation_id}"),
+        )
+
+    async def get_script_config(self, object_id: str) -> dict[str, Any]:
+        """Get a script's full configuration (including ``sequence``) by object id.
+
+        Args:
+            object_id: The script's object id (entity_id without the ``script.`` prefix)
+
+        Returns:
+            Full script configuration dictionary
+        """
+        return cast(
+            dict[str, Any],
+            await self._request("GET", f"/api/config/script/config/{object_id}"),
+        )
+
     async def _ws_command(self, command: dict[str, Any]) -> Any:
         """Run a single WebSocket request/response command.
 

@@ -345,3 +345,48 @@ class TestEntityExtractorEdgeCases:
         # Within each type, check for presence (set will handle duplicates)
         assert "sensor.temp" in set(trigger_entities)
         assert "sensor.temp" in set(action_entities)
+
+
+class TestEntityExtractorModernConfig:
+    """Tests for modern (2024.10+) automation config shapes from the REST config API."""
+
+    def test_extract_modern_plural_keys(self) -> None:
+        """Modern configs use triggers/conditions/actions plural keys."""
+        config = {
+            "triggers": [{"trigger": "state", "entity_id": "binary_sensor.motion", "to": "on"}],
+            "conditions": [
+                {"condition": "state", "entity_id": "sun.sun", "state": "below_horizon"}
+            ],
+            "actions": [{"action": "light.turn_on", "target": {"entity_id": "light.porch"}}],
+        }
+
+        result = EntityExtractor.extract_from_automation(config)
+
+        assert [e for e, _ in result["trigger"]] == ["binary_sensor.motion"]
+        assert [e for e, _ in result["condition"]] == ["sun.sun"]
+        assert [e for e, _ in result["action"]] == ["light.porch"]
+
+    def test_modern_context_labels(self) -> None:
+        """Platform label comes from 'trigger' key; service label from 'action' key."""
+        config = {
+            "triggers": [{"trigger": "state", "entity_id": "binary_sensor.motion"}],
+            "actions": [{"action": "light.turn_on", "target": {"entity_id": "light.porch"}}],
+        }
+
+        result = EntityExtractor.extract_from_automation(config)
+
+        _, trigger_ctx = result["trigger"][0]
+        assert trigger_ctx["platform"] == "state"
+        _, action_ctx = result["action"][0]
+        assert action_ctx["service"] == "light.turn_on"
+
+    def test_plural_keys_win_over_singular(self) -> None:
+        """If both plural and singular keys exist, plural is used."""
+        config = {
+            "triggers": [{"trigger": "state", "entity_id": "sensor.modern"}],
+            "trigger": [{"platform": "state", "entity_id": "sensor.legacy"}],
+        }
+
+        result = EntityExtractor.extract_from_automation(config)
+
+        assert [e for e, _ in result["trigger"]] == ["sensor.modern"]
