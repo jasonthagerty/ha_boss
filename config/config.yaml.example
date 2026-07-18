@@ -145,6 +145,15 @@ heartbeat:
   entity_id: "input_datetime.ha_boss_heartbeat"
   interval_seconds: 300
 
+# Deep self-test: end-to-end verification (WS, REST, discovery integrity,
+# notification pipeline) at startup, on HA version change (i.e. after an HA
+# update), and on demand via the request input_boolean. Create both helpers
+# in HA before enabling.
+self_test:
+  enabled: false
+  request_entity_id: "input_boolean.ha_boss_selftest_request"
+  result_entity_id: "input_text.ha_boss_selftest_result"
+
 # Operational mode
 # - production: Full auto-healing enabled
 # - dry_run: Log actions but don't execute

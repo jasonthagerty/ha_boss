@@ -68,6 +68,7 @@ class HABossService:
         self.escalation_managers: dict[str, NotificationEscalator] = {}
         self.out_of_scope_auditors: dict[str, Any] = {}  # OutOfScopeAuditor
         self.action_verifiers: dict[str, Any] = {}  # ActionVerifier
+        self.deep_selftests: dict[str, Any] = {}  # DeepSelfTest
 
         # Background tasks
         self._tasks: list[asyncio.Task[None]] = []
@@ -368,6 +369,24 @@ class HABossService:
             if self.config.notifications.mobile_push_services
             else None
         )
+        # Deep self-test (if enabled) is created before the WebSocket client so the
+        # on_connected callback (fired during start()) finds it; the client
+        # reference is attached below, before start().
+        on_connected = None
+        if self.config.self_test.enabled:
+            from ha_boss.monitoring.deep_selftest import DeepSelfTest
+
+            self.deep_selftests[instance_id] = DeepSelfTest(
+                config=self.config,
+                ha_client=self.ha_clients[instance_id],
+                database=self.database,
+                notification_manager=self.notification_managers[instance_id],
+                websocket_client=None,
+                instance_id=instance_id,
+            )
+            on_connected = lambda ha_version: self._on_websocket_connected(  # noqa: E731
+                instance_id, ha_version
+            )
         self.websocket_clients[instance_id] = WebSocketClient(
             instance=instance,
             config=self.config,
@@ -378,7 +397,11 @@ class HABossService:
             ),
             on_notification_action=on_notification_action,
             on_connect_lost=lambda: self._on_connect_lost(instance_id),
+            on_connected=on_connected,
         )
+        if instance_id in self.deep_selftests:
+            self.deep_selftests[instance_id].websocket_client = self.websocket_clients[instance_id]
+            logger.info(f"[{instance_id}] ✓ Deep self-test initialized")
         await self.websocket_clients[instance_id].start()
 
         logger.info(f"[{instance_id}] ✓ WebSocket connected and subscribed")
@@ -448,6 +471,13 @@ class HABossService:
             # 3. Start background tasks
             logger.info("Starting background tasks...")
             self._start_background_tasks()
+
+            # 4. Startup deep self-test (if enabled) — after everything is wired,
+            # so the discovery/notification checks see the real component state.
+            for instance_id in self.deep_selftests:
+                task = asyncio.create_task(self._run_deep_selftest(instance_id, "startup"))
+                task.set_name(f"deep_selftest_startup_{instance_id}")
+                self._tasks.append(task)
 
             self.state = ServiceState.RUNNING
             logger.info("✅ HA Boss service started successfully")
@@ -733,6 +763,18 @@ class HABossService:
             event: WebSocket state_changed event data containing entity_id, new_state, old_state
         """
         try:
+            # On-demand deep self-test: request helper flipped off → on in HA
+            deep_selftest = self.deep_selftests.get(instance_id)
+            if (
+                deep_selftest is not None
+                and event.get("entity_id") == self.config.self_test.request_entity_id
+                and (event.get("new_state") or {}).get("state") == "on"
+                and (event.get("old_state") or {}).get("state") != "on"
+            ):
+                task = asyncio.create_task(self._run_deep_selftest(instance_id, "switch"))
+                task.set_name(f"deep_selftest_switch_{instance_id}")
+                self._tasks.append(task)
+
             # Update state tracker with full event data
             # event structure: {entity_id: "...", new_state: {...}, old_state: {...}}
             state_tracker = self.state_trackers.get(instance_id)
@@ -743,6 +785,44 @@ class HABossService:
             logger.error(
                 f"[{instance_id}] Error handling WebSocket state change: {e}", exc_info=True
             )
+
+    async def _on_websocket_connected(self, instance_id: str, ha_version: str | None) -> None:
+        """Handle a successful WebSocket (re)connection.
+
+        Persists the observed HA version and runs the deep self-test when it
+        changed — a reconnect follows every Home Assistant restart, so this is
+        where an HA update first becomes visible. Scheduled as a background task
+        so the connect path is never blocked by a test run.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+            ha_version: HA version reported by the auth handshake
+        """
+        if instance_id not in self.deep_selftests:
+            return
+        task = asyncio.create_task(self._check_ha_version_change(instance_id, ha_version))
+        task.set_name(f"deep_selftest_version_check_{instance_id}")
+        self._tasks.append(task)
+
+    async def _run_deep_selftest(self, instance_id: str, trigger: str) -> None:
+        """Run the deep self-test, containing any failure to a log line."""
+        deep_selftest = self.deep_selftests.get(instance_id)
+        if deep_selftest is None:
+            return
+        try:
+            await deep_selftest.run(trigger=trigger)
+        except Exception as e:
+            logger.error(f"[{instance_id}] Deep self-test crashed: {e}", exc_info=True)
+
+    async def _check_ha_version_change(self, instance_id: str, ha_version: str | None) -> None:
+        """Persist the HA version and self-test on change, containing failures."""
+        deep_selftest = self.deep_selftests.get(instance_id)
+        if deep_selftest is None:
+            return
+        try:
+            await deep_selftest.check_version_change(ha_version)
+        except Exception as e:
+            logger.error(f"[{instance_id}] HA version check crashed: {e}", exc_info=True)
 
     async def _on_connect_lost(self, instance_id: str) -> None:
         """Called once when the WebSocket has been disconnected for an extended period.

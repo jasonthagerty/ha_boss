@@ -534,6 +534,33 @@ class HeartbeatConfig(BaseSettings):
     )
 
 
+class SelfTestConfig(BaseSettings):
+    """Deep self-test configuration.
+
+    The deep self-test validates HA Boss end-to-end against the live instance:
+    WebSocket connectivity, REST reachability, discovery integrity (each source
+    that found objects must also have extracted entity references), monitored-set
+    sanity, and the notification pipeline. It runs at startup, whenever the
+    Home Assistant version changes (i.e. after an HA update), and on demand when
+    an ``input_boolean`` request helper in HA is turned on. The verdict is
+    written to an ``input_text`` helper so HA-side automations can alert on a
+    failed or stale result.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable the deep self-test (startup, HA version change, on demand)",
+    )
+    request_entity_id: str = Field(
+        default="input_boolean.ha_boss_selftest_request",
+        description="input_boolean watched for on-demand self-test requests",
+    )
+    result_entity_id: str = Field(
+        default="input_text.ha_boss_selftest_result",
+        description="input_text helper the self-test verdict is written to",
+    )
+
+
 class Config(BaseSettings):
     """Main HA Boss configuration."""
 
@@ -553,6 +580,7 @@ class Config(BaseSettings):
     websocket: WebSocketConfig = Field(default_factory=WebSocketConfig)
     rest: RESTConfig = Field(default_factory=RESTConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    self_test: SelfTestConfig = Field(default_factory=SelfTestConfig)
 
     mode: Literal["production", "dry_run", "testing"] = Field(
         default="production",

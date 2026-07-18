@@ -38,6 +38,7 @@ class WebSocketClient:
         on_service_call: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
         on_notification_action: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
         on_connect_lost: Callable[[], Coroutine[Any, Any, None]] | None = None,
+        on_connected: Callable[[str | None], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         """Initialize WebSocket client.
 
@@ -56,6 +57,10 @@ class WebSocketClient:
             on_connect_lost: Optional async callback fired once when the connection has
                 been lost for longer than config.websocket.reconnect_notify_after_seconds.
                 Cleared on successful reconnect.
+            on_connected: Optional async callback fired after every successful
+                authentication (initial connect and each reconnect) with the HA
+                version reported in the auth handshake. Reconnects follow HA
+                restarts, so this is the natural hook for HA-update detection.
         """
         # Build WebSocket URL from HTTP URL
         ws_url = instance.url.replace("http://", "ws://").replace("https://", "wss://")
@@ -75,8 +80,10 @@ class WebSocketClient:
         self.on_service_call = on_service_call
         self.on_notification_action = on_notification_action
         self.on_connect_lost = on_connect_lost
+        self.on_connected = on_connected
 
         # State
+        self.ha_version: str | None = None  # From the last successful auth handshake
         self._ws: Any = None  # WebSocket connection
         self._message_id = 0
         self._running = False
@@ -120,9 +127,14 @@ class WebSocketClient:
                     f"Unexpected auth response: {auth_result.get('type')}"
                 )
 
-            logger.info(
-                f"WebSocket connected successfully (HA version: {auth_result.get('ha_version')})"
-            )
+            self.ha_version = auth_result.get("ha_version")
+            logger.info(f"WebSocket connected successfully (HA version: {self.ha_version})")
+
+            if self.on_connected:
+                try:
+                    await self.on_connected(self.ha_version)
+                except Exception as e:
+                    logger.error(f"Error in on_connected callback: {e}", exc_info=True)
 
         except (HomeAssistantAuthError, HomeAssistantConnectionError):
             # Re-raise our own exceptions without wrapping

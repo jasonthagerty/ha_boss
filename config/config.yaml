@@ -83,6 +83,16 @@ heartbeat:
   entity_id: "input_datetime.ha_boss_heartbeat"
   interval_seconds: 300  # 5 minutes; HA-side automation alerts after 15 min stale
 
+# Deep self-test: end-to-end verification (WS, REST, discovery integrity,
+# notification pipeline). Runs at startup, when the HA version changes (i.e.
+# after an HA update), and on demand when the request input_boolean is turned
+# on in HA. Verdict is written to the result input_text helper. Both helpers
+# must exist in HA.
+self_test:
+  enabled: true
+  request_entity_id: "input_boolean.ha_boss_selftest_request"
+  result_entity_id: "input_text.ha_boss_selftest_result"
+
 # Operational mode: production | dry_run | testing
 # - production: sends real notifications
 # - dry_run:    logs what would be sent, no real notifications
