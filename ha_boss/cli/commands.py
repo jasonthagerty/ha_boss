@@ -169,6 +169,14 @@ heartbeat:
   entity_id: "input_datetime.ha_boss_heartbeat"
   interval_seconds: 300
 
+# Deep self-test: end-to-end verification at startup, on HA version change,
+# and on demand via the request input_boolean. Create both helpers in HA
+# before enabling.
+self_test:
+  enabled: false
+  request_entity_id: "input_boolean.ha_boss_selftest_request"
+  result_entity_id: "input_text.ha_boss_selftest_result"
+
 # production = real notifications; dry_run = log only
 mode: production
 
