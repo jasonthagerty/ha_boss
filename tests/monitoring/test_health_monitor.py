@@ -589,3 +589,222 @@ class TestCreateHealthMonitor:
             )
 
             assert monitor.on_issue_detected == callback
+
+
+def _unavailable(entity_id: str = "sensor.test") -> EntityState:
+    """An entity in an unhealthy state, updated just now."""
+    return EntityState(
+        entity_id=entity_id,
+        state="unavailable",
+        last_updated=datetime.now(UTC),
+    )
+
+
+def _healthy(entity_id: str = "sensor.test") -> EntityState:
+    """An entity in a healthy state, updated just now."""
+    return EntityState(
+        entity_id=entity_id,
+        state="on",
+        last_updated=datetime.now(UTC),
+    )
+
+
+class TestCheckEntityState:
+    """The event-driven path must honour grace, dedup, and persistence."""
+
+    @pytest.mark.asyncio
+    async def test_does_not_report_inside_grace_period(self, health_monitor: HealthMonitor) -> None:
+        """A blip must not alert.
+
+        Regression: state updates used to run check_entity_now(), which bypasses
+        the grace period — a Home Assistant restart alerted on every entity.
+        """
+        reported: list[HealthIssue] = []
+
+        async def on_issue(issue: HealthIssue) -> None:
+            reported.append(issue)
+
+        health_monitor.on_issue_detected = on_issue
+
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            # Several updates in quick succession, all well inside the 300s grace
+            for _ in range(5):
+                await health_monitor.check_entity_state(_unavailable())
+
+        assert reported == []
+
+    @pytest.mark.asyncio
+    async def test_reports_once_after_grace_elapses(self, health_monitor: HealthMonitor) -> None:
+        """After grace, report exactly once no matter how many updates arrive."""
+        reported: list[HealthIssue] = []
+
+        async def on_issue(issue: HealthIssue) -> None:
+            reported.append(issue)
+
+        health_monitor.on_issue_detected = on_issue
+
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            await health_monitor.check_entity_state(_unavailable())
+            # Backdate first detection past the grace period
+            health_monitor._issue_tracker["sensor.test"] = (
+                "unavailable",
+                datetime.now(UTC) - timedelta(seconds=400),
+            )
+            for _ in range(5):
+                await health_monitor.check_entity_state(_unavailable())
+
+        assert len(reported) == 1
+        assert reported[0].issue_type == "unavailable"
+
+    @pytest.mark.asyncio
+    async def test_reported_issue_is_persisted(self, health_monitor: HealthMonitor) -> None:
+        """Every reported issue lands in health_events.
+
+        Regression: the bypass path never persisted, so the table stayed empty
+        and `haboss status` reported zero issues through a week of alerts.
+        """
+        with patch.object(
+            health_monitor, "_persist_health_event", new_callable=AsyncMock
+        ) as mock_persist:
+            await health_monitor.check_entity_state(_unavailable())
+            health_monitor._issue_tracker["sensor.test"] = (
+                "unavailable",
+                datetime.now(UTC) - timedelta(seconds=400),
+            )
+            await health_monitor.check_entity_state(_unavailable())
+
+        mock_persist.assert_awaited_once()
+        assert mock_persist.await_args.args[0].issue_type == "unavailable"
+
+    @pytest.mark.asyncio
+    async def test_skips_excluded_entities(self, health_monitor: HealthMonitor) -> None:
+        """Excluded entities never enter the pipeline."""
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            await health_monitor.check_entity_state(_unavailable("sensor.time_utc"))
+
+        assert health_monitor._issue_tracker == {}
+
+
+class TestRecoveryNotifiesService:
+    """Recovery has to reach the service or the alert never clears."""
+
+    @pytest.mark.asyncio
+    async def test_recovery_invokes_callback(self, health_monitor: HealthMonitor) -> None:
+        """Regression: recovery only persisted, so notifications stayed up forever."""
+        reported: list[HealthIssue] = []
+
+        async def on_issue(issue: HealthIssue) -> None:
+            reported.append(issue)
+
+        health_monitor.on_issue_detected = on_issue
+        health_monitor._issue_tracker["sensor.test"] = (
+            "unavailable",
+            datetime.now(UTC) - timedelta(seconds=400),
+        )
+        health_monitor._reported_issues.add("sensor.test")
+
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            await health_monitor.check_entity_state(_healthy())
+
+        assert [i.issue_type for i in reported] == ["recovered"]
+        assert "sensor.test" not in health_monitor._reported_issues
+
+    @pytest.mark.asyncio
+    async def test_recovery_inside_grace_stays_silent(self, health_monitor: HealthMonitor) -> None:
+        """An entity that never alerted has nothing to clear."""
+        reported: list[HealthIssue] = []
+
+        async def on_issue(issue: HealthIssue) -> None:
+            reported.append(issue)
+
+        health_monitor.on_issue_detected = on_issue
+        health_monitor._issue_tracker["sensor.test"] = ("unavailable", datetime.now(UTC))
+
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            await health_monitor.check_entity_state(_healthy())
+
+        assert reported == []
+
+    @pytest.mark.asyncio
+    async def test_recovery_callback_error_is_contained(
+        self, health_monitor: HealthMonitor
+    ) -> None:
+        """A failing consumer must not break the monitor loop."""
+
+        async def on_issue(issue: HealthIssue) -> None:
+            raise ValueError("consumer exploded")
+
+        health_monitor.on_issue_detected = on_issue
+        health_monitor._issue_tracker["sensor.test"] = ("unavailable", datetime.now(UTC))
+        health_monitor._reported_issues.add("sensor.test")
+
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            await health_monitor.check_entity_state(_healthy())  # must not raise
+
+
+class TestSettlingPeriod:
+    """After a reconnect, let reality re-settle before judging it."""
+
+    @pytest.mark.asyncio
+    async def test_no_reports_while_settling(self, health_monitor: HealthMonitor) -> None:
+        """The HA-restart storm: everything unavailable at once, right after connect."""
+        reported: list[HealthIssue] = []
+
+        async def on_issue(issue: HealthIssue) -> None:
+            reported.append(issue)
+
+        health_monitor.on_issue_detected = on_issue
+        # Entity was already past grace before the restart
+        health_monitor._issue_tracker["sensor.test"] = (
+            "unavailable",
+            datetime.now(UTC) - timedelta(seconds=400),
+        )
+        health_monitor.begin_settling_period(120)
+
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            await health_monitor.check_entity_state(_unavailable())
+
+        assert reported == []
+
+    @pytest.mark.asyncio
+    async def test_settling_restarts_the_grace_clock(self, health_monitor: HealthMonitor) -> None:
+        """Time spent unavailable during the settling window does not count."""
+        health_monitor._issue_tracker["sensor.test"] = (
+            "unavailable",
+            datetime.now(UTC) - timedelta(seconds=400),
+        )
+        health_monitor.begin_settling_period(120)
+
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            await health_monitor.check_entity_state(_unavailable())
+
+        _, first_detected = health_monitor._issue_tracker["sensor.test"]
+        assert (datetime.now(UTC) - first_detected).total_seconds() < 5
+
+    @pytest.mark.asyncio
+    async def test_reports_resume_after_settling(self, health_monitor: HealthMonitor) -> None:
+        """A genuinely dead device still alerts once the window closes."""
+        reported: list[HealthIssue] = []
+
+        async def on_issue(issue: HealthIssue) -> None:
+            reported.append(issue)
+
+        health_monitor.on_issue_detected = on_issue
+        health_monitor.begin_settling_period(120)
+        # Window has now closed, and the entity has been bad for longer than grace
+        health_monitor._settle_until = datetime.now(UTC) - timedelta(seconds=1)
+        health_monitor._issue_tracker["sensor.test"] = (
+            "unavailable",
+            datetime.now(UTC) - timedelta(seconds=400),
+        )
+
+        with patch.object(health_monitor, "_persist_health_event", new_callable=AsyncMock):
+            await health_monitor.check_entity_state(_unavailable())
+
+        assert [i.issue_type for i in reported] == ["unavailable"]
+
+    def test_zero_disables_settling(self, health_monitor: HealthMonitor) -> None:
+        """Opting out leaves reporting immediate."""
+        health_monitor.begin_settling_period(0)
+        assert health_monitor._settle_until is None
+        assert not health_monitor._is_settling(datetime.now(UTC))

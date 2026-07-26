@@ -146,6 +146,7 @@ home_assistant:
 monitoring:
   grace_period_seconds: 300   # Wait before alerting on unavailable entity (5 min)
   stale_threshold_seconds: 3600  # Alert if no state update within this window (1 hr)
+  reconnect_settle_seconds: 120  # Stay quiet this long after a reconnect (HA restart)
   exclude:
     - "sensor.time*"
     - "sensor.date*"

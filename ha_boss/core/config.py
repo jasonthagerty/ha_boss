@@ -305,6 +305,16 @@ class MonitoringConfig(BaseSettings):
         description="REST API snapshot interval for validation",
         ge=60,
     )
+    reconnect_settle_seconds: int = Field(
+        default=120,
+        description=(
+            "Suppress issue reporting for this long after each WebSocket connect. "
+            "A Home Assistant restart briefly blanks every entity; without a settling "
+            "window that reads as a house-wide outage and alerts on everything "
+            "(0 disables)"
+        ),
+        ge=0,
+    )
     health_check_interval_seconds: int = Field(
         default=60,
         description="Periodic health check interval",

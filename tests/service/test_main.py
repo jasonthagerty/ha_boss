@@ -7,7 +7,7 @@ Tests verify multi-instance service architecture with:
 """
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -265,27 +265,78 @@ class TestHABossServiceCallbacks:
     """Test service callback handlers."""
 
     @pytest.mark.asyncio
-    async def test_on_state_updated_triggers_health_check(self, service: HABossService) -> None:
-        """Test that state updates trigger health checks."""
-        # Set up mocks for default instance
+    async def test_on_state_updated_uses_stateful_pipeline(self, service: HABossService) -> None:
+        """State updates go through the grace-aware pipeline, not the bypass.
+
+        Regression: this used to call `check_entity_now`, which ignores the grace
+        period and the reported-issue dedup, so every state event alerted.
+        """
         service.ha_clients["default"] = AsyncMock()
 
         mock_health_monitor = AsyncMock()
-        mock_health_monitor.check_entity_now = AsyncMock(return_value=None)
         service.health_monitors["default"] = mock_health_monitor
 
-        # Create state
         new_state = EntityState(
             entity_id="sensor.test",
             state="unavailable",
             last_updated=datetime.now(UTC),
         )
 
-        # Call with instance_id parameter
         await service._on_state_updated("default", new_state, None)
 
-        # Verify health check was called
-        mock_health_monitor.check_entity_now.assert_called_once_with("sensor.test")
+        mock_health_monitor.check_entity_state.assert_awaited_once_with(new_state)
+        mock_health_monitor.check_entity_now.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_state_updated_does_not_notify_directly(self, service: HABossService) -> None:
+        """The state path must not raise alerts itself — the monitor's callback does.
+
+        Notifying here as well as from the pipeline would double every alert.
+        """
+        service.ha_clients["default"] = AsyncMock()
+        service.health_monitors["default"] = AsyncMock()
+        mock_escalation = AsyncMock()
+        service.escalation_managers["default"] = mock_escalation
+
+        new_state = EntityState(
+            entity_id="sensor.test",
+            state="unavailable",
+            last_updated=datetime.now(UTC),
+        )
+
+        await service._on_state_updated("default", new_state, None)
+
+        mock_escalation.notify_issue_detected.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_health_issue_dismisses_alert_on_recovery(
+        self, service: HABossService
+    ) -> None:
+        """Recovery clears the alert that was raised for the entity."""
+        service.config.notifications.on_issue_detected = True
+        mock_escalation = AsyncMock()
+        service.escalation_managers["default"] = mock_escalation
+
+        issue = HealthIssue(
+            entity_id="sensor.test",
+            issue_type="recovered",
+            detected_at=datetime.now(UTC),
+        )
+        await service._on_health_issue("default", issue)
+
+        mock_escalation.dismiss_issue_detected.assert_awaited_once_with("sensor.test")
+
+    @pytest.mark.asyncio
+    async def test_websocket_connect_opens_settling_window(self, service: HABossService) -> None:
+        """Every connect (startup or reconnect) quiets reporting while HA repopulates."""
+        service.config.monitoring.reconnect_settle_seconds = 120
+        mock_health_monitor = AsyncMock()
+        mock_health_monitor.begin_settling_period = MagicMock()
+        service.health_monitors["default"] = mock_health_monitor
+
+        await service._on_websocket_connected("default", "2026.7.4")
+
+        mock_health_monitor.begin_settling_period.assert_called_once_with(120)
 
     @pytest.mark.asyncio
     async def test_on_health_issue_notifies_on_detection(self, service: HABossService) -> None:

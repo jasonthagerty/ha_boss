@@ -940,10 +940,19 @@ class HABossService:
         where an HA update first becomes visible. Scheduled as a background task
         so the connect path is never blocked by a test run.
 
+        Also opens a settling window on the health monitor. A connect means
+        either startup or a reconnect after an outage; in both cases the cached
+        entity states are stale and Home Assistant may still be repopulating,
+        so alerting immediately reports the restart rather than a real fault.
+
         Args:
             instance_id: Home Assistant instance identifier
             ha_version: HA version reported by the auth handshake
         """
+        health_monitor = self.health_monitors.get(instance_id)
+        if health_monitor is not None:
+            health_monitor.begin_settling_period(self.config.monitoring.reconnect_settle_seconds)
+
         if instance_id not in self.deep_selftests:
             return
         task = asyncio.create_task(self._check_ha_version_change(instance_id, ha_version))
@@ -1021,18 +1030,15 @@ class HABossService:
             old_state: Previous state (if any)
         """
 
-        # Trigger health check for this specific entity on the correct instance
+        # Feed the update into the health monitor's stateful pipeline. It reports
+        # through the on_issue_detected callback itself (after the grace period,
+        # deduped, and persisted), so this must not also notify — an earlier
+        # version called the grace-bypassing check_entity_now() here and alerted
+        # on every single state event.
         health_monitor = self.health_monitors.get(instance_id)
         if health_monitor:
             try:
-                issue = await health_monitor.check_entity_now(new_state.entity_id)
-                if issue:
-                    logger.debug(
-                        f"[{instance_id}] State update triggered health issue for "
-                        f"{new_state.entity_id}: {issue.issue_type}"
-                    )
-                    # Trigger healing for this issue
-                    await self._on_health_issue(instance_id, issue)
+                await health_monitor.check_entity_state(new_state)
             except Exception as e:
                 logger.error(
                     f"[{instance_id}] Error checking health for {new_state.entity_id}: {e}",
