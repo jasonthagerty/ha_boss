@@ -58,6 +58,12 @@ class HealthMonitor:
         # Track previously reported issues to avoid duplicate notifications
         self._reported_issues: set[str] = set()  # entity_id
 
+        # Settling window: while set, issues are tracked but never reported.
+        # After a reconnect the cached view of the world is stale and Home
+        # Assistant is still repopulating entities, so anything "unavailable"
+        # right now says more about the restart than about the device.
+        self._settle_until: datetime | None = None
+
         # Monitoring task
         self._monitor_task: asyncio.Task[None] | None = None
         self._running = False
@@ -101,6 +107,44 @@ class HealthMonitor:
                 continue
 
             await self._check_entity_health(entity_state)
+
+    def begin_settling_period(self, seconds: int) -> None:
+        """Suppress issue reporting for a while after a (re)connect.
+
+        Home Assistant repopulates its entities over several seconds after a
+        restart, and HA Boss's cache is stale for the length of any WebSocket
+        outage. Reporting during that window produces alerts about the restart
+        rather than about any real fault.
+
+        Args:
+            seconds: Length of the settling window (<= 0 disables it)
+        """
+        if seconds <= 0:
+            return
+
+        self._settle_until = datetime.now(UTC) + timedelta(seconds=seconds)
+        logger.info(f"Health reporting suppressed for {seconds}s while entity states re-settle")
+
+    def _is_settling(self, now: datetime) -> bool:
+        """Whether the post-(re)connect settling window is still open."""
+        return self._settle_until is not None and now < self._settle_until
+
+    async def check_entity_state(self, entity_state: EntityState) -> None:
+        """Run the full stateful health pipeline for one entity.
+
+        This is the entry point for event-driven checks. It is deliberately the
+        *same* path the periodic loop uses, so a state update honours the grace
+        period, the already-reported dedup, persistence, and recovery handling.
+
+        Do not use :meth:`check_entity_now` for this — it bypasses all of that.
+
+        Args:
+            entity_state: Current entity state
+        """
+        if not self._should_monitor_entity(entity_state.entity_id):
+            return
+
+        await self._check_entity_health(entity_state)
 
     async def _check_entity_health(self, entity_state: EntityState) -> None:
         """Check health of a single entity.
@@ -159,6 +203,13 @@ class HealthMonitor:
         """
         entity_id = entity_state.entity_id
         now = datetime.now(UTC)
+
+        # Inside the settling window, keep tracking but restart the grace clock:
+        # an entity must be continuously unhealthy for a full grace period after
+        # things settle before it is worth waking someone up about.
+        if self._is_settling(now):
+            self._issue_tracker[entity_id] = (issue_type, now)
+            return
 
         # Check if this is a new issue or continuation
         if entity_id in self._issue_tracker:
@@ -282,6 +333,15 @@ class HealthMonitor:
         # Persist to database
         await self._persist_health_event(issue)
 
+        # Tell the service, so it can clear the alert it raised for this entity.
+        # Without this the recovery is only ever written to the database and the
+        # notification stays up until the user dismisses it by hand.
+        if self.on_issue_detected:
+            try:
+                await self.on_issue_detected(issue)
+            except Exception as e:
+                logger.error(f"Error in recovery callback: {e}", exc_info=True)
+
     async def _persist_health_event(self, issue: HealthIssue) -> None:
         """Persist health event to database.
 
@@ -338,7 +398,16 @@ class HealthMonitor:
         return bool(self.integration_classifier.is_cloud(entity_id))
 
     async def check_entity_now(self, entity_id: str) -> HealthIssue | None:
-        """Manually check health of a specific entity (bypasses grace period).
+        """Report an entity's current health, ignoring all reporting state.
+
+        A stateless point-in-time query for interactive use. It deliberately
+        bypasses the grace period, the already-reported dedup, the settling
+        window, and persistence.
+
+        **Never drive notifications from this.** Doing so was the cause of a
+        47-alert storm: it was called on every state update, so a Home Assistant
+        restart alerted on every entity the instant it blinked out. Use
+        :meth:`check_entity_state` for anything that can raise an alert.
 
         Args:
             entity_id: Entity identifier

@@ -19,6 +19,11 @@ monitoring:
   # Entities whose state has not changed in this long are flagged as stale (seconds)
   stale_threshold_seconds: 3600  # 1 hour
 
+  # After each WebSocket connect, suppress issue reporting for this long. An HA
+  # restart briefly blanks every entity; without this that reads as a house-wide
+  # outage and alerts on everything.
+  reconnect_settle_seconds: 120  # 2 minutes
+
   # Patterns always excluded from monitoring (fnmatch syntax)
   exclude:
     - "sensor.time*"
