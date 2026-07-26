@@ -91,6 +91,10 @@ class WebSocketClient:
         # Reconnect tracking for lost-connection notification
         self._reconnect_started_at: datetime | None = None
         self._reconnect_notified: bool = False
+        # Liveness: when any inbound message last arrived. A socket that is
+        # "open" but silent is indistinguishable from a dead one without this,
+        # so the staleness watchdog uses it to force a reconnect.
+        self._last_message_at: datetime | None = None
 
     def _next_id(self) -> int:
         """Get next message ID for requests."""
@@ -128,6 +132,7 @@ class WebSocketClient:
                 )
 
             self.ha_version = auth_result.get("ha_version")
+            self._last_message_at = datetime.now(UTC)
             logger.info(f"WebSocket connected successfully (HA version: {self.ha_version})")
 
             if self.on_connected:
@@ -193,6 +198,10 @@ class WebSocketClient:
             message: Parsed JSON message from WebSocket
         """
         msg_type = message.get("type")
+
+        # Any inbound message proves the stream is alive — including the pong
+        # the staleness watchdog probes with.
+        self._last_message_at = datetime.now(UTC)
 
         if msg_type == "event":
             event = message.get("event", {})
@@ -272,14 +281,25 @@ class WebSocketClient:
                 logger.error(f"Error in on_service_call callback: {e}", exc_info=True)
 
     async def _listen_loop(self) -> None:
-        """Main message listening loop."""
+        """Main message listening loop.
+
+        **Any** exit from the message iterator means the event stream is dead and
+        must be re-established. In particular the ``websockets`` async iterator
+        swallows a normal closure (``ConnectionClosedOK``) and simply stops
+        iterating without raising — which is exactly what Home Assistant sends
+        when it shuts down for a restart or upgrade. Catching only
+        ``WebSocketException`` therefore left the client silently dead with
+        ``_running`` still True and no reconnect scheduled, so this loop treats
+        a clean return the same as an error.
+        """
         if not self._ws:
             return
 
+        reason = "connection closed by server"
         try:
             async for message in self._ws:
                 if not self._running:
-                    break
+                    return
 
                 try:
                     data = json.loads(message)
@@ -289,12 +309,73 @@ class WebSocketClient:
                 except Exception as e:
                     logger.error(f"Error handling message: {e}", exc_info=True)
 
+        except asyncio.CancelledError:
+            raise
         except WebSocketException as e:
-            if self._running:
-                logger.warning(f"WebSocket connection lost: {e}")
-                # Trigger reconnection
-                if self._reconnect_task is None or self._reconnect_task.done():
-                    self._reconnect_task = asyncio.create_task(self._reconnect())
+            reason = f"WebSocket error: {e}"
+        except Exception as e:
+            reason = f"unexpected listen-loop error: {e}"
+
+        self._schedule_reconnect(reason)
+
+    def _schedule_reconnect(self, reason: str) -> None:
+        """Start the reconnect loop unless it is already running or we're stopping.
+
+        Args:
+            reason: Human-readable cause, logged so a silent death is never silent.
+        """
+        if not self._running:
+            return
+        if self._reconnect_task is not None and not self._reconnect_task.done():
+            return
+
+        logger.warning(f"WebSocket connection lost ({reason}); reconnecting")
+        self._reconnect_task = asyncio.create_task(self._reconnect())
+
+    async def force_reconnect(self, reason: str) -> None:
+        """Tear down the current socket and reconnect.
+
+        Used by the staleness watchdog when the socket still looks open but no
+        messages are arriving (a half-open connection the OS has not reaped).
+
+        Args:
+            reason: Human-readable cause, logged and used in the reconnect log line.
+        """
+        ws = self._ws
+        self._ws = None
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception as e:  # pragma: no cover - best-effort teardown
+                logger.debug(f"Error closing stale WebSocket: {e}")
+
+        self._schedule_reconnect(reason)
+
+    async def send_ping(self) -> bool:
+        """Send an application-level ping without consuming the reply.
+
+        Unlike :meth:`ping`, this never calls ``recv()``, so it is safe to call
+        while the listen loop owns the socket — the ``pong`` comes back through
+        ``_handle_message`` and refreshes the liveness timestamp.
+
+        Returns:
+            True if the ping was written to the socket, False otherwise.
+        """
+        if not self._ws:
+            return False
+
+        try:
+            await self._ws.send(json.dumps({"id": self._next_id(), "type": "ping"}))
+            return True
+        except Exception as e:
+            logger.debug(f"Liveness ping failed to send: {e}")
+            return False
+
+    def seconds_since_last_message(self) -> float | None:
+        """Seconds since any message last arrived, or None if nothing ever has."""
+        if self._last_message_at is None:
+            return None
+        return (datetime.now(UTC) - self._last_message_at).total_seconds()
 
     async def _reconnect(self) -> None:
         """Reconnect with infinite exponential backoff (capped at max_reconnect_delay_seconds).
@@ -423,12 +504,23 @@ class WebSocketClient:
         if self._ws is None:
             return False
 
-        # websockets library uses .closed attribute (True if connection is closed)
-        try:
-            return not self._ws.closed
-        except AttributeError:
-            # Fallback: if _running is True and _ws exists, assume connected
-            return True
+        # A reconnect in flight means the stream is down, whatever the socket says.
+        if self._reconnect_task is not None and not self._reconnect_task.done():
+            return False
+
+        # websockets >= 10 exposes close_code (None while open); older releases
+        # exposed a .closed bool. Check both — the previous implementation read
+        # only .closed and fell through to "assume connected" on the AttributeError
+        # modern websockets raises, so it reported True for a dead socket.
+        close_code = getattr(self._ws, "close_code", None)
+        if close_code is not None:
+            return False
+
+        closed = getattr(self._ws, "closed", None)
+        if closed is not None:
+            return not bool(closed)
+
+        return True
 
 
 async def create_websocket_client(

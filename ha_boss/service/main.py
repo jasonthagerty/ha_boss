@@ -533,10 +533,24 @@ class HABossService:
                 task.set_name(f"periodic_classifier_refresh_{instance_id}")
                 self._tasks.append(task)
 
+            # WebSocket event-stream staleness watchdog (if enabled)
+            if self.config.websocket.event_staleness_seconds > 0:
+                task = asyncio.create_task(self._periodic_websocket_watchdog(instance_id))
+                task.set_name(f"periodic_websocket_watchdog_{instance_id}")
+                self._tasks.append(task)
+
             # Dead-man's-switch heartbeat (if enabled)
             if self.config.heartbeat.enabled:
                 task = asyncio.create_task(self._periodic_heartbeat(instance_id))
                 task.set_name(f"periodic_heartbeat_{instance_id}")
+                self._tasks.append(task)
+
+            # REST-based HA version poll (self-test trigger independent of the WebSocket)
+            if instance_id in self.deep_selftests and (
+                self.config.self_test.version_poll_interval_seconds > 0
+            ):
+                task = asyncio.create_task(self._periodic_version_poll(instance_id))
+                task.set_name(f"periodic_version_poll_{instance_id}")
                 self._tasks.append(task)
 
             # Daily re-run of the notification-pipeline self-check
@@ -688,6 +702,123 @@ class HABossService:
             except Exception as e:
                 logger.error(f"Error during DB cleanup: {e}", exc_info=True)
 
+    def _websocket_stream_is_live(self, instance_id: str) -> bool:
+        """Whether the instance's WebSocket is connected *and* delivering messages.
+
+        ``is_connected()`` alone is not enough: a half-open socket reports open
+        while nothing arrives. Anything past the staleness threshold counts as
+        dead — the watchdog is concurrently forcing a reconnect.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+
+        Returns:
+            True when the event stream can be trusted.
+        """
+        ws_client = self.websocket_clients.get(instance_id)
+        if ws_client is None:
+            return False
+        if not ws_client.is_connected():
+            return False
+
+        threshold = self.config.websocket.event_staleness_seconds
+        if threshold <= 0:
+            return True
+
+        silent_for = ws_client.seconds_since_last_message()
+        return silent_for is None or silent_for < threshold
+
+    async def _periodic_websocket_watchdog(self, instance_id: str) -> None:
+        """Force a reconnect when the WebSocket stops delivering messages.
+
+        Exception handling in the listen loop cannot catch every way a stream
+        dies (a half-open TCP connection delivers nothing and raises nothing),
+        so liveness is asserted positively: if nothing has arrived for
+        ``event_staleness_seconds``, probe with a ping and require a reply.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+        """
+        threshold = self.config.websocket.event_staleness_seconds
+        probe_timeout = self.config.websocket.staleness_probe_timeout_seconds
+        # Check often enough to detect staleness promptly without busy-looping.
+        check_interval = max(30, threshold // 5)
+
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(check_interval)
+            except asyncio.CancelledError:
+                break
+
+            if self._shutdown_event.is_set():
+                break
+
+            try:
+                ws_client = self.websocket_clients.get(instance_id)
+                if ws_client is None:
+                    continue
+
+                silent_for = ws_client.seconds_since_last_message()
+                if silent_for is None or silent_for < threshold:
+                    continue
+
+                # Nothing for a while. A genuinely quiet instance answers a ping;
+                # a dead stream does not.
+                logger.info(
+                    f"[{instance_id}] No WebSocket message for {silent_for:.0f}s; "
+                    f"probing the event stream"
+                )
+                if await ws_client.send_ping():
+                    await asyncio.sleep(probe_timeout)
+                    silent_for = ws_client.seconds_since_last_message()
+                    if silent_for is not None and silent_for < threshold:
+                        continue
+
+                logger.warning(
+                    f"[{instance_id}] WebSocket event stream is stale "
+                    f"(no message for {threshold}s, liveness probe unanswered); "
+                    f"forcing reconnect"
+                )
+                await ws_client.force_reconnect("event stream stale")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[{instance_id}] Error in WebSocket watchdog: {e}", exc_info=True)
+
+    async def _periodic_version_poll(self, instance_id: str) -> None:
+        """Poll the HA version over REST and self-test when it changes.
+
+        The WebSocket ``on_connected`` hook detects an update only if the socket
+        reconnects; when the socket is itself broken, that never happens and an
+        HA update goes unverified. Polling over REST closes that hole.
+
+        Args:
+            instance_id: Home Assistant instance identifier
+        """
+        interval = self.config.self_test.version_poll_interval_seconds
+
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+
+            if self._shutdown_event.is_set():
+                break
+
+            try:
+                ha_client = self.ha_clients.get(instance_id)
+                if ha_client is None:
+                    continue
+                ha_config = await ha_client.get_config()
+                await self._check_ha_version_change(instance_id, ha_config.get("version"))
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(
+                    f"[{instance_id}] Error polling Home Assistant version: {e}", exc_info=True
+                )
+
     async def _periodic_heartbeat(self, instance_id: str) -> None:
         """Stamp the heartbeat helper in HA so the dead-man's-switch automation
         can alert when HA Boss stops beating.
@@ -695,6 +826,12 @@ class HABossService:
         Beats immediately (so a restart clears staleness fast), then every
         ``heartbeat.interval_seconds``. Failures are logged and retried on the
         next beat.
+
+        With ``heartbeat.require_websocket`` the beat is withheld while the
+        event stream is down. The heartbeat travels over REST, so it otherwise
+        keeps reporting "alive" through a dead WebSocket — which is how HA Boss
+        once monitored nothing for three days with every indicator green.
+        Withholding it lets the existing HA-side staleness automation alert.
 
         Args:
             instance_id: Home Assistant instance identifier
@@ -706,7 +843,16 @@ class HABossService:
         while not self._shutdown_event.is_set():
             try:
                 ha_client = self.ha_clients.get(instance_id)
-                if ha_client:
+                if ha_client is None:
+                    pass
+                elif heartbeat.require_websocket and not self._websocket_stream_is_live(
+                    instance_id
+                ):
+                    logger.warning(
+                        f"[{instance_id}] Withholding heartbeat: the WebSocket event "
+                        f"stream is not live, so HA Boss is not monitoring"
+                    )
+                else:
                     await send_heartbeat(ha_client, heartbeat.entity_id)
                     logger.debug(f"[{instance_id}] Heartbeat sent to {heartbeat.entity_id}")
             except asyncio.CancelledError:

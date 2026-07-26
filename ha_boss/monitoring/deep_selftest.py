@@ -248,8 +248,11 @@ class DeepSelfTest:
     async def check_version_change(self, ha_version: str | None) -> bool:
         """Persist the observed HA version; run the self-test when it changed.
 
-        Called from the WebSocket ``on_connected`` hook (fires on the initial
-        connect and every reconnect — an HA update always causes a reconnect).
+        Called from two independent paths: the WebSocket ``on_connected`` hook
+        (fires on the initial connect and every reconnect — an HA update always
+        causes a reconnect) and the REST version poll. The poll is what makes
+        this reliable: when the WebSocket is the thing that broke, the connect
+        hook never fires and the update would otherwise go unverified.
 
         Args:
             ha_version: Version reported by the auth handshake (None = unknown)

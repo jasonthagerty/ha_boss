@@ -423,3 +423,186 @@ class TestHABossServiceStatus:
         assert callback_args[1].entity_id == "sensor.test"
 
         await test_db.close()
+
+
+class _FakeWebSocketClient:
+    """Minimal WebSocket client stand-in for liveness/watchdog tests."""
+
+    def __init__(self, connected=True, silent_for=0.0, ping_ok=True):
+        self._connected = connected
+        self.silent_for = silent_for
+        self.ping_ok = ping_ok
+        self.ping_calls = 0
+        self.force_reconnect_calls: list[str] = []
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    def seconds_since_last_message(self):
+        return self.silent_for
+
+    async def send_ping(self) -> bool:
+        self.ping_calls += 1
+        return self.ping_ok
+
+    async def force_reconnect(self, reason: str) -> None:
+        self.force_reconnect_calls.append(reason)
+
+
+class TestWebSocketLiveness:
+    """The event stream must be proven live, not assumed live."""
+
+    def test_stream_not_live_without_client(self, service: HABossService) -> None:
+        assert service._websocket_stream_is_live("default") is False
+
+    def test_stream_not_live_when_disconnected(self, service: HABossService) -> None:
+        service.websocket_clients["default"] = _FakeWebSocketClient(connected=False)
+        assert service._websocket_stream_is_live("default") is False
+
+    def test_stream_not_live_when_silent(self, service: HABossService) -> None:
+        """Connected but delivering nothing is not alive — the exact 3-day failure."""
+        service.config.websocket.event_staleness_seconds = 900
+        service.websocket_clients["default"] = _FakeWebSocketClient(silent_for=5000)
+        assert service._websocket_stream_is_live("default") is False
+
+    def test_stream_live_when_messages_recent(self, service: HABossService) -> None:
+        service.config.websocket.event_staleness_seconds = 900
+        service.websocket_clients["default"] = _FakeWebSocketClient(silent_for=10)
+        assert service._websocket_stream_is_live("default") is True
+
+    def test_staleness_check_disabled_by_zero(self, service: HABossService) -> None:
+        service.config.websocket.event_staleness_seconds = 0
+        service.websocket_clients["default"] = _FakeWebSocketClient(silent_for=99999)
+        assert service._websocket_stream_is_live("default") is True
+
+
+class TestPeriodicHeartbeat:
+    """The heartbeat must not report healthy while HA Boss is blind."""
+
+    async def _run_one_beat(self, service: HABossService) -> None:
+        async def stop_after_sleep(_delay: float) -> None:
+            service._shutdown_event.set()
+
+        with patch("asyncio.sleep", new=stop_after_sleep):
+            await service._periodic_heartbeat("default")
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_withheld_when_stream_dead(self, service: HABossService) -> None:
+        service.config.heartbeat.require_websocket = True
+        service.config.websocket.event_staleness_seconds = 900
+        service.ha_clients["default"] = AsyncMock()
+        service.websocket_clients["default"] = _FakeWebSocketClient(silent_for=5000)
+
+        with patch("ha_boss.monitoring.heartbeat.send_heartbeat", new=AsyncMock()) as mock_send:
+            await self._run_one_beat(service)
+
+        mock_send.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_sent_when_stream_live(self, service: HABossService) -> None:
+        service.config.heartbeat.require_websocket = True
+        service.config.websocket.event_staleness_seconds = 900
+        service.ha_clients["default"] = AsyncMock()
+        service.websocket_clients["default"] = _FakeWebSocketClient(silent_for=10)
+
+        with patch("ha_boss.monitoring.heartbeat.send_heartbeat", new=AsyncMock()) as mock_send:
+            await self._run_one_beat(service)
+
+        mock_send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_sent_when_gate_disabled(self, service: HABossService) -> None:
+        """Opting out restores the old unconditional beat."""
+        service.config.heartbeat.require_websocket = False
+        service.ha_clients["default"] = AsyncMock()
+        service.websocket_clients["default"] = _FakeWebSocketClient(silent_for=5000)
+
+        with patch("ha_boss.monitoring.heartbeat.send_heartbeat", new=AsyncMock()) as mock_send:
+            await self._run_one_beat(service)
+
+        mock_send.assert_awaited_once()
+
+
+class TestWebSocketWatchdog:
+    """A silent stream must be probed and, if dead, torn down."""
+
+    async def _run_one_cycle(self, service: HABossService, sleeps_before_stop: int) -> list[float]:
+        sleeps: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            sleeps.append(delay)
+            if len(sleeps) >= sleeps_before_stop:
+                service._shutdown_event.set()
+
+        with patch("asyncio.sleep", new=fake_sleep):
+            await service._periodic_websocket_watchdog("default")
+        return sleeps
+
+    @pytest.mark.asyncio
+    async def test_forces_reconnect_when_probe_unanswered(self, service: HABossService) -> None:
+        service.config.websocket.event_staleness_seconds = 900
+        client = _FakeWebSocketClient(silent_for=5000, ping_ok=True)
+        service.websocket_clients["default"] = client
+
+        await self._run_one_cycle(service, sleeps_before_stop=3)
+
+        assert client.ping_calls == 1
+        assert client.force_reconnect_calls == ["event stream stale"]
+
+    @pytest.mark.asyncio
+    async def test_no_reconnect_when_stream_fresh(self, service: HABossService) -> None:
+        service.config.websocket.event_staleness_seconds = 900
+        client = _FakeWebSocketClient(silent_for=10)
+        service.websocket_clients["default"] = client
+
+        await self._run_one_cycle(service, sleeps_before_stop=2)
+
+        assert client.ping_calls == 0
+        assert client.force_reconnect_calls == []
+
+    @pytest.mark.asyncio
+    async def test_no_reconnect_when_probe_answered(self, service: HABossService) -> None:
+        """A quiet-but-healthy instance answers the ping; don't churn the socket."""
+        service.config.websocket.event_staleness_seconds = 900
+        client = _FakeWebSocketClient(silent_for=5000, ping_ok=True)
+        service.websocket_clients["default"] = client
+
+        original_send_ping = client.send_ping
+
+        async def answer_ping() -> bool:
+            result = await original_send_ping()
+            client.silent_for = 1.0  # pong arrived and refreshed liveness
+            return result
+
+        client.send_ping = answer_ping
+
+        await self._run_one_cycle(service, sleeps_before_stop=3)
+
+        assert client.ping_calls == 1
+        assert client.force_reconnect_calls == []
+
+
+class TestVersionPoll:
+    """HA-update detection must not depend on the WebSocket reconnect hook."""
+
+    @pytest.mark.asyncio
+    async def test_polls_rest_version_and_checks_for_change(self, service: HABossService) -> None:
+        service.config.self_test.version_poll_interval_seconds = 3600
+        ha_client = AsyncMock()
+        ha_client.get_config.return_value = {"version": "2026.7.4"}
+        service.ha_clients["default"] = ha_client
+
+        deep_selftest = AsyncMock()
+        service.deep_selftests["default"] = deep_selftest
+
+        sleeps: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            sleeps.append(delay)
+            if len(sleeps) >= 2:
+                service._shutdown_event.set()
+
+        with patch("asyncio.sleep", new=fake_sleep):
+            await service._periodic_version_poll("default")
+
+        deep_selftest.check_version_change.assert_awaited_once_with("2026.7.4")

@@ -488,6 +488,23 @@ class WebSocketConfig(BaseSettings):
         ),
         ge=60,
     )
+    event_staleness_seconds: int = Field(
+        default=900,
+        description=(
+            "Force a reconnect when no WebSocket message has arrived for this many "
+            "seconds and a liveness ping goes unanswered. Catches a half-open socket "
+            "that still looks connected but delivers nothing (0 disables the watchdog)"
+        ),
+        ge=0,
+    )
+    staleness_probe_timeout_seconds: int = Field(
+        default=15,
+        description=(
+            "How long to wait for a reply to the liveness ping before declaring the "
+            "event stream dead"
+        ),
+        ge=1,
+    )
 
 
 class RESTConfig(BaseSettings):
@@ -532,6 +549,14 @@ class HeartbeatConfig(BaseSettings):
         description="Seconds between heartbeats",
         ge=30,
     )
+    require_websocket: bool = Field(
+        default=True,
+        description=(
+            "Only beat while the WebSocket event stream is live. The heartbeat is "
+            "sent over REST, so without this it keeps beating happily while HA Boss "
+            "is blind — reporting healthy is worse than reporting nothing"
+        ),
+    )
 
 
 class SelfTestConfig(BaseSettings):
@@ -558,6 +583,16 @@ class SelfTestConfig(BaseSettings):
     result_entity_id: str = Field(
         default="input_text.ha_boss_selftest_result",
         description="input_text helper the self-test verdict is written to",
+    )
+    version_poll_interval_seconds: int = Field(
+        default=3600,
+        description=(
+            "How often to poll the Home Assistant version over REST to detect an "
+            "update. Version detection must not depend on the WebSocket reconnect "
+            "hook — if the WebSocket is what broke, that hook never fires "
+            "(0 disables polling)"
+        ),
+        ge=0,
     )
 
 

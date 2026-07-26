@@ -1,5 +1,6 @@
 """Tests for Home Assistant WebSocket client."""
 
+import asyncio
 import json
 from datetime import UTC, timedelta
 from datetime import datetime as real_dt
@@ -472,3 +473,184 @@ async def test_callback_error_handling(ws_client):
 
     # Should not raise, just log
     await ws_client._handle_message(event_message)
+
+
+class _FakeSocket:
+    """Async-iterable stand-in for a websockets connection.
+
+    Yields the queued messages, then either ends iteration (a clean close, which
+    the websockets iterator does NOT raise on) or raises the supplied error.
+    """
+
+    def __init__(self, messages=None, raises=None, close_code=None):
+        self._messages = list(messages or [])
+        self._raises = raises
+        self.close_code = close_code
+        self.sent: list[str] = []
+        self.closed_calls = 0
+
+    def __aiter__(self):
+        return self._iterate()
+
+    async def _iterate(self):
+        for message in self._messages:
+            yield message
+        if self._raises is not None:
+            raise self._raises
+
+    async def send(self, message):
+        self.sent.append(message)
+
+    async def close(self):
+        self.closed_calls += 1
+
+
+@pytest.mark.asyncio
+async def test_listen_loop_reconnects_on_clean_close(ws_client):
+    """A normal server-side close ends iteration without raising — still reconnect.
+
+    Regression: HA closes the socket cleanly when it restarts for an upgrade.
+    The websockets iterator swallows ConnectionClosedOK, so the old
+    `except WebSocketException` never fired and the client sat dead for days.
+    """
+    ws_client._running = True
+    ws_client._ws = _FakeSocket(messages=[])
+
+    with patch.object(ws_client, "_reconnect", new=AsyncMock()) as mock_reconnect:
+        await ws_client._listen_loop()
+        assert ws_client._reconnect_task is not None
+        await ws_client._reconnect_task
+
+    mock_reconnect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_listen_loop_reconnects_on_non_websocket_error(ws_client):
+    """A non-WebSocketException (e.g. OSError) also means the stream is dead."""
+    ws_client._running = True
+    ws_client._ws = _FakeSocket(raises=OSError("connection reset"))
+
+    with patch.object(ws_client, "_reconnect", new=AsyncMock()) as mock_reconnect:
+        await ws_client._listen_loop()
+        assert ws_client._reconnect_task is not None
+        await ws_client._reconnect_task
+
+    mock_reconnect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_listen_loop_no_reconnect_after_stop(ws_client):
+    """A deliberate stop must not trigger a reconnect."""
+    ws_client._running = False
+    ws_client._ws = _FakeSocket(messages=[])
+
+    with patch.object(ws_client, "_reconnect", new=AsyncMock()) as mock_reconnect:
+        await ws_client._listen_loop()
+
+    mock_reconnect.assert_not_awaited()
+    assert ws_client._reconnect_task is None
+
+
+@pytest.mark.asyncio
+async def test_schedule_reconnect_is_idempotent(ws_client):
+    """A second trigger while a reconnect is in flight does not start another."""
+    ws_client._running = True
+
+    async def _never():
+        await asyncio.sleep(3600)
+
+    with patch.object(ws_client, "_reconnect", new=_never):
+        ws_client._schedule_reconnect("first")
+        first_task = ws_client._reconnect_task
+        ws_client._schedule_reconnect("second")
+        assert ws_client._reconnect_task is first_task
+
+        first_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first_task
+
+
+@pytest.mark.asyncio
+async def test_handle_message_refreshes_liveness(ws_client):
+    """Any inbound message — including a pong — proves the stream is alive."""
+    assert ws_client.seconds_since_last_message() is None
+
+    await ws_client._handle_message({"type": "pong", "id": 1})
+
+    silent_for = ws_client.seconds_since_last_message()
+    assert silent_for is not None and silent_for < 5
+
+
+@pytest.mark.asyncio
+async def test_send_ping_does_not_consume_replies(ws_client):
+    """send_ping writes a ping without calling recv(), so the listen loop is safe."""
+    fake = _FakeSocket()
+    ws_client._ws = fake
+
+    assert await ws_client.send_ping() is True
+    assert json.loads(fake.sent[0])["type"] == "ping"
+
+
+@pytest.mark.asyncio
+async def test_send_ping_returns_false_when_disconnected(ws_client):
+    """No socket means no ping."""
+    ws_client._ws = None
+    assert await ws_client.send_ping() is False
+
+
+@pytest.mark.asyncio
+async def test_force_reconnect_closes_socket_and_reconnects(ws_client):
+    """The watchdog's teardown path closes the socket and schedules a reconnect."""
+    ws_client._running = True
+    fake = _FakeSocket()
+    ws_client._ws = fake
+
+    with patch.object(ws_client, "_reconnect", new=AsyncMock()) as mock_reconnect:
+        await ws_client.force_reconnect("event stream stale")
+        assert ws_client._reconnect_task is not None
+        await ws_client._reconnect_task
+
+    assert fake.closed_calls == 1
+    assert ws_client._ws is None
+    mock_reconnect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_is_connected_false_for_closed_modern_socket(ws_client):
+    """Modern websockets exposes close_code instead of .closed.
+
+    Regression: the old implementation read only .closed, hit AttributeError,
+    and fell through to "assume connected" — reporting a dead socket as healthy.
+    """
+    ws_client._running = True
+    ws_client._ws = _FakeSocket(close_code=1000)
+
+    assert ws_client.is_connected() is False
+
+
+@pytest.mark.asyncio
+async def test_is_connected_true_for_open_modern_socket(ws_client):
+    """close_code is None while the connection is open."""
+    ws_client._running = True
+    ws_client._ws = _FakeSocket(close_code=None)
+
+    assert ws_client.is_connected() is True
+
+
+@pytest.mark.asyncio
+async def test_is_connected_false_while_reconnecting(ws_client):
+    """An in-flight reconnect means the stream is down regardless of the socket."""
+    ws_client._running = True
+    ws_client._ws = _FakeSocket(close_code=None)
+
+    async def _never():
+        await asyncio.sleep(3600)
+
+    task = asyncio.create_task(_never())
+    ws_client._reconnect_task = task
+    try:
+        assert ws_client.is_connected() is False
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
