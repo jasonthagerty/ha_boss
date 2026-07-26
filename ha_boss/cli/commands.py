@@ -168,6 +168,9 @@ heartbeat:
   enabled: false
   entity_id: "input_datetime.ha_boss_heartbeat"
   interval_seconds: 300
+  # Withhold the beat while the WebSocket event stream is down, so a blind
+  # HA Boss stops reporting itself healthy.
+  require_websocket: true
 
 # Deep self-test: end-to-end verification at startup, on HA version change,
 # and on demand via the request input_boolean. Create both helpers in HA
@@ -176,6 +179,7 @@ self_test:
   enabled: false
   request_entity_id: "input_boolean.ha_boss_selftest_request"
   result_entity_id: "input_text.ha_boss_selftest_result"
+  version_poll_interval_seconds: 3600
 
 # production = real notifications; dry_run = log only
 mode: production

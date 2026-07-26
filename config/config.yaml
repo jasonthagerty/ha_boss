@@ -82,6 +82,9 @@ heartbeat:
   enabled: true
   entity_id: "input_datetime.ha_boss_heartbeat"
   interval_seconds: 300  # 5 minutes; HA-side automation alerts after 15 min stale
+  # Withhold the beat while the WebSocket event stream is down. The heartbeat is
+  # sent over REST, so without this it keeps beating while HA Boss is blind.
+  require_websocket: true
 
 # Deep self-test: end-to-end verification (WS, REST, discovery integrity,
 # notification pipeline). Runs at startup, when the HA version changes (i.e.
@@ -92,6 +95,9 @@ self_test:
   enabled: true
   request_entity_id: "input_boolean.ha_boss_selftest_request"
   result_entity_id: "input_text.ha_boss_selftest_result"
+  # Poll the HA version over REST so an update is detected even when the
+  # WebSocket (and therefore its reconnect hook) is broken. 0 disables.
+  version_poll_interval_seconds: 3600
 
 # Operational mode: production | dry_run | testing
 # - production: sends real notifications
@@ -118,6 +124,11 @@ websocket:
   max_reconnect_delay_seconds: 300
   # Send a CONNECTION_ERROR notification after being disconnected this long (seconds)
   reconnect_notify_after_seconds: 1800  # 30 minutes
+  # Force a reconnect when no message has arrived for this long AND a liveness
+  # ping goes unanswered. Catches a half-open socket that still looks connected
+  # but delivers nothing (0 disables).
+  event_staleness_seconds: 900  # 15 minutes
+  staleness_probe_timeout_seconds: 15
 
 rest:
   timeout_seconds: 10
