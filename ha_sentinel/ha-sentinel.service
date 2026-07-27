@@ -1,0 +1,26 @@
+[Unit]
+Description=HA Sentinel - out-of-band Home Assistant liveness prober
+Documentation=https://github.com/jasonthagerty
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jason
+EnvironmentFile=/etc/ha-sentinel.env
+ExecStart=/usr/bin/python3 /opt/ha-sentinel/ha_sentinel.py
+Restart=always
+RestartSec=15
+# Deliberately NOT dependent on docker.service: this must survive Docker dying.
+
+# Hardening - it only needs outbound network.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
