@@ -172,19 +172,39 @@ def test_failed_send_is_retried_not_swallowed(cfg, monkeypatch):
     assert attempts == ["Home Assistant unreachable"] * 2
 
 
-def test_unconfigured_channel_does_not_retry_every_cycle(monkeypatch, sent):
-    """Without credentials there is nothing to retry, so state must advance."""
+def test_unconfigured_channel_does_not_retry_every_cycle(monkeypatch):
+    """Without credentials there is nothing to retry, so state must advance.
+
+    The fake returns False, matching what the real send_pushover() does when
+    credentials are missing - otherwise this passes whether or not the
+    unconfigured branch actually works.
+    """
     monkeypatch.setenv("HA_URL", "https://ha.example/")
     monkeypatch.setenv("HA_TOKEN", "token")
     monkeypatch.delenv("PUSHOVER_TOKEN", raising=False)
     monkeypatch.delenv("PUSHOVER_USER", raising=False)
     monkeypatch.setenv("FAIL_THRESHOLD", "1")
     cfg = ha_sentinel.Config()
+    assert not cfg.can_notify
 
+    attempts = []
+
+    def unconfigured_send(_cfg, title, _message, priority=0):
+        attempts.append(title)
+        return False
+
+    monkeypatch.setattr(ha_sentinel, "send_pushover", unconfigured_send)
     s = ha_sentinel.Sentinel(cfg)
-    s._handle_failure("boom", datetime(2026, 7, 27, 12, 0))
+    start = datetime(2026, 7, 27, 12, 0)
 
+    s._handle_failure("boom", start)
     assert s.alerted
+    assert len(attempts) == 1
+
+    # Inside the reminder window there must be no second attempt: a missing
+    # credential will never start working, so retrying would only spam the log.
+    s._handle_failure("boom", start + timedelta(minutes=1))
+    assert len(attempts) == 1
 
 
 def test_daily_ok_retries_after_a_failed_send(cfg, monkeypatch):
