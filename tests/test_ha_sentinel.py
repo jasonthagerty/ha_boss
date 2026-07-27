@@ -145,6 +145,79 @@ def test_daily_ok_suppressed_during_an_outage(cfg, monkeypatch, sent):
     assert sent == []
 
 
+def test_failed_send_is_retried_not_swallowed(cfg, monkeypatch):
+    """A dropped alert must be retried, not silently recorded as delivered.
+
+    Recording an undelivered notification is the exact failure mode that made
+    the previous watchdog useless: state advanced, nothing was sent, and the
+    outage stayed invisible.
+    """
+    attempts = []
+
+    def failing_send(_cfg, title, _message, priority=0):
+        attempts.append(title)
+        return False
+
+    monkeypatch.setattr(ha_sentinel, "send_pushover", failing_send)
+    s = ha_sentinel.Sentinel(cfg)
+    now = datetime(2026, 7, 27, 12, 0)
+
+    for i in range(cfg.fail_threshold):
+        s._handle_failure("boom", now + timedelta(seconds=i))
+
+    assert attempts == ["Home Assistant unreachable"]
+    assert not s.alerted  # not recorded, so the next cycle retries
+
+    s._handle_failure("boom", now + timedelta(seconds=60))
+    assert attempts == ["Home Assistant unreachable"] * 2
+
+
+def test_unconfigured_channel_does_not_retry_every_cycle(monkeypatch, sent):
+    """Without credentials there is nothing to retry, so state must advance."""
+    monkeypatch.setenv("HA_URL", "https://ha.example/")
+    monkeypatch.setenv("HA_TOKEN", "token")
+    monkeypatch.delenv("PUSHOVER_TOKEN", raising=False)
+    monkeypatch.delenv("PUSHOVER_USER", raising=False)
+    monkeypatch.setenv("FAIL_THRESHOLD", "1")
+    cfg = ha_sentinel.Config()
+
+    s = ha_sentinel.Sentinel(cfg)
+    s._handle_failure("boom", datetime(2026, 7, 27, 12, 0))
+
+    assert s.alerted
+
+
+def test_daily_ok_retries_after_a_failed_send(cfg, monkeypatch):
+    monkeypatch.setenv("DAILY_OK_HOUR", "9")
+    cfg = ha_sentinel.Config()
+    calls = []
+
+    def failing_send(_cfg, title, _message, priority=0):
+        calls.append(title)
+        return False
+
+    monkeypatch.setattr(ha_sentinel, "send_pushover", failing_send)
+    s = ha_sentinel.Sentinel(cfg)
+
+    s._maybe_daily_ok(datetime(2026, 7, 27, 9, 0))
+    s._maybe_daily_ok(datetime(2026, 7, 27, 9, 1))
+
+    assert len(calls) == 2  # same day, still retrying
+    assert s.last_daily_ok is None
+
+
+def test_daily_ok_hour_defaults_on(monkeypatch):
+    """The dead-man's switch must be opt-out, not opt-in."""
+    monkeypatch.setenv("HA_URL", "https://ha.example/")
+    monkeypatch.setenv("HA_TOKEN", "token")
+    monkeypatch.delenv("DAILY_OK_HOUR", raising=False)
+
+    assert ha_sentinel.Config().daily_ok_hour == 9
+
+    monkeypatch.setenv("DAILY_OK_HOUR", "")
+    assert ha_sentinel.Config().daily_ok_hour is None
+
+
 @pytest.mark.parametrize(
     ("delta", "expected"),
     [

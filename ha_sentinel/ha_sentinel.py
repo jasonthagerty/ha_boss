@@ -37,8 +37,9 @@ class Config:
         self.timeout = int(os.environ.get("PROBE_TIMEOUT_SECONDS", "10"))
         self.fail_threshold = int(os.environ.get("FAIL_THRESHOLD", "3"))
         self.remind_minutes = int(os.environ.get("REMIND_MINUTES", "30"))
-        # Empty disables the daily proof-of-life message.
-        hour = os.environ.get("DAILY_OK_HOUR", "").strip()
+        # Defaults on: the daily message is the prober's own dead-man's switch,
+        # so losing it must take a deliberate act. An explicit empty value disables.
+        hour = os.environ.get("DAILY_OK_HOUR", "9").strip()
         self.daily_ok_hour = int(hour) if hour else None
 
     @property
@@ -115,6 +116,17 @@ class Sentinel:
         log.info("Shutting down")
         self.running = False
 
+    def _should_record(self, sent_ok: bool) -> bool:
+        """Whether a send attempt should advance notification state.
+
+        A transport failure must NOT advance it: otherwise a dropped alert is
+        silently swallowed and the outage stays unreported until the next
+        reminder. An unconfigured channel is different - it will never succeed,
+        so retrying every cycle would just spam the log instead of honouring the
+        reminder cadence.
+        """
+        return sent_ok or not self.cfg.can_notify
+
     def _handle_failure(self, detail: str, now: datetime) -> None:
         self.consecutive_failures += 1
         if self.down_since is None:
@@ -130,15 +142,16 @@ class Sentinel:
             return
 
         if not self.alerted:
-            send_pushover(
+            sent_ok = send_pushover(
                 self.cfg,
                 "Home Assistant unreachable",
                 f"No API response for {self.consecutive_failures} consecutive checks.\n"
                 f"Down since {self.down_since:%b %d %H:%M}.\nLast error: {detail}",
                 priority=1,
             )
-            self.alerted = True
-            self.last_reminder = now
+            if self._should_record(sent_ok):
+                self.alerted = True
+                self.last_reminder = now
             return
 
         # Still down - remind periodically so the alert cannot be lost in a scroll.
@@ -147,13 +160,14 @@ class Sentinel:
         )
         if due:
             downtime = self._format_duration(now - self.down_since)
-            send_pushover(
+            sent_ok = send_pushover(
                 self.cfg,
                 "Home Assistant still down",
                 f"Unreachable for {downtime}.\nLast error: {detail}",
                 priority=1,
             )
-            self.last_reminder = now
+            if self._should_record(sent_ok):
+                self.last_reminder = now
 
     def _handle_success(self, detail: str, now: datetime) -> None:
         if self.alerted and self.down_since is not None:
@@ -190,13 +204,14 @@ class Sentinel:
         if self.last_daily_ok and self.last_daily_ok.date() == now.date():
             return
 
-        send_pushover(
+        sent_ok = send_pushover(
             self.cfg,
             "HA Sentinel daily check",
             f"Home Assistant reachable. Prober healthy at {now:%b %d %H:%M}.",
             priority=-1,
         )
-        self.last_daily_ok = now
+        if self._should_record(sent_ok):
+            self.last_daily_ok = now
 
     @staticmethod
     def _format_duration(delta: timedelta) -> str:
