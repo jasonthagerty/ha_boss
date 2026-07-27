@@ -94,6 +94,8 @@ data/
 
 # User-specific service files
 *.service
+# ...except the HA Sentinel unit, which is a shipped deployment artifact.
+!ha_sentinel/*.service
 
 # Temporary summary/report files
 *_SUMMARY.md
